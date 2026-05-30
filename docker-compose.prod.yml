@@ -48,6 +48,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
+      args:
+        - NEXT_PUBLIC_WECHAT_LOGIN_ENABLED=${WECHAT_LOGIN_ENABLED:-false}
+        - NEXT_PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://localhost}
     container_name: agent_platform_web
     restart: always
     environment:

@@ -78,7 +78,11 @@ function SkillSquareInner() {
                   )}
                   <span className="text-sm font-medium">{skill.owner_user?.name || 'Anonymous'}</span>
                 </div>
-                <div className="text-sm font-black text-blue-600">{parseFloat(skill.stats?.total_score || 0).toFixed(1)} {t('skills.score')}</div>
+                <div className="text-sm font-black text-blue-600">
+                  {parseFloat(
+                    sort === 'weekly' ? (skill.stats?.weekly_score || 0) : (skill.stats?.total_score || 0)
+                  ).toFixed(1)} {t('skills.score')}
+                </div>
               </div>
             </Link>
           ))}

@@ -6,6 +6,7 @@ import { TeamsModule } from './teams/teams.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { StorageModule } from './storage/storage.module';
 import { HealthController } from './common/health.controller';
+import { AdminController } from './common/admin.controller';
 
 @Module({
   imports: [
@@ -38,6 +39,6 @@ import { HealthController } from './common/health.controller';
     TeamsModule,
     LeaderboardModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, AdminController],
 })
 export class AppModule {}

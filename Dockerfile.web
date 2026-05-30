@@ -21,10 +21,14 @@ COPY packages/web/public packages/web/public
 
 RUN ./node_modules/.bin/tsc -p packages/shared/tsconfig.json
 
-# ⚠️ 必须在 next build 之前设置 API_HOST，否则 rewrite 会固化为 localhost
+# ⚠️ 必须在 next build 之前设置以下变量，否则 NEXT_PUBLIC_* 会被固化为 undefined
+ARG NEXT_PUBLIC_WECHAT_LOGIN_ENABLED=false
+ARG NEXT_PUBLIC_BASE_URL=https://localhost
 ENV API_HOST=api
 ENV API_PORT=3001
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_PUBLIC_WECHAT_LOGIN_ENABLED=$NEXT_PUBLIC_WECHAT_LOGIN_ENABLED
+ENV NEXT_PUBLIC_BASE_URL=$NEXT_PUBLIC_BASE_URL
 RUN cd packages/web && ../../node_modules/.bin/next build
 
 # ── Stage 2: Production ─────────────────────────

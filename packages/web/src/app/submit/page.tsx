@@ -19,7 +19,9 @@ async function parseZipForSkillMd(file: File): Promise<{ name: string; descripti
     if (candidates.length === 0) return null;
     // 优先取路径最短的（根目录）
     candidates.sort((a, b) => a.split('/').length - b.split('/').length);
-    const content = await zip.file(candidates[0])!.async('string');
+    let content = await zip.file(candidates[0])!.async('string');
+    // 标准化换行符：Windows 的 \r\n → \n，兼容跨平台 SKILL.md
+    content = content.replace(/\r\n/g, '\n').replace(/^\uFEFF/, '');
 
     // 解析 YAML frontmatter（--- 包围）
     const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);

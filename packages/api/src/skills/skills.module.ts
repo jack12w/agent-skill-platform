@@ -10,13 +10,14 @@ import { SkillStats } from './skill-stats.entity';
 import { Comment } from './comment.entity';
 import { LeaderboardSnapshot } from '../leaderboard/leaderboard-snapshot.entity';
 import { TeamMember } from '../teams/team-member.entity';
+import { StatsAggregationService } from '../stats-aggregation.service';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Skill, SkillVersion, Event, SkillStats, Comment, LeaderboardSnapshot, TeamMember]),
   ],
-  providers: [SkillsService],
+  providers: [SkillsService, StatsAggregationService],
   controllers: [SkillsController, GeoController],
-  exports: [SkillsService],
+  exports: [SkillsService, StatsAggregationService],
 })
 export class SkillsModule {}
