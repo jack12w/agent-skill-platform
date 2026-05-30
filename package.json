@@ -17,7 +17,8 @@
   "devDependencies": {
     "turbo": "latest",
     "prettier": "^3.0.0",
-    "pm2": "^5.4.0"
+    "pm2": "^5.4.0",
+    "typescript": "^5.0.0"
   },
   "workspaces": [
     "packages/*"
