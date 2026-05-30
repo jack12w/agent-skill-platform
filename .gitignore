@@ -4,7 +4,7 @@ dist/
 .env
 .env.*
 !.env.example
-!.env.production
+!.env.production.example
 *.log
 *.tsbuildinfo
 .DS_Store
