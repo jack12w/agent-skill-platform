@@ -18,13 +18,13 @@ COPY packages/shared/src packages/shared/src
 COPY packages/web/src packages/web/src
 COPY packages/web/public packages/web/public
 
-RUN cd packages/shared && ../../node_modules/.bin/tsc
+RUN node node_modules/.bin/tsc -p packages/shared/tsconfig.json
 
 # ⚠️ 必须在 next build 之前设置 API_HOST，否则 rewrite 会固化为 localhost
 ENV API_HOST=api
 ENV API_PORT=3001
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN cd packages/web && ../../node_modules/.bin/next build
+RUN cd packages/web && node ../../node_modules/.bin/next build
 
 # ── Stage 2: Production ─────────────────────────
 FROM node:20-alpine
