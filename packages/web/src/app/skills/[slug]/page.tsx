@@ -72,7 +72,7 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
       <div className="flex flex-col md:flex-row gap-12">
-        <div className="flex-1">
+        <div className="flex-1 min-w-0 md:min-w-[460px]">
           <div className="flex items-start justify-between gap-4 mb-4"><h1 className="text-2xl sm:text-4xl font-bold">{skill.name}</h1>{isOwner && <Link href={`/skills/${skill.slug || skill.id}/edit`} className="shrink-0 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50">{t('detail.edit')}</Link>}</div>
           <div className="flex items-center gap-2 mb-4 flex-wrap">{tags.map((tag) => (
             <button key={tag} onClick={() => router.push(`/skills?tag=${encodeURIComponent(tag)}`)} className="px-3 py-1 bg-blue-50 text-blue-600 text-sm rounded-full hover:bg-blue-100 hover:text-blue-700 transition cursor-pointer">
