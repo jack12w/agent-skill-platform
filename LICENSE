@@ -1,21 +1,41 @@
-MIT License
+个人非商业使用许可 & 商业授权
 
-Copyright (c) 2026 Agent Skill Platform
+Copyright (c) 2026 星火工作室 (Xinghuo Studio)
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+---
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+# 个人用户许可（免费）
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+允许个人用户出于**学习、研究、非商业目的**：
+
+- 复制、修改、使用、分发本软件及文档
+- 将本软件用于个人项目或非营利性用途
+
+# 商业使用（需授权）
+
+以下行为视为商业使用，**须事先获得书面授权**：
+
+- 将本软件或其衍生版本用于任何商业产品或服务
+- 在企业内部以盈利性目的部署或使用本软件
+- 将本软件作为商业产品或服务的组成部分进行销售或分发
+- 任何直接或间接产生经济利益的用途
+
+**商业授权联系**：https://rehomi.com/xinghuo
+
+---
+
+# 免责声明
+
+本软件按「现状」提供，不作任何明示或暗示的担保。在任何情况下，作者或版权持有者均不对因使用本软件而产生的任何索赔、损害或其他责任负责。
+
+---
+
+Personal Non-Commercial License & Commercial Authorization
+
+Permission is granted to **individuals** to use, copy, modify, and distribute this software for **personal, educational, or non-commercial purposes** only.
+
+**Commercial use** of this software or any derivative work requires a separate commercial license agreement. This includes, but is not limited to, using the software in any product or service that generates revenue, deploying it for business operations, or incorporating it into commercial offerings.
+
+For commercial licensing, please contact us at: https://rehomi.com/xinghuo
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
