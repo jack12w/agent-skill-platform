@@ -11,6 +11,8 @@ dist/
 coverage/
 .workbuddy/
 .codebuddy/
+# local debug / temp scripts
+_*
 # build artifacts in source dirs
 packages/shared/src/*.js
 packages/shared/src/*.d.ts
