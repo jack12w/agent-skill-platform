@@ -1,0 +1,43 @@
+# ── Stage 1: Build ──────────────────────────────
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY packages/api/package.json packages/api/
+COPY packages/api/tsconfig.json packages/api/
+COPY packages/shared/package.json packages/shared/
+COPY packages/shared/tsconfig.json packages/shared/
+
+RUN npm ci --legacy-peer-deps
+
+COPY packages/shared/src packages/shared/src
+COPY packages/api/src packages/api/src
+
+RUN cd packages/shared && npx tsc
+RUN cd packages/api && npx tsc
+
+# ── Stage 2: Production ─────────────────────────
+FROM node:20-alpine
+
+WORKDIR /app
+
+# 生产依赖（仅运行时需要的）
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/api/package.json ./
+
+# 构建产物
+COPY --from=builder /app/packages/api/dist ./dist
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./packages/shared/
+
+# workspace 软链接在 COPY 时丢失，手动创建 @platform/shared 映射
+RUN mkdir -p node_modules/@platform
+RUN echo '{"name":"@platform/shared","main":"../../../packages/shared/dist/index.js","types":"../../../packages/shared/dist/index.d.ts"}' > node_modules/@platform/shared/package.json
+
+ENV NODE_ENV=production
+ENV PORT=3001
+
+EXPOSE 3001
+
+CMD ["node", "dist/main.js"]

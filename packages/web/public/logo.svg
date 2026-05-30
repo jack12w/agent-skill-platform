@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50">
+  <defs>
+    <linearGradient id="logo-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#16213e"/>
+      <stop offset="100%" stop-color="#0e9aa7"/>
+    </linearGradient>
+  </defs>
+  <!-- Icon mark -->
+  <g transform="translate(25,25)">
+    <circle cx="0" cy="0" r="22" fill="url(#logo-bg)"/>
+    <circle cx="0" cy="0" r="20" fill="none" stroke="#fff" stroke-width="0.6" opacity="0.15"/>
+    <!-- Nodes -->
+    <circle cx="0" cy="-14" r="2.5" fill="#fff"/>
+    <circle cx="-11" cy="11" r="2.5" fill="#fff"/>
+    <circle cx="11" cy="11" r="2.5" fill="#fff"/>
+    <circle cx="0" cy="0" r="2.2" fill="#e0f7fa" opacity="0.9"/>
+    <!-- Lines -->
+    <line x1="0" y1="-11.5" x2="0" y2="-2.2" stroke="#fff" stroke-width="1.5" opacity="0.45"/>
+    <line x1="-8.5" y1="9.5" x2="-2" y2="1.5" stroke="#fff" stroke-width="1.5" opacity="0.45"/>
+    <line x1="8.5" y1="9.5" x2="2" y2="1.5" stroke="#fff" stroke-width="1.5" opacity="0.45"/>
+    <!-- Crossbar -->
+    <line x1="-7" y1="3" x2="7" y2="3" stroke="#fff" stroke-width="1.2" opacity="0.3"/>
+  </g>
+  <!-- Text in one line, vertically centered with icon -->
+  <text x="56" y="33" font-family="Inter, -apple-system, sans-serif" font-size="22" font-weight="700" fill="#16213e" letter-spacing="-0.5">Agent</text>
+  <text x="126" y="33" font-family="Inter, -apple-system, sans-serif" font-size="22" font-weight="400" fill="#4a5568" letter-spacing="-0.5">Skills</text>
+</svg>

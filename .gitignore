@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.next/
+.env
+.env.*
+!.env.example
+!.env.production
+*.log
+*.tsbuildinfo
+.DS_Store
+coverage/
+.workbuddy/
+.codebuddy/
+# build artifacts in source dirs
+packages/shared/src/*.js
+packages/shared/src/*.d.ts
+packages/shared/src/*.js.map

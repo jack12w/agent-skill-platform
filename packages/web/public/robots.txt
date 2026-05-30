@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /$
+Allow: /skills$
+Allow: /skills/*
+Allow: /leaderboard$
+Allow: /teams/*
+Disallow: /auth
+Disallow: /dashboard
+Disallow: /submit
+Disallow: /*/edit
+Disallow: /api/
+
+Sitemap: https://skills.rehomi.com/sitemap.xml

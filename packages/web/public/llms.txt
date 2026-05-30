@@ -1,0 +1,36 @@
+# Agent Skill Platform
+
+> AI Agent Skills Marketplace — Discover, share, and download AI agent skills.
+
+## Site Structure
+
+- Home (ZH): https://skills.rehomi.com
+- Home (EN): https://skills.rehomi.com/en
+- Skills Marketplace (ZH): https://skills.rehomi.com/skills
+- Skills Marketplace (EN): https://skills.rehomi.com/en/skills
+- Leaderboard (ZH): https://skills.rehomi.com/leaderboard
+- Leaderboard (EN): https://skills.rehomi.com/en/leaderboard
+- Skill Detail (ZH): https://skills.rehomi.com/skills/[slug]
+- Skill Detail (EN): https://skills.rehomi.com/en/skills/[slug]
+
+## Quick Info
+
+- Language support: Chinese (zh-CN), English (en-US)
+- Content type: AI agent skills (tools, workflows, automations)
+- Update frequency: Real-time (user submissions)
+- Authentication: Not required for browsing
+
+## APIs for AI Crawlers
+
+- GEO Feed (JSON): https://skills.rehomi.com/api/ai/feed
+- Full content: https://skills.rehomi.com/llms-full.txt
+
+## Sitemap
+
+- XML Sitemap: https://skills.rehomi.com/sitemap.xml
+- Robots.txt: https://skills.rehomi.com/robots.txt
+
+## Optional
+
+- For more detailed skill information, please visit individual skill pages at /skills/[slug].
+- Skills are documented with name, description, tags, version history, and download stats.

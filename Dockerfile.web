@@ -1,0 +1,53 @@
+# ── Stage 1: Build ──────────────────────────────
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY packages/web/package.json packages/web/
+COPY packages/web/tsconfig.json packages/web/
+COPY packages/web/next.config.js packages/web/
+COPY packages/web/postcss.config.* packages/web/
+COPY packages/web/tailwind.config.* packages/web/
+COPY packages/shared/package.json packages/shared/
+COPY packages/shared/tsconfig.json packages/shared/
+
+RUN npm ci --legacy-peer-deps
+
+COPY packages/shared/src packages/shared/src
+COPY packages/web/src packages/web/src
+COPY packages/web/public packages/web/public
+
+RUN cd packages/shared && npx tsc
+
+# ⚠️ 必须在 next build 之前设置 API_HOST，否则 rewrite 会固化为 localhost
+ENV API_HOST=api
+ENV API_PORT=3001
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN cd packages/web && npx next build
+
+# ── Stage 2: Production ─────────────────────────
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/web/.next ./packages/web/.next
+COPY --from=builder /app/packages/web/package.json ./packages/web/
+COPY --from=builder /app/packages/web/next.config.js ./packages/web/
+COPY --from=builder /app/packages/web/public ./packages/web/public
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./packages/shared/
+COPY --from=builder /app/package.json ./
+
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV API_HOST=api
+ENV API_PORT=3001
+ENV NEXT_TELEMETRY_DISABLED=1
+
+EXPOSE 3000
+
+WORKDIR /app/packages/web
+
+CMD ["npx", "next", "start", "-p", "3000"]
