@@ -3,7 +3,7 @@
  * All components render <script type="application/ld+json"> tags.
  */
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://skills.rehomi.com';
 
 /* ── WebSite ────────────────────────────────────── */
 
