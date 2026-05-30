@@ -12,7 +12,8 @@ COPY packages/web/tailwind.config.* packages/web/
 COPY packages/shared/package.json packages/shared/
 COPY packages/shared/tsconfig.json packages/shared/
 
-RUN npm ci --legacy-peer-deps
+RUN npm config set registry https://registry.npmmirror.com \
+  && npm ci --legacy-peer-deps
 
 COPY packages/shared/src packages/shared/src
 COPY packages/web/src packages/web/src
