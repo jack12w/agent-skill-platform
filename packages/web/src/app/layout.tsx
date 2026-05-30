@@ -9,7 +9,7 @@ import { WebSiteSchema, OrganizationSchema } from '../lib/structured-data';
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
 
 export const metadata: Metadata = {
-  metadataBase: new URL(BASE_URL),
+  metadataBase: new URL(BASE_URL || 'https://skills.rehomi.com'),
   title: {
     default: 'Agent Skill Platform — AI Agent Skills Marketplace',
     template: '%s | Agent Skill Platform',
