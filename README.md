@@ -95,11 +95,3 @@ agent-skill-platform/
 ├── docker-compose.prod.yml      # 生产部署
 └── README.md
 ```
-
-## 许可证
-
-MIT
-
----
-
-技术支持：[星火工作室](https://rehomi.com/xinghuo)
