@@ -14,8 +14,8 @@ RUN npm ci --legacy-peer-deps
 COPY packages/shared/src packages/shared/src
 COPY packages/api/src packages/api/src
 
-RUN cd packages/shared && npx tsc
-RUN cd packages/api && npx tsc
+RUN cd packages/shared && ../../node_modules/.bin/tsc
+RUN cd packages/api && ../../node_modules/.bin/tsc
 
 # ── Stage 2: Production ─────────────────────────
 FROM node:20-alpine
