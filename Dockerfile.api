@@ -9,13 +9,13 @@ COPY packages/api/tsconfig.json packages/api/
 COPY packages/shared/package.json packages/shared/
 COPY packages/shared/tsconfig.json packages/shared/
 
-RUN npm ci --legacy-peer-deps
+RUN npm ci --legacy-peer-deps && npm install -g typescript
 
 COPY packages/shared/src packages/shared/src
 COPY packages/api/src packages/api/src
 
-RUN ./node_modules/.bin/tsc -p packages/shared/tsconfig.json
-RUN ./node_modules/.bin/tsc -p packages/api/tsconfig.json
+RUN tsc -p packages/shared/tsconfig.json
+RUN tsc -p packages/api/tsconfig.json
 
 # ── Stage 2: Production ─────────────────────────
 FROM node:20-alpine
