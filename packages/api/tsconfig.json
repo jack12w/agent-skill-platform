@@ -16,6 +16,9 @@
     "skipLibCheck": true,
     "strictNullChecks": false,
 
+    "moduleResolution": "node",
+    "ignoreDeprecations": "5.0",
+
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "forceConsistentCasingInFileNames": false,

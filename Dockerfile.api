@@ -11,7 +11,7 @@ COPY packages/shared/tsconfig.json packages/shared/
 
 RUN npm config set registry https://registry.npmmirror.com \
   && npm ci --legacy-peer-deps \
-  && npm install -g typescript
+  && npm install -g typescript@5.9.3
 
 COPY packages/shared/src packages/shared/src
 COPY packages/api/src packages/api/src
