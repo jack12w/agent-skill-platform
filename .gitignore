@@ -17,6 +17,9 @@ _*
 packages/shared/src/*.js
 packages/shared/src/*.d.ts
 packages/shared/src/*.js.map
+# local temp & generated files
+generated-images/
+debug.log
 # project docs (local only)
 TECHNICAL.md
 development-manual.md
