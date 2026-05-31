@@ -57,9 +57,9 @@ export class LeaderboardService {
           COUNT(DISTINCT s.id)                               AS skill_count,
           COALESCE(SUM(ea.likes), 0)                         AS likes,
           COALESCE(SUM(ea.downloads), 0)                     AS downloads,
-          COUNT(DISTINCT s.id) * 5
-            + COALESCE(SUM(ea.likes), 0) * 0.1
-            + COALESCE(SUM(ea.downloads), 0) * 0.1           AS score
+          LOG(2, COUNT(DISTINCT s.id) + 1) * 5
+            + COALESCE(SUM(ea.likes), 0) * 0.3
+            + COALESCE(SUM(ea.downloads), 0) * 0.3           AS score
         FROM skills s
         LEFT JOIN event_agg ea     ON ea.skill_id = s.id
         LEFT JOIN ${subjectTable} subj ON subj.id = ${subjectIdCol}
@@ -79,9 +79,9 @@ export class LeaderboardService {
           COUNT(DISTINCT s.id)                                AS skill_count,
           COALESCE(SUM(st.likes_total), 0)                    AS likes,
           COALESCE(SUM(st.downloads_total), 0)                AS downloads,
-          COUNT(DISTINCT s.id) * 5
-            + COALESCE(SUM(st.likes_total), 0) * 0.1
-            + COALESCE(SUM(st.downloads_total), 0) * 0.1      AS score
+          LOG(2, COUNT(DISTINCT s.id) + 1) * 5
+            + COALESCE(SUM(st.likes_total), 0) * 0.3
+            + COALESCE(SUM(st.downloads_total), 0) * 0.3      AS score
         FROM skills s
         LEFT JOIN skill_stats st   ON st.skill_id = s.id
         LEFT JOIN ${subjectTable} subj ON subj.id = ${subjectIdCol}

@@ -76,7 +76,7 @@ export class SkillsService {
         .addSelect("COUNT(CASE WHEN e.type = 'like' THEN 1 END)::int", '_likes')
         .addSelect("COUNT(CASE WHEN e.type = 'download' THEN 1 END)::int", '_downloads')
         .addSelect(
-          "(5 + COUNT(CASE WHEN e.type = 'like' THEN 1 END) * 0.1 + COUNT(CASE WHEN e.type = 'download' THEN 1 END) * 0.1)::numeric(10,2)",
+          "(5 + COUNT(CASE WHEN e.type = 'like' THEN 1 END) * 0.3 + COUNT(CASE WHEN e.type = 'download' THEN 1 END) * 0.3)::numeric(10,2)",
           '_score',
         )
         .where('skill.status = :status', { status: 'published' })
@@ -116,10 +116,10 @@ export class SkillsService {
           downloads_7d: Number(row._downloads) || 0,
           total_score: sort === 'total'
             ? Number(row._score)
-            : (5 + (Number(row.likes_total) || 0) * 0.1 + (Number(row.downloads_total) || 0) * 0.1),
+            : (5 + (Number(row.likes_total) || 0) * 0.3 + (Number(row.downloads_total) || 0) * 0.3),
           weekly_score: sort === 'weekly'
             ? Number(row._score)
-            : (5 + (Number(row.likes_7d) || 0) * 0.1 + (Number(row.downloads_7d) || 0) * 0.1),
+            : (5 + (Number(row.likes_7d) || 0) * 0.3 + (Number(row.downloads_7d) || 0) * 0.3),
           updated_at: row.skill_updated_at,
         },
         owner_user: {
@@ -154,7 +154,7 @@ export class SkillsService {
       skip: (page - 1) * size,
     });
 
-    const compute = (likes: number, downloads: number) => 5 + likes * 0.1 + downloads * 0.1;
+    const compute = (likes: number, downloads: number) => 5 + likes * 0.3 + downloads * 0.3;
     for (const s of skills) {
       if (s.stats) {
         s.stats.total_score = compute(Number(s.stats.likes_total) || 0, Number(s.stats.downloads_total) || 0);
@@ -454,8 +454,8 @@ export class SkillsService {
       const downloads = Number(skill.stats.downloads_total) || 0;
       const likes7d = Number(skill.stats.likes_7d) || 0;
       const downloads7d = Number(skill.stats.downloads_7d) || 0;
-      skill.stats.total_score = 5 + likes * 0.1 + downloads * 0.1;
-      skill.stats.weekly_score = 5 + likes7d * 0.1 + downloads7d * 0.1;
+      skill.stats.total_score = 5 + likes * 0.3 + downloads * 0.3;
+      skill.stats.weekly_score = 5 + likes7d * 0.3 + downloads7d * 0.3;
     }
 
     return skill;
@@ -509,8 +509,8 @@ export class SkillsService {
         const downloads = Number(fresh.downloads_total) || 0;
         const likes7d = Number(fresh.likes_7d) || 0;
         const downloads7d = Number(fresh.downloads_7d) || 0;
-        const total = 5 + likes * 0.1 + downloads * 0.1;
-        const weekly = 5 + likes7d * 0.1 + downloads7d * 0.1;
+        const total = 5 + likes * 0.3 + downloads * 0.3;
+        const weekly = 5 + likes7d * 0.3 + downloads7d * 0.3;
         await this.statsRepository.update({ skill_id: skillId }, { total_score: total, weekly_score: weekly });
       }
     }

@@ -40,12 +40,12 @@ export class StatsAggregationService {
       `);
 
       // 2. Update scores based on the weights
-      // Score = 5 + likes*0.1 + downloads*0.1
+      // Score = 5 + likes*0.3 + downloads*0.3
       await queryRunner.query(`
         UPDATE skill_stats
         SET 
-          total_score = 5 + (likes_total * 0.1) + (downloads_total * 0.1),
-          weekly_score = 5 + (likes_7d * 0.1) + (downloads_7d * 0.1)
+          total_score = 5 + (likes_total * 0.3) + (downloads_total * 0.3),
+          weekly_score = 5 + (likes_7d * 0.3) + (downloads_7d * 0.3)
       `);
 
       await queryRunner.commitTransaction();
