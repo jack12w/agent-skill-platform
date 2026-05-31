@@ -73,7 +73,7 @@ export default function SubmitSkill() {
       .catch(() => {});
   }, []);
 
-  const MAX_SIZE = 48 * 1024; // 48KB
+  const MAX_SIZE = 300 * 1024; // 300KB
 
   /** 当用户选择 ZIP 文件时，先校验大小，再自动解析 SKILL.md 并填充表单 */
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -82,7 +82,7 @@ export default function SubmitSkill() {
 
     // 文件大小校验
     if (selected.size > MAX_SIZE) {
-      alert(`文件过大（${(selected.size / 1024).toFixed(1)} KB），技能包限制为 48KB 以内。请压缩后重新上传。`);
+      alert(t('submit.fileTooLarge', { size: (selected.size / 1024).toFixed(1), limit: 300 }));
       e.target.value = ''; // 清空选择
       setFile(null);
       return;
@@ -145,7 +145,7 @@ export default function SubmitSkill() {
             <div className="text-blue-600 font-bold mb-2 text-lg">
               {parsing ? '解析中...' : file ? file.name : t('submit.zipLabel')}
             </div>
-            <p className="text-sm text-gray-500">{t('submit.zipHint')}（限制 48KB 以内）</p>
+            <p className="text-sm text-gray-500">{t('submit.zipHint')}（{t('submit.zipLimitHint', { limit: 300 })}）</p>
           </label>
           {file && <p className="text-xs text-green-600 mt-2">✅ 已选择文件，下方内容已自动填充</p>}
         </div>

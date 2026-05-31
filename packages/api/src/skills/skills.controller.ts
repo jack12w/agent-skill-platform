@@ -50,7 +50,7 @@ export class SkillsController {
   @Post(':id/versions')
   @UseInterceptors(FileInterceptor('file', {
     limits: {
-      fileSize: 48 * 1024,  // 48KB 文件大小上限
+      fileSize: 300 * 1024,  // 300KB 文件大小上限
       fieldSize: 10 * 1024 * 1024, // 10MB 表单字段上限（notes 描述等）
     },
   }))
