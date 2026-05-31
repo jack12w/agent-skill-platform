@@ -83,6 +83,7 @@ const en = {
     uploadVersion: 'Upload new version',
     uploadHint: 'Upload a .zip containing SKILL.md',
     uploadLimitHint: 'Limit {limit} KB',
+    versionNotesPlaceholder: "Describe what's new in this version (optional)",
     upload: 'Upload',
     uploading: 'Uploading...',
     deleteVersion: 'Delete',

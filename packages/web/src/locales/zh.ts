@@ -83,6 +83,7 @@ const zh = {
     uploadVersion: '上传新版本',
     uploadHint: '上传包含 SKILL.md 的 .zip 文件',
     uploadLimitHint: '限制 {limit} KB',
+    versionNotesPlaceholder: '描述此版本更新内容（选填）',
     upload: '上传',
     uploading: '上传中...',
     deleteVersion: '删除',
