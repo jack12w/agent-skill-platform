@@ -16,12 +16,15 @@ export default function UserProfile({ params }: { params: { username: string } }
   const [skills, setSkills] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const load = async () => {
+  const load = async (pageNum: number = 1, append: boolean = false) => {
     try {
       const [userRes, skillsRes] = await Promise.all([
         fetch(`/api/users/${encodeURIComponent(username)}`),
-        fetch(`/api/users/${encodeURIComponent(username)}/skills?size=50`),
+        fetch(`/api/users/${encodeURIComponent(username)}/skills?page=${pageNum}&size=20`),
       ]);
 
       if (!userRes.ok) {
@@ -34,16 +37,24 @@ export default function UserProfile({ params }: { params: { username: string } }
 
       if (skillsRes.ok) {
         const skillsData = await skillsRes.json();
-        setSkills(skillsData.items ?? []);
+        setSkills(prev => append ? [...prev, ...(skillsData.items ?? [])] : (skillsData.items ?? []));
+        setTotal(skillsData.total ?? 0);
+        setPage(pageNum);
       }
     } catch (e: any) {
-      setError(e.message || 'Load failed');
+      if (!append) setError(e.message || 'Load failed');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
-  useEffect(() => { load(); }, [params.username]);
+  const loadMore = async () => {
+    setLoadingMore(true);
+    await load(page + 1, true);
+  };
+
+  useEffect(() => { setLoading(true); load(); }, [username]);
 
   if (loading) {
     return (
@@ -117,7 +128,7 @@ export default function UserProfile({ params }: { params: { username: string } }
       {/* Skills section */}
       <section>
         <h2 className="text-xl font-bold mb-4 text-gray-900">
-          {t('dashboard.mySkills')} ({skills.length})
+          {t('dashboard.mySkills')} ({total})
         </h2>
         {skills.length === 0 ? (
           <div className="p-8 border border-dashed rounded-xl text-center text-gray-400">
@@ -168,6 +179,17 @@ export default function UserProfile({ params }: { params: { username: string } }
                 </div>
               </Link>
             ))}
+          </div>
+        )}
+        {skills.length < total && (
+          <div className="mt-6 text-center">
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="px-6 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition"
+            >
+              {loadingMore ? t('skills.loading') : `加载更多 (${skills.length} / ${total})`}
+            </button>
           </div>
         )}
       </section>
