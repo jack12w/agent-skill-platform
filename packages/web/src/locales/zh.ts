@@ -150,7 +150,9 @@ const zh = {
   },
   team: {
     backToDashboard: '返回个人中心',
+    backToTeam: '返回团队主页',
     yourRole: '你的角色',
+    manage: '管理',
     edit: '编辑',
     delete: '删除团队',
     deleting: '删除中...',

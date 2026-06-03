@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import useTranslation from '../../hooks/useTranslation';
 
 export default function Leaderboard() {
@@ -56,7 +57,16 @@ export default function Leaderboard() {
             {data.map((item, i) => (
               <tr key={item.id} className="border-b hover:bg-gray-50">
                 <td className="py-2 px-1 font-bold text-gray-400 text-left">{i + 1}</td>
-                <td className="py-2 px-1 max-w-[60px] truncate">{item.name.length > 30 ? item.name.slice(0, 30) + '...' : item.name}</td>
+                <td className="py-2 px-1 max-w-[60px] truncate">
+                  <Link
+                    href={tab === 'personal'
+                      ? `/users/${encodeURIComponent(item.name)}`
+                      : `/teams/${item.id}`}
+                    className="text-blue-600 hover:underline"
+                  >
+                    {item.name.length > 30 ? item.name.slice(0, 30) + '...' : item.name}
+                  </Link>
+                </td>
                 <td className="py-2 px-1 text-right">{item.skill_count}</td>
                 <td className="py-2 px-1 text-right">{item.likes}</td>
                 <td className="py-2 px-1 text-right">{item.downloads}</td>

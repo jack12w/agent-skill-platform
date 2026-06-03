@@ -1,51 +1,58 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import useTranslation from '../../../hooks/useTranslation';
 
-export default function TeamDetail({ params }: { params: { id: string } }) {
-  const router = useRouter();
+export default function TeamShowcase({ params }: { params: { id: string } }) {
   const { t } = useTranslation();
   const [team, setTeam] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ name: '', description: '' });
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
 
   const load = async () => {
-    const token = localStorage.getItem('token'); if (!token) return router.push('/auth');
+    const token = localStorage.getItem('token');
     try {
-      const res = await fetch(`/api/teams/${params.id}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.message || `HTTP ${res.status}`); }
-      const tData = await res.json(); setTeam(tData); setForm({ name: tData.name ?? '', description: tData.description ?? '' });
-    } catch (e: any) { setError(e.message || 'Load failed'); }
-    finally { setLoading(false); }
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`/api/teams/${params.id}`, { headers });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setTeam(data);
+      setIsOwner(data.is_owner);
+    } catch (e: any) {
+      setError(e.message || 'Load failed');
+    } finally {
+      setLoading(false);
+    }
   };
+
   useEffect(() => { load(); }, [params.id]);
 
-  const handleSave = async (e: React.FormEvent) => { e.preventDefault(); const token = localStorage.getItem('token'); if (!token) return; setSaving(true);
-    try {
-      const res = await fetch(`/api/teams/${params.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: form.name.trim(), description: form.description }) });
-      if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.message || `HTTP ${res.status}`); }
-      setEditing(false); await load();
-    } catch (err: any) { alert(t('team.saveFailed') + ': ' + err.message); }
-    finally { setSaving(false); }
-  };
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 text-center text-gray-500">
+        {t('skills.loading')}
+      </div>
+    );
+  }
 
-  const handleDelete = async () => { if (!confirm(t('team.deleteConfirm').replace('{name}', team.name))) return; const token = localStorage.getItem('token'); if (!token) return; setDeleting(true);
-    try {
-      const res = await fetch(`/api/teams/${params.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.message || `HTTP ${res.status}`); }
-      router.push('/dashboard');
-    } catch (err: any) { alert(t('team.deleteFailed') + ': ' + err.message); setDeleting(false); }
-  };
+  if (error) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 text-center">
+        <h1 className="text-2xl font-bold mb-2">{t('team.cannotLoad')}</h1>
+        <p className="text-gray-500 mb-6">{error}</p>
+        <Link href="/skills" className="text-blue-600 underline">
+          {t('skills.square')}
+        </Link>
+      </div>
+    );
+  }
 
-  if (loading) return <div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center text-gray-500">{t('skills.loading')}</div>;
-  if (error) return (<div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center"><h1 className="text-2xl font-bold mb-2">{t('team.cannotLoad')}</h1><p className="text-gray-500 mb-6">{error}</p><Link href="/dashboard" className="text-blue-600 underline">{t('team.backToDashboardLink')}</Link></div>);
   if (!team) return null;
 
   const skills = team.skills ?? [];
@@ -53,31 +60,119 @@ export default function TeamDetail({ params }: { params: { id: string } }) {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-      <Link href="/dashboard" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900">
-        <svg className="w-5 h-5" viewBox="0 0 1024 1024" fill="currentColor"><path d="M277.818 543.962l401.629 384.163c18.504 17.681 48.475 17.68 66.947 0s18.474-46.361 0-64.043L378.2 511.953l368.194-352.155c18.474-17.68 18.474-46.331 0-64.012-18.474-17.682-48.444-17.682-66.947 0L277.818 479.949c-18.504 17.652-18.504 46.331 0 64.012z"/></svg>
-        {t('team.backToDashboard')}
-      </Link>
-      <div className="mt-4 mb-10 p-6 border rounded-xl bg-white">
-        {!editing ? (<>
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"><div><h1 className="text-2xl sm:text-3xl font-bold">{team.name}</h1>{team.description && <p className="text-gray-600 mt-2">{team.description}</p>}{team.my_role && <span className="inline-block mt-3 text-xs px-2 py-1 bg-gray-100 rounded capitalize">{t('team.yourRole')}: {team.my_role}</span>}</div>
-            {team.is_owner && (<div className="flex gap-2 shrink-0"><button onClick={() => setEditing(true)} className="px-4 py-2 border rounded-lg text-sm font-medium hover:bg-gray-50">{t('team.edit')}</button><button onClick={handleDelete} disabled={deleting} className="px-4 py-2 border border-red-300 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 disabled:opacity-50">{deleting ? t('team.deleting') : t('team.delete')}</button></div>)}
+      {/* Team header */}
+      <div className="mb-10">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-bold text-gray-900">{team.name}</h1>
+            {team.description && (
+              <p className="text-lg text-gray-600 mt-3 max-w-2xl">{team.description}</p>
+            )}
+            <div className="flex items-center gap-4 mt-4 text-sm text-gray-500">
+              <span className="flex items-center gap-1">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                {members.length} {t('team.members')}
+              </span>
+              <span className="flex items-center gap-1">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+                </svg>
+                {skills.length} {t('team.teamSkills')}
+              </span>
+            </div>
           </div>
-        </>) : (
-          <form onSubmit={handleSave} className="space-y-4">
-            <label className="block"><span className="block text-sm font-medium text-gray-700 mb-1">Team name</span><input type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required className="w-full px-3 py-2 border rounded-lg" /></label>
-            <label className="block"><span className="block text-sm font-medium text-gray-700 mb-1">Description</span><textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} className="w-full px-3 py-2 border rounded-lg" /></label>
-            <div className="flex gap-2 pt-1"><button type="submit" disabled={saving || !form.name.trim()} className="px-5 py-2 bg-gray-900 text-white rounded-lg font-medium hover:bg-black disabled:opacity-50">{saving ? t('team.saving') : t('team.save')}</button><button type="button" onClick={() => { setEditing(false); setForm({ name: team.name, description: team.description ?? '' }); }} className="px-5 py-2 border rounded-lg font-medium hover:bg-gray-50">{t('team.cancel')}</button></div>
-          </form>
+          {isOwner && (
+            <Link
+              href={`/teams/${params.id}/settings`}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition shrink-0"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              {t('team.manage')}
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {/* Members section */}
+      <section className="mb-10">
+        <h2 className="text-xl font-bold mb-4 text-gray-900">{t('team.members')}</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          {members.map((m: any) => (
+            <div key={m.user_id} className="flex items-center gap-3 p-3 border rounded-lg">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                {m.user?.avatar_url ? (
+                  <img src={m.user.avatar_url} alt={m.user?.name} className="w-10 h-10 rounded-full object-cover" />
+                ) : (
+                  (m.user?.name || '?').charAt(0).toUpperCase()
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="font-medium text-gray-900 truncate">{m.user?.name || 'Unknown'}</div>
+                <span className="text-xs text-gray-500 capitalize">{m.role}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Skills section */}
+      <section>
+        <h2 className="text-xl font-bold mb-4 text-gray-900">{t('team.teamSkills')} ({skills.length})</h2>
+        {skills.length === 0 ? (
+          <div className="p-8 border border-dashed rounded-xl text-center text-gray-400">
+            <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+            </svg>
+            <p>{t('team.noSkills')}</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {skills.map((s: any) => (
+              <Link
+                key={s.id}
+                href={`/skills/${s.slug || s.id}`}
+                className="block p-5 border rounded-xl hover:border-blue-300 hover:shadow-sm hover:bg-blue-50/30 transition group"
+              >
+                <h3 className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors">{s.name}</h3>
+                {s.short_summary && (
+                  <p className="text-sm text-gray-500 mt-1 line-clamp-2">{s.short_summary}</p>
+                )}
+                {s.tags && s.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-3">
+                    {s.tags.slice(0, 4).map((tag: string) => (
+                      <span key={tag} className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
+                        {tag}
+                      </span>
+                    ))}
+                    {s.tags.length > 4 && (
+                      <span className="text-xs text-gray-400">+{s.tags.length - 4}</span>
+                    )}
+                  </div>
+                )}
+                <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="#f87171">
+                      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                    </svg>
+                    {s.stats?.likes_total ?? 0}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="#60a5fa" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                    </svg>
+                    {s.stats?.downloads_total ?? 0}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
         )}
-      </div>
-      <div className="mb-10"><h2 className="text-xl font-bold mb-4">{t('team.members')} ({members.length})</h2>
-        <div className="space-y-2">{members.map((m: any) => (<div key={m.id} className="flex items-center justify-between p-3 border rounded-lg"><div><div className="font-medium">{m.user?.name || m.user?.email || m.user_id.slice(0, 8)}</div><div className="text-xs text-gray-500">{m.user?.email}</div></div><span className="text-xs px-2 py-1 bg-gray-100 rounded capitalize">{m.role}</span></div>))}</div>
-      </div>
-      <div><h2 className="text-xl font-bold mb-4">{t('team.teamSkills')} ({skills.length})</h2>
-        {skills.length === 0 ? (<div className="p-6 border border-dashed rounded-xl text-center text-gray-500 text-sm">{t('team.noSkills')}<br /><span className="text-xs">{t('team.noSkillsHint')}</span></div>) : (
-          <div className="space-y-3">{skills.map((s: any) => (<Link key={s.id} href={`/skills/${s.slug || s.id}`} className="block p-4 border rounded-xl hover:border-gray-400 hover:bg-gray-50 transition"><div className="flex items-center justify-between"><div><h3 className="font-bold">{s.name}</h3>{s.short_summary && <p className="text-sm text-gray-500 mt-1">{s.short_summary}</p>}</div><div className="flex items-center gap-3 text-xs shrink-0 ml-4"><span className="flex items-center gap-1" title={t('detail.likes')}><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="#f87171"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg><span className="text-gray-600">{s.stats?.likes_total ?? 0}</span></span><span className="flex items-center gap-1" title={t('detail.downloads')}><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span className="text-gray-600">{s.stats?.downloads_total ?? 0}</span></span></div></div></Link>))}</div>
-        )}
-      </div>
+      </section>
     </div>
   );
 }

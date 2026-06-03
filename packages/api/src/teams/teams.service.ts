@@ -69,9 +69,22 @@ export class TeamsService {
       ? members.find((m) => m.user_id === userId)
       : null;
 
+    // Sanitize member data for public access (remove email)
+    const safeMembers = userId
+      ? members
+      : members.map((m) => ({
+          ...m,
+          user: {
+            id: m.user.id,
+            name: m.user.name,
+            avatar_url: m.user.avatar_url,
+            bio: m.user.bio,
+          },
+        }));
+
     return {
       ...team,
-      members,
+      members: safeMembers,
       skills,
       is_owner: !!userId && team.owner_user_id === userId,
       my_role: myMembership?.role ?? null,

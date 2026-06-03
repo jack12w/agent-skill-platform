@@ -150,7 +150,9 @@ const en = {
   },
   team: {
     backToDashboard: 'Back to dashboard',
+    backToTeam: 'Back to team',
     yourRole: 'Your role',
+    manage: 'Manage',
     edit: 'Edit',
     delete: 'Delete',
     deleting: 'Deleting...',

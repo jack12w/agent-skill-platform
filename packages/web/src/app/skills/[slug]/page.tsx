@@ -102,7 +102,7 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
             <button onClick={() => handleDownload()} disabled={acting !== null || versions.length === 0} className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 mb-3 disabled:opacity-50 disabled:cursor-not-allowed">{acting === 'download' ? t('detail.downloading') : versions.length === 0 ? t('detail.noVersionYet') : `${t('detail.download')} v${versions.find((v) => v.id === skill.latest_version_id)?.version || versions[0]?.version || 'latest'}`}</button>
             <button onClick={handleLike} disabled={acting !== null} className="w-full py-3 border border-blue-600 text-blue-600 rounded-lg font-bold hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed">{acting === 'like' ? t('detail.liking') : t('detail.likeSkill')}</button>
           </div>
-          <div className="text-sm text-gray-500"><div>{t('detail.publishedBy')}: <span className="text-gray-900 font-medium">{ownerName}</span></div><div>{t('detail.lastUpdated')}: <span className="text-gray-900 font-medium">{skill.updated_at ? new Date(skill.updated_at).toLocaleDateString() : '-'}</span></div></div>
+          <div className="text-sm text-gray-500"><div>{t('detail.publishedBy')}: <Link href={`/users/${encodeURIComponent(ownerName)}`} className="text-blue-600 font-medium hover:underline">{ownerName}</Link></div><div>{t('detail.lastUpdated')}: <span className="text-gray-900 font-medium">{skill.updated_at ? new Date(skill.updated_at).toLocaleDateString() : '-'}</span></div></div>
 
           {/* ── 评论输入（右侧） ── */}
           <div className="p-4 border rounded-xl bg-white">

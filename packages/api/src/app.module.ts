@@ -5,6 +5,7 @@ import { SkillsModule } from './skills/skills.module';
 import { TeamsModule } from './teams/teams.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { StorageModule } from './storage/storage.module';
+import { UsersModule } from './users/users.module';
 import { HealthController } from './common/health.controller';
 import { AdminController } from './common/admin.controller';
 
@@ -38,6 +39,7 @@ import { AdminController } from './common/admin.controller';
     SkillsModule,
     TeamsModule,
     LeaderboardModule,
+    UsersModule,
   ],
   controllers: [HealthController, AdminController],
 })

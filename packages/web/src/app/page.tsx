@@ -69,7 +69,7 @@ export default function Home() {
               <div key={item.id} className="p-4 bg-gray-50 rounded-lg flex items-center gap-4 min-h-[5rem]">
                 <span className="text-2xl font-bold text-gray-300">#{i + 1}</span>
                 <div className="flex-1">
-                  <h3 className="font-bold">{item.name}</h3>
+                  <Link href={`/users/${encodeURIComponent(item.name)}`} className="font-bold text-blue-600 hover:underline">{item.name}</Link>
                   <p className="text-sm text-gray-500 truncate">{item.skill_count} {t('home.skills')} · {item.likes} ♥ · {item.downloads} ↓</p>
                 </div>
                 <span className="font-bold text-blue-600">{parseFloat(item.score).toFixed(1)} {t('home.score')}</span>

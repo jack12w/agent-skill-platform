@@ -1,6 +1,7 @@
 import { Controller, Post, Patch, Delete, Get, Body, UseGuards, Request, Param } from '@nestjs/common';
 import { TeamsService } from './teams.service';
 import { AuthGuard } from '../auth/auth.guard';
+import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 
 @Controller('teams')
 export class TeamsController {
@@ -18,10 +19,10 @@ export class TeamsController {
     return this.teamsService.getMyTeams(req.user.sub);
   }
 
-  @UseGuards(AuthGuard)
+  @UseGuards(OptionalAuthGuard)
   @Get(':id')
   findOne(@Param('id') id: string, @Request() req: any) {
-    return this.teamsService.findOne(id, req.user.sub);
+    return this.teamsService.findOne(id, req.user?.sub);
   }
 
   @UseGuards(AuthGuard)
