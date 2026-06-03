@@ -6,6 +6,12 @@ import useTranslation from '../../../hooks/useTranslation';
 
 export default function UserProfile({ params }: { params: { username: string } }) {
   const { t } = useTranslation();
+  // params.username may or may not be URL-decoded depending on Next.js version / middleware.
+  // Normalize: try to decode first, fall back to raw value.
+  const username = (() => {
+    try { return decodeURIComponent(params.username); }
+    catch { return params.username; }
+  })();
   const [user, setUser] = useState<any>(null);
   const [skills, setSkills] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -14,8 +20,8 @@ export default function UserProfile({ params }: { params: { username: string } }
   const load = async () => {
     try {
       const [userRes, skillsRes] = await Promise.all([
-        fetch(`/api/users/${encodeURIComponent(params.username)}`),
-        fetch(`/api/users/${encodeURIComponent(params.username)}/skills?size=50`),
+        fetch(`/api/users/${encodeURIComponent(username)}`),
+        fetch(`/api/users/${encodeURIComponent(username)}/skills?size=50`),
       ]);
 
       if (!userRes.ok) {
