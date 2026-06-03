@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import useTranslation from '../../../hooks/useTranslation';
 
@@ -19,8 +19,10 @@ export default function UserProfile({ params }: { params: { username: string } }
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const hasMore = skills.length < total && total > 0;
 
-  const load = async (pageNum: number = 1, append: boolean = false) => {
+  const load = useCallback(async (pageNum: number = 1, append: boolean = false) => {
     try {
       const [userRes, skillsRes] = await Promise.all([
         fetch(`/api/users/${encodeURIComponent(username)}`),
@@ -47,14 +49,32 @@ export default function UserProfile({ params }: { params: { username: string } }
       setLoading(false);
       setLoadingMore(false);
     }
-  };
+  }, [username]);
 
-  const loadMore = async () => {
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return;
     setLoadingMore(true);
     await load(page + 1, true);
-  };
+  }, [loadingMore, hasMore, page, load]);
 
-  useEffect(() => { setLoading(true); load(); }, [username]);
+  // Initial load
+  useEffect(() => { setLoading(true); load(); }, [load]);
+
+  // IntersectionObserver for infinite scroll
+  useEffect(() => {
+    if (!hasMore) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) loadMore();
+      },
+      { rootMargin: '200px' },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore]);
 
   if (loading) {
     return (
@@ -181,15 +201,9 @@ export default function UserProfile({ params }: { params: { username: string } }
             ))}
           </div>
         )}
-        {skills.length < total && (
-          <div className="mt-6 text-center">
-            <button
-              onClick={loadMore}
-              disabled={loadingMore}
-              className="px-6 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition"
-            >
-              {loadingMore ? t('skills.loading') : `加载更多 (${skills.length} / ${total})`}
-            </button>
+        {hasMore && (
+          <div ref={sentinelRef} className="mt-6 py-4 text-center text-sm text-gray-400">
+            {loadingMore ? t('skills.loading') : `${skills.length} / ${total}`}
           </div>
         )}
       </section>
