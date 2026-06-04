@@ -38,10 +38,15 @@ async function parseZipForSkillMd(file: File): Promise<{ name: string; descripti
       if (m) parsed[m[1]] = m[2].replace(/^['"]|['"]$/g, '').trim();
     }
 
-    // tags 字段可能是 [a, b] 或 a, b
+    // tags 字段可能是 [a, b] 或 a, b 或数组
     let tags = '';
     if (parsed.tags) {
-      tags = parsed.tags.replace(/^\[|\]$/g, '').replace(/['"]/g, '').trim();
+      // Normalize: array → comma-separated string, string → clean up
+      const raw = Array.isArray(parsed.tags)
+        ? parsed.tags.join(', ')
+        : String(parsed.tags).replace(/^\[|\]$/g, '').replace(/['"]/g, '');
+      // Split by both Chinese and English commas, trim, and rejoin
+      tags = raw.split(/[，,]\s*/).filter(Boolean).join(', ');
     }
 
     return {

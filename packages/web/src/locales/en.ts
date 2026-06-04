@@ -58,6 +58,7 @@ const en = {
     likeSkill: 'Like Skill',
     liking: 'Liking...',
     publishedBy: 'Published by',
+    teamLabel: 'Team',
     lastUpdated: 'Last updated',
     loginFirst: 'Please log in first',
     loginExpired: 'Login expired, please log in again',

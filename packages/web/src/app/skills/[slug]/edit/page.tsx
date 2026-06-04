@@ -93,7 +93,7 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
         <h2 className="text-lg font-bold mb-3">{t('edit.uploadVersion')}</h2>
         <p className="text-xs text-gray-500 mb-3">{t('edit.uploadHint')}（{t('edit.uploadLimitHint', { limit: 300 })}）</p>
         <textarea value={versionNotes} onChange={(e) => setVersionNotes(e.target.value)} placeholder={t('edit.versionNotesPlaceholder')} rows={2} className="w-full px-3 py-2 border rounded-lg text-sm mb-3" />
-        <div className="flex gap-3"><input ref={fileRef} type="file" accept=".zip" className="flex-1 text-sm" /><button type="button" onClick={handleUpload} disabled={uploading} className="px-5 py-2 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-700 disabled:opacity-50">{uploading ? t('edit.uploading') : t('edit.upload')}</button></div>
+        <div className="flex flex-col sm:flex-row gap-3"><input ref={fileRef} type="file" accept=".zip" className="flex-1 text-sm min-w-0" /><button type="button" onClick={handleUpload} disabled={uploading} className="w-full sm:w-auto px-5 py-2 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-700 disabled:opacity-50">{uploading ? t('edit.uploading') : t('edit.upload')}</button></div>
       </div>
 
       {/* ── 版本历史 ── */}

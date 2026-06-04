@@ -1,5 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToOne } from 'typeorm';
 import { User } from '../auth/user.entity';
+import { Team } from '../teams/team.entity';
 import { SkillStatus } from '@platform/shared';
 
 @Entity('skills')
@@ -46,6 +47,10 @@ export class Skill {
 
   @Column({ nullable: true })
   owner_team_id: string;
+
+  @ManyToOne(() => Team)
+  @JoinColumn({ name: 'owner_team_id' })
+  owner_team: Team;
 
   @Column({ nullable: true })
   latest_version_id: string;

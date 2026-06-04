@@ -58,6 +58,7 @@ const zh = {
     likeSkill: '点赞',
     liking: '点赞中...',
     publishedBy: '发布者',
+    teamLabel: '所属团队',
     lastUpdated: '最近更新',
     loginFirst: '请先登录',
     loginExpired: '登录已过期，请重新登录',

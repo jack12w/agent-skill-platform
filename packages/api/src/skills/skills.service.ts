@@ -436,9 +436,10 @@ export class SkillsService {
     const where = isUuid ? { id: idOrSlug } : { slug: idOrSlug };
     const skill = await this.skillRepository.findOne({
       where,
-      relations: ['owner_user', 'stats'],
+      relations: ['owner_user', 'owner_team', 'stats'],
       select: {
         owner_user: { id: true, name: true, avatar_url: true },
+        owner_team: { id: true, name: true },
       },
     });
     if (!skill) throw new NotFoundException();
