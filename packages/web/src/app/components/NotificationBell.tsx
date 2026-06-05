@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import useTranslation from '../../hooks/useTranslation';
 
 function loadUser() {
   try { const data = localStorage.getItem('user'); return data ? JSON.parse(data) : null; }
@@ -20,7 +19,6 @@ function setLastCheck(ts: string) {
 }
 
 export default function NotificationBell() {
-  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [comments, setComments] = useState<any[]>([]);
@@ -59,9 +57,9 @@ export default function NotificationBell() {
 
   const handleBellClick = () => {
     if (!open) {
+      // Mark as read — only clear badge, don't re-fetch (avoids overwriting existing comments)
       setLastCheck(new Date().toISOString());
       setUnread(0);
-      fetchNotifications();
     }
     setOpen(!open);
   };
@@ -88,12 +86,15 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {/* Dropdown */}
+      {/* Dropdown — responsive width, stays within viewport */}
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-11 z-40 bg-white border rounded-xl shadow-xl py-2 w-[300px] sm:w-[340px] max-h-[360px] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="px-4 py-2 text-sm font-medium text-gray-700 border-b">评论通知</div>
+          <div
+            className="absolute right-0 top-11 z-40 bg-white border rounded-xl shadow-xl py-2 w-[calc(100vw-24px)] max-w-[340px] max-h-[360px] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-2 text-sm font-medium text-gray-700 border-b sticky top-0 bg-white z-10">评论通知</div>
             {comments.length === 0 ? (
               <div className="px-4 py-6 text-center text-sm text-gray-400">暂无新评论</div>
             ) : (
