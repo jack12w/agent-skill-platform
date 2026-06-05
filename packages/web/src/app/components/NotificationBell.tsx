@@ -92,7 +92,7 @@ export default function NotificationBell() {
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-11 z-40 bg-white border rounded-xl shadow-xl py-2 w-[300px] sm:w-[340px] max-h-[360px] overflow-y-auto">
+          <div className="absolute right-0 top-11 z-40 bg-white border rounded-xl shadow-xl py-2 w-[300px] sm:w-[340px] max-h-[360px] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="px-4 py-2 text-sm font-medium text-gray-700 border-b">评论通知</div>
             {comments.length === 0 ? (
               <div className="px-4 py-6 text-center text-sm text-gray-400">暂无新评论</div>
@@ -101,7 +101,6 @@ export default function NotificationBell() {
                 <Link
                   key={c.id}
                   href={`/skills/${c.skill_slug || c.id}`}
-                  onClick={() => setOpen(false)}
                   className="block px-4 py-2.5 hover:bg-gray-50 transition border-b border-gray-50 last:border-0"
                 >
                   <div className="flex items-start gap-2.5">
