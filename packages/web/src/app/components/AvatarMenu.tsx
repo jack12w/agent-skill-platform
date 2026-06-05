@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import useTranslation from '../../hooks/useTranslation';
@@ -30,7 +30,6 @@ export default function AvatarMenu() {
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [recentComments, setRecentComments] = useState<any[]>([]);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const refreshUser = useCallback(() => setUser(loadUser()), []);
 
@@ -53,11 +52,24 @@ export default function AvatarMenu() {
 
   useEffect(() => { refreshUser(); }, [pathname, refreshUser]);
 
-  // Auto-fetch on mount and every 30 seconds
+  // Auto-fetch on mount and every 60s (pause when tab is hidden)
   useEffect(() => {
-    if (loadUser()) { fetchNotifications(); }
-    timerRef.current = setInterval(() => { if (loadUser()) fetchNotifications(); }, 30000);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    if (!loadUser()) return;
+    fetchNotifications();
+
+    const interval = setInterval(() => {
+      if (!document.hidden && loadUser()) fetchNotifications();
+    }, 60000);
+
+    const onVisible = () => {
+      if (loadUser()) fetchNotifications();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [fetchNotifications]);
 
   // Listen for user-updated events

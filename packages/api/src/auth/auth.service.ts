@@ -220,19 +220,11 @@ export class AuthService {
 
   // ── 未读评论通知 ────────────────────────
   async getUnreadComments(userId: string, since?: string) {
-    const skills = await this.skillRepository.find({
-      where: { owner_user_id: userId },
-      select: ['id'],
-    });
-    if (skills.length === 0) return { count: 0, comments: [] };
-
-    const skillIds = skills.map((s) => s.id);
-
     const qb = this.commentRepository
       .createQueryBuilder('c')
       .leftJoinAndSelect('c.user', 'user')
       .leftJoinAndSelect('c.skill', 'skill')
-      .where('c.skill_id IN (:...skillIds)', { skillIds })
+      .where('skill.owner_user_id = :userId', { userId })
       .andWhere('c.user_id != :userId', { userId });
 
     if (since) {
@@ -244,7 +236,7 @@ export class AuthService {
       .take(20)
       .getMany();
 
-    const count = comments.length;
+    const count = await qb.getCount();
 
     const items = comments.map((c) => ({
       id: c.id,
