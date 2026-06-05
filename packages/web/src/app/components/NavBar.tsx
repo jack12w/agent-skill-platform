@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import AvatarMenu from './AvatarMenu';
+import NotificationBell from './NotificationBell';
 import useTranslation from '../../hooks/useTranslation';
 
 export default function NavBar() {
@@ -51,14 +52,16 @@ export default function NavBar() {
           <span>{langLabel}</span>
           <svg className="w-3 h-3 ml-0.5" viewBox="0 0 1024 1024" fill="currentColor"><path d="M543.962 746.182l384.163-401.629c17.681-18.504 17.68-48.475 0-66.947s-46.361-18.474-64.043 0L511.953 645.8l-352.155-368.194c-17.68-18.474-46.331-18.474-64.012 0s-17.682 48.444 0 66.947L479.949 746.182c17.652 18.504 46.331 18.504 64.012 0z"/></svg>
         </div>
+        <NotificationBell />
         <AvatarMenu />
       </div>
 
-      {/* 移动端：搜索图标 + 头像 + 汉堡 */}
+      {/* 移动端：搜索图标 + 铃铛 + 头像 + 汉堡 */}
       <div className="flex md:hidden items-center gap-2 ml-auto">
         <button onClick={() => setShowMobileSearch(!showMobileSearch)} className="p-2 text-gray-500 hover:text-gray-700" aria-label="Search">
           <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
+        <NotificationBell />
         <AvatarMenu />
         <button onClick={() => setMenuOpen(!menuOpen)} className="p-2 -mr-2 text-gray-600 hover:text-gray-900" aria-label="Menu">
           {menuOpen ? (
