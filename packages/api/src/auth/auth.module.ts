@@ -5,10 +5,12 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { User } from './user.entity';
 import { VerificationCode } from './verification-code.entity';
+import { Skill } from '../skills/skill.entity';
+import { Comment } from '../skills/comment.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, VerificationCode]),
+    TypeOrmModule.forFeature([User, VerificationCode, Skill, Comment]),
     JwtModule.register({
       global: true,
       secret: process.env.JWT_SECRET || (() => { throw new Error('JWT_SECRET env var is required'); })(),

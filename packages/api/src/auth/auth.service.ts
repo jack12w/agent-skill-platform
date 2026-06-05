@@ -4,6 +4,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './user.entity';
 import { VerificationCode } from './verification-code.entity';
+import { Skill } from '../skills/skill.entity';
+import { Comment } from '../skills/comment.entity';
 import { OssService } from '../storage/oss.service';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
@@ -22,6 +24,10 @@ export class AuthService {
     private userRepository: Repository<User>,
     @InjectRepository(VerificationCode)
     private codeRepository: Repository<VerificationCode>,
+    @InjectRepository(Skill)
+    private skillRepository: Repository<Skill>,
+    @InjectRepository(Comment)
+    private commentRepository: Repository<Comment>,
     private jwtService: JwtService,
     private ossService: OssService,
   ) {}
@@ -210,5 +216,46 @@ export class AuthService {
       access_token: await this.jwtService.signAsync(payload),
       user: { id: user.id, email: user.email, name: user.name, avatar_url: user.avatar_url },
     };
+  }
+
+  // ── 未读评论通知 ────────────────────────
+  async getUnreadComments(userId: string, since?: string) {
+    const skills = await this.skillRepository.find({
+      where: { owner_user_id: userId },
+      select: ['id'],
+    });
+    if (skills.length === 0) return { count: 0, comments: [] };
+
+    const skillIds = skills.map((s) => s.id);
+
+    const qb = this.commentRepository
+      .createQueryBuilder('c')
+      .leftJoinAndSelect('c.user', 'user')
+      .leftJoinAndSelect('c.skill', 'skill')
+      .where('c.skill_id IN (:...skillIds)', { skillIds })
+      .andWhere('c.user_id != :userId', { userId });
+
+    if (since) {
+      qb.andWhere('c.created_at > :since', { since: new Date(since) });
+    }
+
+    const comments = await qb
+      .orderBy('c.created_at', 'DESC')
+      .take(20)
+      .getMany();
+
+    const count = comments.length;
+
+    const items = comments.map((c) => ({
+      id: c.id,
+      skill_name: (c.skill as any)?.name ?? 'Unknown',
+      skill_slug: (c.skill as any)?.slug ?? c.skill_id,
+      user_name: c.user?.name ?? 'Anonymous',
+      user_avatar: c.user?.avatar_url ?? null,
+      content: c.content.length > 80 ? c.content.slice(0, 80) + '...' : c.content,
+      created_at: c.created_at,
+    }));
+
+    return { count, comments: items };
   }
 }

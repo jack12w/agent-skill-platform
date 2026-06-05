@@ -61,6 +61,12 @@ export class AuthController {
     `;
   }
 
+  @UseGuards(AuthGuard)
+  @Get('unread-comments')
+  getUnreadComments(@Request() req: any, @Query('since') since?: string) {
+    return this.authService.getUnreadComments(req.user.sub, since);
+  }
+
   // ── 本地开发模拟微信登录 ──────────────────
   @Post('wechat/mock-login')
   async mockWechatLogin(@Body() body: { nickname?: string }) {
