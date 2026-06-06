@@ -90,7 +90,7 @@ export default function NotificationBell() {
         <>
           <div className="fixed inset-0 z-[55]" onClick={() => setOpen(false)} />
           <div
-            className="absolute left-0 right-0 mx-4 sm:left-auto sm:right-0 sm:mx-0 sm:w-[340px] top-11 z-[60] bg-white border rounded-xl shadow-xl max-h-[380px] overflow-y-auto"
+            className="fixed left-4 right-4 sm:left-auto sm:right-4 sm:w-[340px] top-14 z-[60] bg-white border rounded-xl shadow-xl max-h-[380px] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-4 py-2.5 text-sm font-medium text-gray-700 border-b sticky top-0 bg-white rounded-t-xl z-10 flex items-center justify-between">
