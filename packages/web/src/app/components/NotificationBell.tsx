@@ -90,10 +90,10 @@ export default function NotificationBell() {
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
           <div
-            className="absolute right-2 sm:right-0 top-11 z-40 bg-white border rounded-xl shadow-xl py-2 w-[280px] sm:w-[340px] max-w-[calc(100vw-16px)] max-h-[380px] overflow-y-auto"
+            className="absolute left-4 sm:left-auto sm:right-0 top-11 z-40 bg-white border rounded-xl shadow-xl w-[280px] sm:w-[340px] max-w-[calc(100vw-32px)] max-h-[380px] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-4 py-2 text-sm font-medium text-gray-700 border-b sticky top-0 bg-white z-10 flex items-center justify-between">
+            <div className="px-4 py-2.5 text-sm font-medium text-gray-700 border-b sticky top-0 bg-white rounded-t-xl z-10 flex items-center justify-between">
               <span>评论通知{unreadCount > 0 && <span className="ml-1 text-red-500">({unreadCount})</span>}</span>
             </div>
 
