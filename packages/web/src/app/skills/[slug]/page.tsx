@@ -53,15 +53,45 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
     finally { setActing(null); }
   };
 
-  const handleDownload = (versionId?: string) => {
+  const handleDownload = async (versionId?: string) => {
     if (!skill) return;
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) { alert(t('detail.loginFirst')); router.push('/auth'); return; }
     const key = versionId ? `dl:${versionId}` : 'download';
     setActing(key);
-    const url = versionId ? `/api/skills/${skill.id}/versions/${versionId}/download/file` : `/api/skills/${skill.id}/download/file`;
-    const a = document.createElement('a'); a.href = url; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => { setActing(null); reload(); }, 800);
+    try {
+      const url = versionId ? `/api/skills/${skill.id}/versions/${versionId}/download/file` : `/api/skills/${skill.id}/download/file`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.status === 401) { alert(t('detail.loginExpired')); router.push('/auth'); return; }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition');
+      let filename = 'skill.zip';
+      if (disposition) {
+        const utf8Match = disposition.match(/filename\*=UTF-8''(.+)/);
+        if (utf8Match) {
+          filename = decodeURIComponent(utf8Match[1]);
+        } else {
+          const match = disposition.match(/filename="(.+)"/);
+          if (match) filename = match[1];
+        }
+      }
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (e: any) {
+      alert('下载失败: ' + (e.message || '未知错误'));
+    } finally {
+      setActing(null);
+      reload();
+    }
   };
 
   if (loading) return <div className="max-w-5xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center text-gray-500">{t('skills.loading')}</div>;
