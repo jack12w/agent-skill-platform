@@ -40,9 +40,14 @@ function initLang(): Lang {
 }
 
 export default function useTranslation() {
-  const [lang, setLang] = useState<Lang>(() => initLang());
+  // SSR 阶段不读取 cookie/window，避免 hydrate mismatch
+  const [lang, setLang] = useState<Lang>(globalLang);
 
   useEffect(() => {
+    // 客户端初始化：从 cookie/window 读取真实语言偏好
+    const realLang = initLang();
+    if (realLang !== lang) setLang(realLang);
+
     const listener = () => setLang(globalLang);
     listeners.add(listener);
     return () => { listeners.delete(listener); };
