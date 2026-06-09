@@ -89,9 +89,10 @@ export class SkillsController {
     return this.skillsService.recordEvent(id, EventType.LIKE, req.user.sub);
   }
 
+  @UseGuards(AuthGuard)
   @Get(':id/download/file')
   async downloadFile(@Param('id') id: string, @Request() req: any, @Res() res: Response) {
-    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user?.sub);
+    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub);
     const { buffer, filename, raw } = await this.skillsService.streamDownload(id);
     res.set({
       'Content-Type': 'application/zip',
@@ -100,6 +101,7 @@ export class SkillsController {
     res.send(buffer);
   }
 
+  @UseGuards(AuthGuard)
   @Get(':id/versions/:versionId/download/file')
   async downloadVersionFile(
     @Param('id') id: string,
@@ -107,7 +109,7 @@ export class SkillsController {
     @Request() req: any,
     @Res() res: Response,
   ) {
-    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user?.sub);
+    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub);
     const { buffer, filename, raw } = await this.skillsService.streamDownload(id, versionId);
     res.set({
       'Content-Type': 'application/zip',
@@ -116,14 +118,16 @@ export class SkillsController {
     res.send(buffer);
   }
 
+  @UseGuards(AuthGuard)
   @Get(':id/download')
   async download(@Param('id') id: string, @Request() req: any) {
     // Resolve the real package URL of the latest version, then record the event.
     const result = await this.skillsService.getDownloadUrl(id);
-    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user?.sub);
+    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub);
     return result;
   }
 
+  @UseGuards(AuthGuard)
   @Get(':id/versions/:versionId/download')
   async downloadVersion(
     @Param('id') id: string,
@@ -131,7 +135,7 @@ export class SkillsController {
     @Request() req: any,
   ) {
     const result = await this.skillsService.getDownloadUrl(id, versionId);
-    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user?.sub);
+    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub);
     return result;
   }
 

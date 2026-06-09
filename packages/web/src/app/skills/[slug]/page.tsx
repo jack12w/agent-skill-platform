@@ -55,6 +55,8 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
 
   const handleDownload = (versionId?: string) => {
     if (!skill) return;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) { alert(t('detail.loginFirst')); router.push('/auth'); return; }
     const key = versionId ? `dl:${versionId}` : 'download';
     setActing(key);
     const url = versionId ? `/api/skills/${skill.id}/versions/${versionId}/download/file` : `/api/skills/${skill.id}/download/file`;
