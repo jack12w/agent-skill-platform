@@ -11,7 +11,7 @@ export class TagGroup {
   @Column()
   name: string; // 显示名称：来源、场景、角色、分类
 
-  @Column('simple-array')
+  @Column('text', { array: true, default: '{}' })
   tags: string[];
 
   @CreateDateColumn()
