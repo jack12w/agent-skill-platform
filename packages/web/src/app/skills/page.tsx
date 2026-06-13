@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import useTranslation from '../../hooks/useTranslation';
+import { fetchTagGroups } from '../../lib/tag-groups';
 
 /* ── 预设标签分组 ── */
-const TAG_GROUPS: Record<string, string[]> = {
+const FALLBACK_TAG_GROUPS: Record<string, string[]> = {
   source: ['精选', '社区'],
   scene: ['workbuddy', 'accio work', '阿里国际站', '国际站生意助手'],
   role: ['老板', '管理', '运营', '业务', '美工', '市场', '采购', '供应链', '社媒'],
@@ -25,6 +26,9 @@ function SkillSquareInner() {
   const [sort, setSort] = useState('weekly');
   const [query, setQuery] = useState(searchParam);
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set(tagsParam ? tagsParam.split(',').filter(Boolean) : []));
+  const [tagGroups, setTagGroups] = useState(FALLBACK_TAG_GROUPS);
+
+  useEffect(() => { fetchTagGroups().then(g => { if (Object.keys(g).length) setTagGroups(g); }); }, []);
 
   const activeTagsStr = Array.from(activeTags).join(',');
 
@@ -61,7 +65,7 @@ function SkillSquareInner() {
   }, [activeTags, sort, query]);
 
   const getTagGroup = (tag: string): string | null => {
-    for (const [group, tags] of Object.entries(TAG_GROUPS)) {
+    for (const [group, tags] of Object.entries(tagGroups)) {
       if (tags.includes(tag)) return group;
     }
     return null;
@@ -76,7 +80,7 @@ function SkillSquareInner() {
       } else {
         // 单选：先清除同组所有标签，再添加新标签
         if (group) {
-          (TAG_GROUPS[group] || []).forEach(t => next.delete(t));
+          (tagGroups[group] || []).forEach(t => next.delete(t));
         }
         next.add(tag);
       }
@@ -85,7 +89,7 @@ function SkillSquareInner() {
   };
 
   const clearGroup = (group: string) => {
-    const groupTags = TAG_GROUPS[group] || [];
+    const groupTags = tagGroups[group] || [];
     setActiveTags(prev => {
       const next = new Set(prev);
       groupTags.forEach(t => next.delete(t));
@@ -108,7 +112,7 @@ function SkillSquareInner() {
       {/* ── 分类筛选 ── */}
       <div className="mb-6 space-y-3">
         {GROUP_KEYS.map(group => {
-          const tags = TAG_GROUPS[group];
+          const tags = tagGroups[group];
           const allKey = group === 'source' ? 'allSource' : group === 'scene' ? 'allScene' : group === 'role' ? 'allRole' : 'allCategory';
           const hasActive = tags.some(t => activeTags.has(t));
           return (

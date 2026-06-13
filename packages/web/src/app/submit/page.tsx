@@ -5,14 +5,15 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import MDEditor from '@uiw/react-md-editor';
 import useTranslation from '../../hooks/useTranslation';
+import { fetchTagGroups } from '../../lib/tag-groups';
 
 /* ── 预设标签分组（不含来源，来源=社区默认且不可更改） ── */
-const PRESET_TAG_GROUPS: Record<string, string[]> = {
+const FALLBACK_PRESET_TAGS: Record<string, string[]> = {
   scene: ['workbuddy', 'accio work', '阿里国际站', '国际站生意助手'],
   role: ['老板', '管理', '运营', '业务', '美工', '市场', '采购', '供应链', '社媒'],
   category: ['选品洞察', 'Listing优化', '广告投放', '客户服务', '数据分析', '社媒营销', '供应链物流', '合规风控'],
 };
-const PRESET_GROUP_KEYS = ['scene', 'role', 'category'] as const;
+const GROUP_KEYS = ['scene', 'role', 'category'] as const;
 
 /** 从 ZIP 文件中解析 SKILL.md 的 YAML frontmatter 和正文 */
 async function parseZipForSkillMd(file: File): Promise<{ name: string; description: string; content_md: string; tags: string } | null> {
@@ -76,6 +77,9 @@ export default function SubmitSkill() {
   const [file, setFile] = useState<File | null>(null);
   const [myTeams, setMyTeams] = useState<any[]>([]);
   const [parsing, setParsing] = useState(false);
+  const [tagGroups, setTagGroups] = useState(FALLBACK_PRESET_TAGS);
+
+  useEffect(() => { fetchTagGroups().then(g => { const filtered: Record<string, string[]> = {}; for (const k of GROUP_KEYS) if (g[k]) filtered[k] = g[k]; if (Object.keys(filtered).length) setTagGroups(filtered); }); }, []);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -219,11 +223,11 @@ export default function SubmitSkill() {
           {/* ── 预设标签 ── */}
           <div className="mt-3 space-y-2">
             <span className="text-xs text-gray-400">{t('tags.presetTags')}</span>
-            {PRESET_GROUP_KEYS.map(group => (
+            {GROUP_KEYS.map(group => (
               <div key={group} className="flex items-center gap-2">
                 <span className="text-xs text-gray-400 shrink-0 w-10">{t(`tags.${group}`)}:</span>
                 <div className="flex gap-1 flex-wrap">
-                  {PRESET_TAG_GROUPS[group].map(tag => (
+                  {tagGroups[group].map(tag => (
                     <button
                       key={tag}
                       type="button"

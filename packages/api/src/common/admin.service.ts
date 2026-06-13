@@ -7,6 +7,7 @@ import { Team } from '../teams/team.entity';
 import { Comment } from '../skills/comment.entity';
 import { Event } from '../skills/event.entity';
 import { AdminLog } from './admin-log.entity';
+import { TagGroup } from './tag-group.entity';
 import { SkillStatus } from '@platform/shared';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class AdminService {
     @InjectRepository(Comment) private commentRepo: Repository<Comment>,
     @InjectRepository(Event) private eventRepo: Repository<Event>,
     @InjectRepository(AdminLog) private logRepo: Repository<AdminLog>,
+    @InjectRepository(TagGroup) private tagGroupRepo: Repository<TagGroup>,
   ) {}
 
   async getStats() {
@@ -237,5 +239,40 @@ export class AdminService {
       publicBaseUrl: process.env.PUBLIC_BASE_URL || '',
       nodeEnv: process.env.NODE_ENV || 'development',
     };
+  }
+
+  // ── 标签分组管理 ──────────────────────────
+  async listTagGroups() {
+    return this.tagGroupRepo.find({ order: { created_at: 'ASC' } });
+  }
+
+  async createTagGroup(data: { key: string; name: string; tags: string[] }) {
+    return this.tagGroupRepo.save(data);
+  }
+
+  async updateTagGroup(id: string, data: { name?: string; tags?: string[] }) {
+    const g = await this.tagGroupRepo.findOneBy({ id });
+    if (!g) throw new NotFoundException('Tag group not found');
+    await this.tagGroupRepo.update(id, data);
+    return { ok: true };
+  }
+
+  async deleteTagGroup(id: string) {
+    await this.tagGroupRepo.delete({ id });
+    return { ok: true };
+  }
+
+  /** 初始化标签分组（幂等，服务器启动时调用） */
+  async seedTagGroups() {
+    const defaults = [
+      { key: 'source', name: '来源', tags: ['精选', '社区'] },
+      { key: 'scene', name: '场景', tags: ['workbuddy', 'accio work', '阿里国际站', '国际站生意助手'] },
+      { key: 'role', name: '角色', tags: ['老板', '管理', '运营', '业务', '美工', '市场', '采购', '供应链', '社媒'] },
+      { key: 'category', name: '分类', tags: ['选品洞察', 'Listing优化', '广告投放', '客户服务', '数据分析', '社媒营销', '供应链物流', '合规风控'] },
+    ];
+    for (const g of defaults) {
+      const exists = await this.tagGroupRepo.findOneBy({ key: g.key });
+      if (!exists) await this.tagGroupRepo.save(g);
+    }
   }
 }

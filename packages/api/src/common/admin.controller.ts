@@ -106,4 +106,17 @@ export class AdminController {
   // ── 设置 ──
   @Get('settings')
   getSettings() { return this.adminService.getSettings(); }
+
+  // ── 标签分组 ──
+  @Get('tag-groups')
+  listTagGroups() { return this.adminService.listTagGroups(); }
+
+  @Post('tag-groups')
+  createTagGroup(@Body() b: any) { return this.adminService.createTagGroup(b); }
+
+  @Patch('tag-groups/:id')
+  updateTagGroup(@Param('id') id: string, @Body() b: any) { return this.adminService.updateTagGroup(id, b); }
+
+  @Delete('tag-groups/:id')
+  deleteTagGroup(@Param('id') id: string) { return this.adminService.deleteTagGroup(id); }
 }
