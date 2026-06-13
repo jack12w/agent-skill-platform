@@ -51,7 +51,7 @@ export default function HubTeamsPage() {
             {(data?.items || []).map((t: any) => (
               <tr key={t.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
-                  {editing?.id === t.id ? (
+                  {editing !== null && editing.id === t.id ? (
                     <div className="flex flex-col gap-2">
                       <input type="text" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="px-2 py-1 text-sm border rounded" />
                       <input type="text" value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })} className="px-2 py-1 text-sm border rounded" placeholder="Description" />
