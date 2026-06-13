@@ -183,7 +183,8 @@ export default function UserProfile({ params }: { params: { username: string } }
                     )}
                   </div>
                 )}
-                <div className="flex items-center justify-end gap-4 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">
+                <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-gray-100 text-xs text-gray-400">
+                  <div className="flex items-center gap-3">
                   <span className="flex items-center gap-1">
                     <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="#f87171">
                       <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
@@ -196,7 +197,8 @@ export default function UserProfile({ params }: { params: { username: string } }
                     </svg>
                     {s.downloads_total}
                   </span>
-                  <span className="flex items-center gap-1">
+                  </div>
+                  <span className="text-right shrink-0">
                     {s.latest_version ? `v${s.latest_version.version}` : '—'}
                     {s.updated_at && ` · ${new Date(s.updated_at).toLocaleDateString()}`}
                   </span>
