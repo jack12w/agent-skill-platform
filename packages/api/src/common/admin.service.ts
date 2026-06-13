@@ -5,6 +5,7 @@ import { Skill } from '../skills/skill.entity';
 import { User } from '../auth/user.entity';
 import { Team } from '../teams/team.entity';
 import { Comment } from '../skills/comment.entity';
+import { SkillStatus } from '@platform/shared';
 
 @Injectable()
 export class AdminService {
@@ -22,7 +23,7 @@ export class AdminService {
         this.userRepo.count(),
         this.teamRepo.count(),
         this.commentRepo.count(),
-        this.skillRepo.count({ where: { status: 'published' } }),
+        this.skillRepo.count({ where: { status: SkillStatus.PUBLISHED } }),
       ]);
 
     return {
