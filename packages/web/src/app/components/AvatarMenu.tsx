@@ -12,6 +12,15 @@ function loadUser() {
   } catch { return null; }
 }
 
+function isAdmin(): boolean {
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) return false;
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.role === 'admin';
+  } catch { return false; }
+}
+
 export default function AvatarMenu() {
   const router = useRouter();
   const pathname = usePathname();
@@ -52,6 +61,9 @@ export default function AvatarMenu() {
           <div className="absolute right-0 top-10 z-20 bg-white border rounded-lg shadow-lg py-1 min-w-[140px]">
             <div className="px-4 py-2 text-sm text-gray-500 border-b">{user.name || user.email}</div>
             <Link href="/dashboard" onClick={() => setOpen(false)} className="block px-4 py-2 text-sm hover:bg-gray-50">{t('avatar.dashboard')}</Link>
+            {isAdmin() && (
+              <Link href="/hub" onClick={() => setOpen(false)} className="block px-4 py-2 text-sm text-blue-600 hover:bg-gray-50">{t('admin.hub')}</Link>
+            )}
             <button onClick={() => { localStorage.removeItem('token'); localStorage.removeItem('user'); setOpen(false); setUser(null); router.push('/'); }} className="block w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-gray-50">{t('avatar.logout')}</button>
           </div>
         </>
