@@ -14,6 +14,7 @@ import { Skill } from './skills/skill.entity';
 import { User } from './auth/user.entity';
 import { Team } from './teams/team.entity';
 import { Comment } from './skills/comment.entity';
+import { Event } from './skills/event.entity';
 
 @Module({
   imports: [
@@ -40,7 +41,7 @@ import { Comment } from './skills/comment.entity';
       retryAttempts: process.env.NODE_ENV === 'production' ? 10 : 2,
       retryDelay: 3000,
     }),
-    TypeOrmModule.forFeature([Skill, User, Team, Comment]),
+    TypeOrmModule.forFeature([Skill, User, Team, Comment, Event]),
     StorageModule,
     AuthModule,
     SkillsModule,

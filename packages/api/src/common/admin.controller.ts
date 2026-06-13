@@ -1,4 +1,4 @@
-import { Controller, Post, Get, UseGuards, HttpCode, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, UseGuards, HttpCode, HttpException, HttpStatus, Query, Body, Param } from '@nestjs/common';
 import { StatsAggregationService } from '../stats-aggregation.service';
 import { AdminService } from './admin.service';
 import { AdminGuard } from './admin.guard';
@@ -40,5 +40,32 @@ export class AdminController {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  /**
+   * GET /admin/skills
+   * List all skills with search/filter/pagination
+   */
+  @Get('skills')
+  async listSkills(@Query() q: any) {
+    return this.adminService.listSkills(q);
+  }
+
+  /**
+   * PATCH /admin/skills/batch
+   * Batch publish/unpublish/delete/retag skills
+   */
+  @Patch('skills/batch')
+  async batchUpdateSkills(@Body() body: { ids: string[]; action: string; tags?: string[] }) {
+    return this.adminService.batchUpdateSkills(body.ids, body.action, { tags: body.tags });
+  }
+
+  /**
+   * PATCH /admin/skills/:id
+   * Edit a single skill (admin override)
+   */
+  @Patch('skills/:id')
+  async updateSkill(@Param('id') id: string, @Body() body: any) {
+    return this.adminService.updateSkill(id, body);
   }
 }
