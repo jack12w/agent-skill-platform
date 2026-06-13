@@ -133,4 +133,8 @@ export class AdminController {
   rejectSkill(@Param('id') id: string, @Request() req: any) {
     return this.adminService.rejectSkill(id);
   }
+
+  // ── 统计 ──
+  @Get('analytics')
+  getAnalytics() { return this.adminService.getAnalytics(); }
 }

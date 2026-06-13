@@ -13,6 +13,12 @@ interface Stats {
   topSkills: { id: string; name: string; slug: string; tags: string[]; score: number }[];
 }
 
+interface Analytics {
+  totalPV: number; todayPV: number; uv7d: number;
+  trends: { date: string; count: number; uv: number }[];
+  topPages: { path: string; count: number }[];
+}
+
 function getToken() {
   try { return localStorage.getItem('token'); } catch { return null; }
 }
@@ -20,18 +26,26 @@ function getToken() {
 export default function HubPage() {
   const { t } = useTranslation();
   const [stats, setStats] = useState<Stats | null>(null);
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstanceRef = useRef<any>(null);
+  const analyticsChartRef = useRef<HTMLCanvasElement>(null);
+  const analyticsChartInstRef = useRef<any>(null);
 
   useEffect(() => {
     const token = getToken();
     if (!token) return;
     fetch('/api/admin/stats', { headers: { Authorization: `Bearer ${token}` } })
       .then(res => { if (!res.ok) throw new Error('Forbidden'); return res.json(); })
-      .then(data => { setStats(data); setLoading(false); })
-      .catch(err => { setError(err.message); setLoading(false); });
+      .then(data => { setStats(data); })
+      .catch(err => { setError(err.message); });
+
+    fetch('/api/admin/analytics', { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => { setAnalytics(data); setLoading(false); })
+      .catch(() => { setLoading(false); });
   }, []);
 
   // Render chart when stats load
@@ -72,6 +86,32 @@ export default function HubPage() {
     return () => { if (script.parentNode) script.parentNode.removeChild(script); };
   }, [stats, t]);
 
+  // Analytics chart
+  useEffect(() => {
+    if (!analytics?.trends?.length) return;
+    const Chart = (window as any).Chart;
+    if (!Chart || !analyticsChartRef.current) return;
+    if (analyticsChartInstRef.current) analyticsChartInstRef.current.destroy();
+
+    const labels = analytics.trends.map(d => d.date.slice(5));
+    analyticsChartInstRef.current = new Chart(analyticsChartRef.current, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'PV', data: analytics.trends.map(d => Number(d.count) || 0), borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)', fill: true, tension: 0.3 },
+          { label: 'UV', data: analytics.trends.map(d => Number(d.uv) || 0), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', fill: true, tension: 0.3 },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: true, position: 'bottom' as const } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+      },
+    });
+  }, [analytics]);
+
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>;
   if (error) return <div className="flex items-center justify-center h-64"><p className="text-red-500 text-sm">{error}</p></div>;
 
@@ -108,7 +148,6 @@ export default function HubPage() {
         </div>
       )}
 
-      {/* Top 10 */}
       {stats && stats.topSkills.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-5">
           <h2 className="text-sm font-semibold text-gray-700 mb-3">Top 10</h2>
@@ -122,6 +161,48 @@ export default function HubPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Analytics section */}
+      {analytics && (
+        <>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3 mt-8">Website Analytics</h2>
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-violet-700">{analytics.totalPV.toLocaleString()}</p>
+              <p className="text-xs text-violet-500">Total PV</p>
+            </div>
+            <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-violet-700">{analytics.todayPV}</p>
+              <p className="text-xs text-violet-500">Today PV</p>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-amber-700">{analytics.uv7d.toLocaleString()}</p>
+              <p className="text-xs text-amber-500">7-Day UV</p>
+            </div>
+          </div>
+
+          {analytics.trends.length > 0 && (
+            <div className="bg-white border border-gray-200 rounded-xl p-5 mb-4">
+              <h2 className="text-sm font-semibold text-gray-700 mb-3">PV / UV Trends</h2>
+              <div style={{ height: 200 }}><canvas ref={analyticsChartRef} /></div>
+            </div>
+          )}
+
+          {analytics.topPages.length > 0 && (
+            <div className="bg-white border border-gray-200 rounded-xl p-5 mb-4">
+              <h2 className="text-sm font-semibold text-gray-700 mb-3">Top Pages (7d)</h2>
+              <div className="space-y-1">
+                {analytics.topPages.map((p: any) => (
+                  <div key={p.path} className="flex items-center justify-between px-3 py-1.5 rounded hover:bg-gray-50">
+                    <span className="text-sm text-gray-700 truncate">{p.path}</span>
+                    <span className="text-xs text-gray-400 shrink-0 ml-4">{p.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

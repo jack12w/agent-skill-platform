@@ -8,6 +8,7 @@ import { Comment } from '../skills/comment.entity';
 import { Event } from '../skills/event.entity';
 import { AdminLog } from './admin-log.entity';
 import { TagGroup } from './tag-group.entity';
+import { PageView } from './page-view.entity';
 import { SkillStatus } from '@platform/shared';
 
 @Injectable()
@@ -20,6 +21,7 @@ export class AdminService {
     @InjectRepository(Event) private eventRepo: Repository<Event>,
     @InjectRepository(AdminLog) private logRepo: Repository<AdminLog>,
     @InjectRepository(TagGroup) private tagGroupRepo: Repository<TagGroup>,
+    @InjectRepository(PageView) private pvRepo: Repository<PageView>,
   ) {}
 
   async getStats() {
@@ -304,5 +306,47 @@ export class AdminService {
     if (!skill) throw new NotFoundException('Skill not found');
     await this.skillRepo.update(id, { status: SkillStatus.ARCHIVED });
     return { ok: true };
+  }
+
+  // ── 网站统计 ──────────────────────────────
+  async getAnalytics() {
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+
+    const [totalPV, todayPV, dailyPV, topPages] = await Promise.all([
+      this.pvRepo.count(),
+      this.pvRepo.createQueryBuilder('pv')
+        .where('pv.created_at >= :d', { d: new Date(now.getFullYear(), now.getMonth(), now.getDate()) })
+        .getCount(),
+      this.pvRepo.createQueryBuilder('pv')
+        .select("DATE(pv.created_at) as date")
+        .addSelect("COUNT(*)::int", 'count')
+        .addSelect("COUNT(DISTINCT pv.ip_hash)::int", 'uv')
+        .where('pv.created_at >= :d', { d: sevenDaysAgo })
+        .groupBy("DATE(pv.created_at)")
+        .orderBy('date', 'ASC')
+        .getRawMany(),
+      this.pvRepo.createQueryBuilder('pv')
+        .select('pv.path', 'path')
+        .addSelect("COUNT(*)::int", 'count')
+        .where('pv.created_at >= :d', { d: sevenDaysAgo })
+        .groupBy('pv.path')
+        .orderBy('count', 'DESC')
+        .limit(10)
+        .getRawMany(),
+    ]);
+
+    const uniqueIPs7d = await this.pvRepo.createQueryBuilder('pv')
+      .select('COUNT(DISTINCT pv.ip_hash)::int', 'uv')
+      .where('pv.created_at >= :d', { d: sevenDaysAgo })
+      .getRawOne();
+
+    return {
+      totalPV,
+      todayPV,
+      uv7d: Number(uniqueIPs7d?.uv) || 0,
+      trends: dailyPV,
+      topPages,
+    };
   }
 }

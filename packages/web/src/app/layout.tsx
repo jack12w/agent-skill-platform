@@ -4,6 +4,7 @@ import './globals.css';
 import NavBar from './components/NavBar';
 import AuthProvider from './components/AuthProvider';
 import LangInit from './components/LangInit';
+import AnalyticsTracker from './components/AnalyticsTracker';
 import { WebSiteSchema, OrganizationSchema } from '../lib/structured-data';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
@@ -104,6 +105,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-sans">
         <LangInit lang={shortLang} />
         <AuthProvider>
+          <AnalyticsTracker />
           <NavBar />
           <main className="min-h-screen">{children}</main>
           <footer className="p-6 sm:p-10 border-t text-center text-gray-500 text-sm space-y-1">
