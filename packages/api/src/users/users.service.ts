@@ -57,7 +57,7 @@ export class UsersService {
 
     const [skills, total] = await this.skillRepository.findAndCount({
       where: { owner_user_id: user.id },
-      relations: ['stats', 'owner_user'],
+      relations: ['stats', 'owner_user', 'latest_version'],
       order: { created_at: 'DESC' },
       skip: (page - 1) * size,
       take: size,
@@ -71,6 +71,8 @@ export class UsersService {
       cover_url: skill.cover_url,
       tags: skill.tags,
       created_at: skill.created_at,
+      updated_at: skill.updated_at,
+      latest_version: skill.latest_version ? { version: skill.latest_version.version } : null,
       likes_total: skill.stats?.likes_total ?? 0,
       downloads_total: skill.stats?.downloads_total ?? 0,
       total_score: skill.stats?.total_score ?? 5,

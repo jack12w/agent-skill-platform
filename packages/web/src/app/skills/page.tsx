@@ -144,10 +144,9 @@ function SkillSquareInner() {
             <Link key={skill.id} href={`/skills/${skill.slug || skill.id}`} className="group p-6 border rounded-2xl hover:border-blue-500 transition-all hover:shadow-lg flex flex-col">
               <h3 className="text-xl font-bold mb-2 group-hover:text-blue-600">{skill.name}</h3>
               <p className="text-gray-600 text-sm mb-3 line-clamp-2">{skill.short_summary || skill.summary}</p>
-              <div className="flex gap-2 mb-4 flex-wrap">
-                {(skill.tags ?? []).map((tag: string) => (
-                  <button key={tag} onClick={(e) => { e.preventDefault(); toggleTag(tag); }} className="text-xs px-2 py-1 bg-gray-100 rounded text-gray-500 hover:bg-blue-50 hover:text-blue-600 cursor-pointer">{tt(tag)}</button>
-                ))}
+              <div className="text-xs text-gray-400 mt-auto mb-4">
+                {skill.latest_version ? `v${skill.latest_version.version}` : '—'}
+                {skill.updated_at && ` · ${new Date(skill.updated_at).toLocaleDateString()}`}
               </div>
               <div className="flex items-center justify-between pt-4 border-t mt-auto">
                 <div className="flex items-center gap-2">

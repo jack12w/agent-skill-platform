@@ -57,6 +57,7 @@ export class SkillsService {
         .leftJoin('skill.stats', 'stats')
         .leftJoin('skill.owner_user', 'owner_user')
         .leftJoin('events', 'e', `skill.id = e.skill_id AND e.created_at >= ${intervalExpr}`)
+        .leftJoin('skill_versions', 'lv', 'skill.latest_version_id = lv.id')
         // Entity columns → resolved from TypeORM metadata (no typos)
         .select([
           'skill.id', 'skill.name', 'skill.slug', 'skill.short_summary', 'skill.content_md',
@@ -73,6 +74,7 @@ export class SkillsService {
         .addSelect('owner_user.id', 'owner_id')
         .addSelect('owner_user.name', 'owner_name')
         .addSelect('owner_user.avatar_url', 'owner_avatar_url')
+        .addSelect('lv.version', 'latest_version')
         // Computed aggregates (still raw, but no entity column names here)
         .addSelect("COUNT(CASE WHEN e.type = 'like' THEN 1 END)::int", '_likes')
         .addSelect("COUNT(CASE WHEN e.type = 'download' THEN 1 END)::int", '_downloads')
@@ -110,6 +112,7 @@ export class SkillsService {
         owner_team_id: row.skill_owner_team_id,
         created_at: row.skill_created_at,
         updated_at: row.skill_updated_at,
+        latest_version: row.latest_version ? { version: row.latest_version } : null,
         stats: {
           skill_id: row.skill_id,
           likes_total: Number(row.likes_total) || 0,
@@ -151,7 +154,7 @@ export class SkillsService {
 
     const skills = await this.skillRepository.find({
       where,
-      relations: ['owner_user', 'stats'],
+      relations: ['owner_user', 'stats', 'latest_version'],
       select: {
         owner_user: { id: true, name: true, avatar_url: true },
       },

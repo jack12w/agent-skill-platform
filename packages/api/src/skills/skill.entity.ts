@@ -2,6 +2,7 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateCol
 import { User } from '../auth/user.entity';
 import { Team } from '../teams/team.entity';
 import { SkillStatus } from '@platform/shared';
+import { SkillVersion } from './skill-version.entity';
 
 @Entity('skills')
 export class Skill {
@@ -54,6 +55,10 @@ export class Skill {
 
   @Column({ nullable: true })
   latest_version_id: string;
+
+  @OneToOne(() => SkillVersion)
+  @JoinColumn({ name: 'latest_version_id' })
+  latest_version: SkillVersion;
 
   @CreateDateColumn()
   created_at: Date;

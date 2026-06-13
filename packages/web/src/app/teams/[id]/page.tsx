@@ -167,6 +167,10 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
                     </svg>
                     {s.stats?.downloads_total ?? 0}
                   </span>
+                  <span>
+                    {s.latest_version ? `v${s.latest_version.version}` : '—'}
+                    {s.updated_at && ` · ${new Date(s.updated_at).toLocaleDateString()}`}
+                  </span>
                 </div>
               </Link>
             ))}

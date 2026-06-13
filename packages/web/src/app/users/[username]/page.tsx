@@ -196,6 +196,10 @@ export default function UserProfile({ params }: { params: { username: string } }
                     </svg>
                     {s.downloads_total}
                   </span>
+                  <span className="flex items-center gap-1">
+                    {s.latest_version ? `v${s.latest_version.version}` : '—'}
+                    {s.updated_at && ` · ${new Date(s.updated_at).toLocaleDateString()}`}
+                  </span>
                 </div>
               </Link>
             ))}
