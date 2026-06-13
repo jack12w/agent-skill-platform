@@ -189,12 +189,12 @@ export class AdminService {
   async listTeams(query: { page?: number; size?: number; search?: string }) {
     const { page = 1, size = 20, search } = query;
     const qb = this.teamRepo.createQueryBuilder('t')
-      .leftJoin('t.members', 'm')
+      .leftJoin('team_members', 'm', 'm.team_id = t.id')
       .addSelect('t.id', 'id')
       .addSelect('t.name', 'name')
       .addSelect('t.description', 'description')
       .addSelect('t.created_at', 'created_at')
-      .addSelect('COALESCE(COUNT(m.id), 0)::int', 'member_count')
+      .addSelect('COALESCE(COUNT(m.user_id), 0)::int', 'member_count')
       .groupBy('t.id')
       .orderBy('t.created_at', 'DESC')
       .limit(size).offset((page - 1) * size);
