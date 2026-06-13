@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import useTranslation from '../../../hooks/useTranslation';
+import useTranslation from '../../hooks/useTranslation';
 
 interface Stats {
   skills: { total: number; published: number };
