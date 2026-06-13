@@ -101,7 +101,7 @@ export default function HubPage() {
       </div>
 
       {/* Chart */}
-      {stats?.trends?.length > 0 && (
+      {stats && stats.trends.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-5 mb-8">
           <h2 className="text-sm font-semibold text-gray-700 mb-4">{t('admin.overview')}</h2>
           <div style={{ height: 240 }}><canvas ref={chartRef} /></div>
@@ -109,7 +109,7 @@ export default function HubPage() {
       )}
 
       {/* Top 10 */}
-      {stats?.topSkills?.length > 0 && (
+      {stats && stats.topSkills.length > 0 && (
         <div className="bg-white border border-gray-200 rounded-xl p-5">
           <h2 className="text-sm font-semibold text-gray-700 mb-3">Top 10</h2>
           <div className="space-y-1">
