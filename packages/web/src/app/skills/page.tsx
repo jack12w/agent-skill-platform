@@ -69,15 +69,6 @@ function SkillSquareInner() {
     });
   };
 
-  const clearGroup = (group: string) => {
-    const groupTags = TAG_GROUPS[group] || [];
-    setActiveTags(prev => {
-      const next = new Set(prev);
-      groupTags.forEach(t => next.delete(t));
-      return next;
-    });
-  };
-
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
       {/* ── 标题 + 排序 ── */}
@@ -94,30 +85,17 @@ function SkillSquareInner() {
       <div className="mb-6 space-y-3">
         {GROUP_KEYS.map(group => {
           const tags = TAG_GROUPS[group];
-          const allKey = group === 'source' ? 'allSource' : group === 'scene' ? 'allScene' : group === 'role' ? 'allRole' : 'allCategory';
-          const hasActive = tags.some(t => activeTags.has(t));
           return (
-            <div key={group} className="flex items-center gap-2">
-              <span className="text-sm text-gray-500 shrink-0">{t(`tags.${group}`)}</span>
-              <div className="flex gap-1.5 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none' as any, msOverflowStyle: 'none' }}>
-                {/* 全部按钮 */}
+            <div key={group} className="flex gap-1.5 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none' as any, msOverflowStyle: 'none' }}>
+              {tags.map(tag => (
                 <button
-                  onClick={() => clearGroup(group)}
-                  className={`shrink-0 px-3 py-1.5 text-sm rounded-full whitespace-nowrap transition ${!hasActive ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  key={tag}
+                  onClick={() => toggleTag(tag)}
+                  className={`shrink-0 px-3 py-1.5 text-sm rounded-full whitespace-nowrap transition ${activeTags.has(tag) ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                 >
-                  {t(`tags.${allKey}`)}
+                  {tt(tag)}
                 </button>
-                {/* 具体标签 */}
-                {tags.map(tag => (
-                  <button
-                    key={tag}
-                    onClick={() => toggleTag(tag)}
-                    className={`shrink-0 px-3 py-1.5 text-sm rounded-full whitespace-nowrap transition ${activeTags.has(tag) ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                  >
-                    {tt(tag)}
-                  </button>
-                ))}
-              </div>
+              ))}
             </div>
           );
         })}
