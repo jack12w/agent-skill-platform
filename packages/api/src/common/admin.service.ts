@@ -190,11 +190,14 @@ export class AdminService {
     const { page = 1, size = 20, search } = query;
     const qb = this.teamRepo.createQueryBuilder('t')
       .leftJoin('t.members', 'm')
-      .select(['t.id', 't.name', 't.description', 't.created_at'])
+      .addSelect('t.id', 'id')
+      .addSelect('t.name', 'name')
+      .addSelect('t.description', 'description')
+      .addSelect('t.created_at', 'created_at')
       .addSelect('COALESCE(COUNT(m.id), 0)::int', 'member_count')
       .groupBy('t.id')
       .orderBy('t.created_at', 'DESC')
-      .take(size).skip((page - 1) * size);
+      .limit(size).offset((page - 1) * size);
     if (search) qb.andWhere('t.name ILIKE :q', { q: `%${search}%` });
     const items = await qb.getRawMany();
     const totalQb = this.teamRepo.createQueryBuilder('t');
@@ -202,8 +205,8 @@ export class AdminService {
     const total = await totalQb.getCount();
     return {
       items: items.map((r: any) => ({
-        id: r.t_id, name: r.t_name, description: r.t_description,
-        created_at: r.t_created_at, member_count: Number(r.member_count) || 0,
+        id: r.id, name: r.name, description: r.description,
+        created_at: r.created_at, member_count: Number(r.member_count) || 0,
       })),
       total, page, size,
     };

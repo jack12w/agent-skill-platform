@@ -43,12 +43,6 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
     }
     setAuthorized(true);
     setLoaded(true);
-    // 隐藏根布局的页脚
-    try {
-      const footer = document.querySelector('footer') as HTMLElement | null;
-      if (footer) footer.style.display = 'none';
-      return () => { if (footer) footer.style.display = ''; };
-    } catch {}
   }, [router]);
 
   if (!loaded) return null;
@@ -57,7 +51,9 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
   const activeKey = pathname === '/hub' ? 'stats' : pathname.split('/hub/')[1]?.split('/')[0] || 'stats';
 
   return (
-    <div className="flex h-[calc(100vh-64px)] overflow-hidden">
+    <>
+      <style>{`body { overflow: hidden; } footer { display: none !important; }`}</style>
+      <div className="flex h-[calc(100vh-64px)] overflow-hidden">
       {/* Sidebar */}
       <aside className="w-56 bg-white border-r border-gray-200 shrink-0 hidden md:flex md:flex-col h-full">
         <div className="px-5 py-5 border-b border-gray-100 shrink-0">
@@ -115,5 +111,6 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
     </div>
+    </>
   );
 }
