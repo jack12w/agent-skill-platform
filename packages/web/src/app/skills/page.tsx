@@ -8,7 +8,7 @@ import useTranslation from '../../hooks/useTranslation';
 /* ── 预设标签分组 ── */
 const TAG_GROUPS: Record<string, string[]> = {
   source: ['精选', '社区'],
-  scene: ['workbuddy', '国际站', '生意助手'],
+  scene: ['workbuddy', 'accio work', '阿里国际站', '国际站生意助手'],
   role: ['老板', '管理', '运营', '业务', '美工', '市场', '采购', '供应链', '社媒'],
   category: ['选品洞察', 'Listing优化', '广告投放', '客户服务', '数据分析', '社媒营销', '供应链物流', '合规风控'],
 };
