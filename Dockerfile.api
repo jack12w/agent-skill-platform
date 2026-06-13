@@ -19,6 +19,10 @@ RUN npm config set registry https://registry.npmmirror.com \
 COPY packages/shared/src packages/shared/src
 COPY packages/api/src packages/api/src
 
+# Force tsc recompilation — set BUILD_DATE env var to invalidate cache
+ARG BUILD_DATE=0
+RUN echo "tsc compile at ${BUILD_DATE}"
+
 RUN tsc -p packages/shared/tsconfig.json
 RUN tsc -p packages/api/tsconfig.json
 

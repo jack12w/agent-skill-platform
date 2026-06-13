@@ -9,6 +9,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
+      args:
+        - BUILD_DATE=${BUILD_DATE:-0}
     container_name: agent_platform_api
     restart: always
     environment:
