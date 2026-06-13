@@ -38,7 +38,7 @@ export default function HubLogsPage() {
       <div className="bg-white border rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
-            <tr><th className="px-4 py-3 text-left">Time</th><th className="px-4 py-3 text-left">Action</th><th className="px-4 py-3 text-left">Target</th><th className="px-4 py-3 text-left hidden md:table-cell">Detail</th></tr>
+            <tr><th className="px-4 py-3 text-left">{t('admin.thTime')}</th><th className="px-4 py-3 text-left">{t('admin.thAction')}</th><th className="px-4 py-3 text-left">{t('admin.thTarget')}</th><th className="px-4 py-3 text-left hidden md:table-cell">{t('admin.thDetail')}</th></tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {(data?.items || []).map((l: any) => (
@@ -59,8 +59,8 @@ export default function HubLogsPage() {
         <div className="flex justify-between mt-4 text-sm text-gray-500">
           <span>{(page-1)*30+1}-{Math.min(page*30, data.total)} of {data.total}</span>
           <div className="flex gap-2">
-            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="px-3 py-1 border rounded disabled:opacity-30">Prev</button>
-            <button onClick={() => setPage(p => p+1)} disabled={page*30 >= data.total} className="px-3 py-1 border rounded disabled:opacity-30">Next</button>
+            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="px-3 py-1 border rounded disabled:opacity-30">{t('admin.prev')}</button>
+            <button onClick={() => setPage(p => p+1)} disabled={page*30 >= data.total} className="px-3 py-1 border rounded disabled:opacity-30">{t('admin.next')}</button>
           </div>
         </div>
       )}

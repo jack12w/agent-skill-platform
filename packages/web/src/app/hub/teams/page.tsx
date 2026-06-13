@@ -45,7 +45,7 @@ export default function HubTeamsPage() {
       <div className="bg-white border rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
-            <tr><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left hidden md:table-cell">Description</th><th className="px-4 py-3 text-center">Members</th><th className="px-4 py-3 text-right">Actions</th></tr>
+            <tr><th className="px-4 py-3 text-left">{t('admin.thName')}</th><th className="px-4 py-3 text-left hidden md:table-cell">{t('admin.thDescription')}</th><th className="px-4 py-3 text-center">{t('admin.thMembers')}</th><th className="px-4 py-3 text-right">{t('admin.thActions')}</th></tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {(data?.items || []).map((t: any) => (
@@ -54,10 +54,10 @@ export default function HubTeamsPage() {
                   {editing !== null && editing.id === t.id ? (
                     <div className="flex flex-col gap-2">
                       <input type="text" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="px-2 py-1 text-sm border rounded" />
-                      <input type="text" value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })} className="px-2 py-1 text-sm border rounded" placeholder="Description" />
+                      <input type="text" value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })} className="px-2 py-1 text-sm border rounded" placeholder={t('admin.thDescription')} />
                       <div className="flex gap-2">
-                        <button onClick={saveEdit} className="px-2 py-1 text-xs bg-blue-600 text-white rounded">Save</button>
-                        <button onClick={() => setEditing(null)} className="px-2 py-1 text-xs bg-gray-200 rounded">Cancel</button>
+                        <button onClick={saveEdit} className="px-2 py-1 text-xs bg-blue-600 text-white rounded">{t('admin.save')}</button>
+                        <button onClick={() => setEditing(null)} className="px-2 py-1 text-xs bg-gray-200 rounded">{t('admin.cancel')}</button>
                       </div>
                     </div>
                   ) : (
@@ -67,8 +67,8 @@ export default function HubTeamsPage() {
                 <td className="px-4 py-3 text-gray-500 text-xs hidden md:table-cell max-w-xs truncate">{t.description || '-'}</td>
                 <td className="px-4 py-3 text-center">{t.member_count || 0}</td>
                 <td className="px-4 py-3 text-right">
-                  <button onClick={() => setEditing({ id: t.id, name: t.name, description: t.description || '' })} className="text-xs text-blue-600 hover:underline mr-3">Edit</button>
-                  <button onClick={() => deleteTeam(t.id)} className="text-xs text-red-500 hover:underline">Delete</button>
+                  <button onClick={() => setEditing({ id: t.id, name: t.name, description: t.description || '' })} className="text-xs text-blue-600 hover:underline mr-3">{t('admin.edit')}</button>
+                  <button onClick={() => deleteTeam(t.id)} className="text-xs text-red-500 hover:underline">{t('admin.delete')}</button>
                 </td>
               </tr>
             ))}

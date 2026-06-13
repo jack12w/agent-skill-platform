@@ -99,17 +99,17 @@ export default function HubSkillsPage() {
       <div className="flex flex-wrap items-center gap-3 my-4">
         <input type="text" placeholder="Search..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="px-3 py-1.5 text-sm border rounded-lg w-48 focus:outline-none focus:border-blue-400" />
         <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }} className="px-3 py-1.5 text-sm border rounded-lg focus:outline-none">
-          <option value="">All</option>
-          <option value="published">Published</option>
-          <option value="archived">Archived</option>
+          <option value="">{t('admin.allStatus')}</option>
+          <option value="published">{t('admin.statusPublished')}</option>
+          <option value="archived">{t('admin.statusArchived')}</option>
         </select>
 
         {selected.size > 0 && (
           <div className="flex items-center gap-2 ml-auto">
             <span className="text-xs text-gray-500">{selected.size} selected</span>
-            <button onClick={() => batchAction('publish')} disabled={!!actionLoading} className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700">Publish</button>
-            <button onClick={() => batchAction('unpublish')} disabled={!!actionLoading} className="px-3 py-1.5 text-xs bg-yellow-500 text-white rounded-lg hover:bg-yellow-600">Unpublish</button>
-            <button onClick={() => { if (confirm('Delete selected?')) batchAction('delete'); }} disabled={!!actionLoading} className="px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700">Delete</button>
+            <button onClick={() => batchAction('publish')} disabled={!!actionLoading} className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700">{t('admin.batchPublish')}</button>
+            <button onClick={() => batchAction('unpublish')} disabled={!!actionLoading} className="px-3 py-1.5 text-xs bg-yellow-500 text-white rounded-lg hover:bg-yellow-600">{t('admin.batchUnpublish')}</button>
+            <button onClick={() => { if (confirm(t('admin.confirmDelete'))) batchAction('delete'); }} disabled={!!actionLoading} className="px-3 py-1.5 text-xs bg-red-600 text-white rounded-lg hover:bg-red-700">{t('admin.batchDelete')}</button>
           </div>
         )}
       </div>
@@ -124,11 +124,11 @@ export default function HubSkillsPage() {
               <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
                 <tr>
                   <th className="px-4 py-3 text-left w-10"><input type="checkbox" checked={data ? selected.size === data.items.length && data.items.length > 0 : false} onChange={toggleAll} /></th>
-                  <th className="px-4 py-3 text-left">Name</th>
-                  <th className="px-4 py-3 text-left hidden md:table-cell">Owner</th>
-                  <th className="px-4 py-3 text-left hidden lg:table-cell">Tags</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-right hidden sm:table-cell">Actions</th>
+                  <th className="px-4 py-3 text-left">{t('admin.thName')}</th>
+                  <th className="px-4 py-3 text-left hidden md:table-cell">{t('admin.thOwner')}</th>
+                  <th className="px-4 py-3 text-left hidden lg:table-cell">{t('admin.thTags')}</th>
+                  <th className="px-4 py-3 text-center">{t('admin.thStatus')}</th>
+                  <th className="px-4 py-3 text-right hidden sm:table-cell">{t('admin.thActions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -141,8 +141,8 @@ export default function HubSkillsPage() {
                           <input type="text" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} className="w-full px-2 py-1 text-sm border rounded" />
                           <input type="text" value={editForm.tags} onChange={e => setEditForm({ ...editForm, tags: e.target.value })} className="w-full px-2 py-1 text-sm border rounded" placeholder="tag1, tag2" />
                           <div className="flex gap-2">
-                            <button onClick={saveEdit} className="px-2 py-1 text-xs bg-blue-600 text-white rounded">Save</button>
-                            <button onClick={() => setEditingId(null)} className="px-2 py-1 text-xs bg-gray-200 rounded">Cancel</button>
+                            <button onClick={saveEdit} className="px-2 py-1 text-xs bg-blue-600 text-white rounded">{t('admin.save')}</button>
+                            <button onClick={() => setEditingId(null)} className="px-2 py-1 text-xs bg-gray-200 rounded">{t('admin.cancel')}</button>
                           </div>
                         </div>
                       ) : (
@@ -161,12 +161,12 @@ export default function HubSkillsPage() {
                     </td>
                     <td className="px-4 py-3 text-center"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge(s.status)}`}>{s.status}</span></td>
                     <td className="px-4 py-3 text-right hidden sm:table-cell">
-                      <button onClick={() => startEdit(s)} className="text-xs text-blue-600 hover:underline">Edit</button>
+                      <button onClick={() => startEdit(s)} className="text-xs text-blue-600 hover:underline">{t('admin.edit')}</button>
                     </td>
                   </tr>
                 ))}
                 {(!data || data.items.length === 0) && (
-                  <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400 text-sm">No skills found</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400 text-sm">{t('admin.noSkills')}</td></tr>
                 )}
               </tbody>
             </table>
@@ -177,8 +177,8 @@ export default function HubSkillsPage() {
             <div className="flex items-center justify-between mt-4 text-sm text-gray-500">
               <span>{(data.page - 1) * data.size + 1}-{Math.min(data.page * data.size, data.total)} of {data.total}</span>
               <div className="flex gap-2">
-                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 border rounded disabled:opacity-30">Prev</button>
-                <button onClick={() => setPage(p => p + 1)} disabled={page * data.size >= data.total} className="px-3 py-1 border rounded disabled:opacity-30">Next</button>
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 border rounded disabled:opacity-30">{t('admin.prev')}</button>
+                <button onClick={() => setPage(p => p + 1)} disabled={page * data.size >= data.total} className="px-3 py-1 border rounded disabled:opacity-30">{t('admin.next')}</button>
               </div>
             </div>
           )}

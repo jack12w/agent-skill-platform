@@ -38,11 +38,11 @@ export default function HubReviewsPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
             <tr>
-              <th className="px-4 py-3 text-left">Skill</th>
-              <th className="px-4 py-3 text-left hidden md:table-cell">Submitter</th>
-              <th className="px-4 py-3 text-left hidden lg:table-cell">Tags</th>
-              <th className="px-4 py-3 text-left hidden sm:table-cell">Updated</th>
-              <th className="px-4 py-3 text-right">Action</th>
+              <th className="px-4 py-3 text-left">{t('admin.thSkill')}</th>
+              <th className="px-4 py-3 text-left hidden md:table-cell">{t('admin.thSubmitter')}</th>
+              <th className="px-4 py-3 text-left hidden lg:table-cell">{t('admin.thTags')}</th>
+              <th className="px-4 py-3 text-left hidden sm:table-cell">{t('admin.thUpdated')}</th>
+              <th className="px-4 py-3 text-right">{t('admin.thAction')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -78,8 +78,8 @@ export default function HubReviewsPage() {
         <div className="flex justify-between mt-4 text-sm text-gray-500">
           <span>{(page-1)*20+1}-{Math.min(page*20, data.total)} of {data.total}</span>
           <div className="flex gap-2">
-            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="px-3 py-1 border rounded disabled:opacity-30">Prev</button>
-            <button onClick={() => setPage(p => p+1)} disabled={page*20 >= data.total} className="px-3 py-1 border rounded disabled:opacity-30">Next</button>
+            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="px-3 py-1 border rounded disabled:opacity-30">{t('admin.prev')}</button>
+            <button onClick={() => setPage(p => p+1)} disabled={page*20 >= data.total} className="px-3 py-1 border rounded disabled:opacity-30">{t('admin.next')}</button>
           </div>
         </div>
       )}

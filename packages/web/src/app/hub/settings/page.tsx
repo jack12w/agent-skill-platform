@@ -18,13 +18,13 @@ export default function HubSettingsPage() {
   if (!cfg) return null;
 
   const rows = [
-    { label: 'Site Name', value: cfg.siteName },
-    { label: 'Version', value: cfg.version },
-    { label: 'Environment', value: cfg.nodeEnv },
-    { label: 'Public URL', value: cfg.publicBaseUrl },
-    { label: 'SMTP User', value: cfg.smtpUser },
-    { label: 'WeChat OAuth', value: cfg.wechatEnabled ? 'Enabled' : 'Disabled' },
-    { label: 'WeChat Login', value: cfg.wechatLoginEnabled ? 'Enabled' : 'Disabled' },
+    { label: t('admin.thSiteName'), value: cfg.siteName },
+    { label: t('admin.thVersion'), value: cfg.version },
+    { label: t('admin.thEnvironment'), value: cfg.nodeEnv },
+    { label: t('admin.thPublicUrl'), value: cfg.publicBaseUrl },
+    { label: t('admin.thSmtpUser'), value: cfg.smtpUser },
+    { label: t('admin.thWechatOauth'), value: cfg.wechatEnabled ? 'Enabled' : 'Disabled' },
+    { label: t('admin.thWechatLogin'), value: cfg.wechatLoginEnabled ? 'Enabled' : 'Disabled' },
   ];
 
   return (
@@ -38,7 +38,7 @@ export default function HubSettingsPage() {
           </div>
         ))}
       </div>
-      <p className="mt-4 text-xs text-gray-400">Settings are managed via .env.production file on the server.</p>
+      <p className="mt-4 text-xs text-gray-400">{t('admin.logTableHint')}</p>
     </div>
   );
 }

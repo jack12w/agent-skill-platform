@@ -40,14 +40,14 @@ export default function HubUsersPage() {
     <div>
       <h1 className="text-xl font-bold text-gray-900 mb-1">{t('admin.users')}</h1>
       <div className="flex items-center gap-3 my-4">
-        <input type="text" placeholder="Search name or email..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="px-3 py-1.5 text-sm border rounded-lg w-56 focus:outline-none focus:border-blue-400" />
+        <input type="text" placeholder={t('admin.thSearch')} value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="px-3 py-1.5 text-sm border rounded-lg w-56 focus:outline-none focus:border-blue-400" />
         {msg && <span className="text-xs text-green-600">{msg}</span>}
       </div>
 
       <div className="bg-white border rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
-            <tr><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left">Email</th><th className="px-4 py-3 text-center">Role</th><th className="px-4 py-3 text-right">Actions</th></tr>
+            <tr><th className="px-4 py-3 text-left">{t('admin.thName')}</th><th className="px-4 py-3 text-left">{t('admin.thEmail')}</th><th className="px-4 py-3 text-center">{t('admin.thRole')}</th><th className="px-4 py-3 text-right">{t('admin.thActions')}</th></tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {(data?.items || []).map((u: any) => (
@@ -73,8 +73,8 @@ export default function HubUsersPage() {
         <div className="flex justify-between mt-4 text-sm text-gray-500">
           <span>{(data.page-1)*data.size+1}-{Math.min(data.page*data.size, data.total)} of {data.total}</span>
           <div className="flex gap-2">
-            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="px-3 py-1 border rounded disabled:opacity-30">Prev</button>
-            <button onClick={() => setPage(p => p+1)} disabled={page*data.size >= data.total} className="px-3 py-1 border rounded disabled:opacity-30">Next</button>
+            <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="px-3 py-1 border rounded disabled:opacity-30">{t('admin.prev')}</button>
+            <button onClick={() => setPage(p => p+1)} disabled={page*data.size >= data.total} className="px-3 py-1 border rounded disabled:opacity-30">{t('admin.next')}</button>
           </div>
         </div>
       )}
