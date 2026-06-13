@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, ILike, In, ArrayContains } from 'typeorm';
+import { Repository, Like, ILike, In, ArrayContains, ArrayOverlap } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { Skill } from './skill.entity';
 import { SkillVersion } from './skill-version.entity';
@@ -37,8 +37,9 @@ export class SkillsService {
     private ossService: OssService,
   ) {}
 
-  async findAll(query: { query?: string; tag?: string; sort?: string; page?: number; size?: number; owner?: string; owner_id?: string }) {
-    const { query: q, tag, sort, page = 1, size = 20, owner, owner_id } = query;
+  async findAll(query: { query?: string; tag?: string; tags?: string; sort?: string; page?: number; size?: number; owner?: string; owner_id?: string }) {
+    const { query: q, tag, tags: tagsStr, sort, page = 1, size = 20, owner, owner_id } = query;
+    const tagList = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
 
     // For score-based sorts, count real events from the last 7 days / all-time
     // rather than relying on potentially-stale skill_stats columns.
@@ -88,7 +89,8 @@ export class SkillsService {
         .offset((page - 1) * size);
 
       if (q) qb.andWhere('(skill.name ILIKE :q OR skill.short_summary ILIKE :q)', { q: `%${q}%` });
-      if (tag) qb.andWhere(':tag = ANY(skill.tags)', { tag });
+      if (tagList.length > 0) qb.andWhere('skill.tags && ARRAY[:...tagList]', { tagList });
+      else if (tag) qb.andWhere(':tag = ANY(skill.tags)', { tag });
       if (owner_id) qb.andWhere('skill.owner_user_id = :owner_id', { owner_id });
 
       const rows: any[] = await qb.getRawMany();
@@ -132,7 +134,11 @@ export class SkillsService {
 
     // Default: sort by created_at (newest first)
     const baseWhere: any = {};
-    if (tag) baseWhere.tags = ArrayContains([tag]);
+    if (tagList.length > 0) {
+      baseWhere.tags = ArrayOverlap(tagList);
+    } else if (tag) {
+      baseWhere.tags = ArrayContains([tag]);
+    }
     if (owner !== 'me') baseWhere.status = SkillStatus.PUBLISHED;
     if (owner_id) baseWhere.owner_user_id = owner_id;
 

@@ -66,6 +66,11 @@ export default function useTranslation() {
     return val;
   }, [lang]);
 
+  /** 翻译标签值（中文 DB 值 → 当前语言显示） */
+  const tt = useCallback((tag: string): string => {
+    return (locales[lang] as any).tags?.[tag] || tag;
+  }, [lang]);
+
   const toggleLang = useCallback(() => {
     const next = lang === 'zh' ? 'en' : 'zh';
     // 先写 cookie 确保导航时中间件能读到正确的语言偏好
@@ -85,5 +90,5 @@ export default function useTranslation() {
     }
   }, [lang]);
 
-  return { t, lang, toggleLang };
+  return { t, tt, lang, toggleLang };
 }

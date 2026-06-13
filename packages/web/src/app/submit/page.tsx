@@ -6,6 +6,14 @@ import Link from 'next/link';
 import MDEditor from '@uiw/react-md-editor';
 import useTranslation from '../../hooks/useTranslation';
 
+/* ── 预设标签分组（不含来源，来源=社区默认且不可更改） ── */
+const PRESET_TAG_GROUPS: Record<string, string[]> = {
+  scene: ['workbuddy', '国际站', '生意助手'],
+  role: ['老板', '管理', '运营', '业务', '美工', '市场', '采购', '供应链', '社媒'],
+  category: ['选品洞察', 'Listing优化', '广告投放', '客户服务', '数据分析', '社媒营销', '供应链物流', '合规风控'],
+};
+const PRESET_GROUP_KEYS = ['scene', 'role', 'category'] as const;
+
 /** 从 ZIP 文件中解析 SKILL.md 的 YAML frontmatter 和正文 */
 async function parseZipForSkillMd(file: File): Promise<{ name: string; description: string; content_md: string; tags: string } | null> {
   try {
@@ -62,7 +70,7 @@ async function parseZipForSkillMd(file: File): Promise<{ name: string; descripti
 
 export default function SubmitSkill() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, tt } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({ name: '', content_md: '', tags: '', owner_team_id: '' });
   const [file, setFile] = useState<File | null>(null);
@@ -107,6 +115,15 @@ export default function SubmitSkill() {
     setParsing(false);
   };
 
+  /* 追加标签到输入框（去重） */
+  const addTag = (tag: string) => {
+    setFormData(prev => {
+      const current = prev.tags.split(/[,，]/).map(x => x.trim()).filter(Boolean);
+      if (current.includes(tag)) return prev;
+      return { ...prev, tags: [...current, tag].join(', ') };
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) { alert(t('submit.nameRequired')); return; }
@@ -117,7 +134,7 @@ export default function SubmitSkill() {
       if (!token) { router.push('/auth'); return; }
       const skillRes = await fetch('/api/skills', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ name: formData.name.trim(), content_md: formData.content_md, tags: formData.tags.split(/[,，]/).map(x => x.trim()).filter(Boolean), owner_team_id: formData.owner_team_id || null }),
+        body: JSON.stringify({ name: formData.name.trim(), content_md: formData.content_md, tags: ['社区', ...formData.tags.split(/[,，]/).map(x => x.trim()).filter(Boolean)], owner_team_id: formData.owner_team_id || null }),
       });
       if (!skillRes.ok) { const body = await skillRes.json().catch(() => ({})); throw new Error(body.message || `HTTP ${skillRes.status}`); }
       const skill = await skillRes.json();
@@ -199,6 +216,28 @@ export default function SubmitSkill() {
             {t('submit.tags')} {file && formData.tags && <span className="text-green-500 text-xs">（已从 SKILL.md 自动填充）</span>}
           </label>
           <input type="text" className="w-full p-3 border rounded-lg" placeholder="SEO, Marketing" value={formData.tags} onChange={e => setFormData({...formData, tags: e.target.value})} />
+          {/* ── 预设标签 ── */}
+          <div className="mt-3 space-y-2">
+            <span className="text-xs text-gray-400">{t('tags.presetTags')}</span>
+            {PRESET_GROUP_KEYS.map(group => (
+              <div key={group} className="flex items-center gap-2">
+                <span className="text-xs text-gray-400 shrink-0 w-10">{t(`tags.${group}`)}:</span>
+                <div className="flex gap-1 flex-wrap">
+                  {PRESET_TAG_GROUPS[group].map(tag => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => addTag(tag)}
+                      disabled={formData.tags.split(/[,，]/).map(x => x.trim()).filter(Boolean).includes(tag)}
+                      className="shrink-0 px-2 py-0.5 text-xs rounded-full border border-blue-300 text-blue-600 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-default transition"
+                    >
+                      {tt(tag)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* ── 团队选择 ── */}

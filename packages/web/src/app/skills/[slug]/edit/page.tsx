@@ -6,6 +6,14 @@ import Link from 'next/link';
 import MDEditor from '@uiw/react-md-editor';
 import useTranslation from '../../../../hooks/useTranslation';
 
+/* ── 预设标签分组（不含来源，来源=社区默认且不可更改） ── */
+const PRESET_TAG_GROUPS: Record<string, string[]> = {
+  scene: ['workbuddy', '国际站', '生意助手'],
+  role: ['老板', '管理', '运营', '业务', '美工', '市场', '采购', '供应链', '社媒'],
+  category: ['选品洞察', 'Listing优化', '广告投放', '客户服务', '数据分析', '社媒营销', '供应链物流', '合规风控'],
+};
+const PRESET_GROUP_KEYS = ['scene', 'role', 'category'] as const;
+
 function decodeUserId(): string | null {
   try { const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null; if (!token) return null; return JSON.parse(atob(token.split('.')[1]))?.sub ?? null; }
   catch { return null; }
@@ -14,7 +22,7 @@ function decodeUserId(): string | null {
 export default function EditSkill({ params }: { params: { slug: string } }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
-  const { t } = useTranslation();
+  const { t, tt } = useTranslation();
   const [skill, setSkill] = useState<any>(null);
   const [versions, setVersions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +42,7 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
         if (!sRes.ok) throw new Error(`HTTP ${sRes.status}`);
         const s = await sRes.json(); const uid = decodeUserId();
         if (s.owner_user_id !== uid) { setError('You are not the owner of this skill.'); setSkill(s); return; }
-        setSkill(s); setForm({ name: s.name ?? '', content_md: s.content_md ?? '', tags: (s.tags ?? []).join(', '), cover_url: s.cover_url ?? '', owner_team_id: s.owner_team_id ?? '' });
+        setSkill(s); setForm({ name: s.name ?? '', content_md: s.content_md ?? '', tags: (s.tags ?? []).filter((t: string) => t !== '社区').join(', '), cover_url: s.cover_url ?? '', owner_team_id: s.owner_team_id ?? '' });
         if (vRes.ok) setVersions(await vRes.json());
         if (tRes.ok) setMyTeams(await tRes.json());
       } catch (e: any) { setError(e.message || 'Load failed'); }
@@ -44,9 +52,18 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
 
   const onChange = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  /* 追加标签到输入框（去重） */
+  const addTag = (tag: string) => {
+    setForm(prev => {
+      const current = prev.tags.split(/[,，]/).map(x => x.trim()).filter(Boolean);
+      if (current.includes(tag)) return prev;
+      return { ...prev, tags: [...current, tag].join(', ') };
+    });
+  };
+
   const handleSave = async (e: React.FormEvent) => { e.preventDefault(); if (!skill) return; const token = localStorage.getItem('token'); if (!token) return router.push('/auth'); setSaving(true);
     try {
-      const payload = { name: form.name.trim(), content_md: form.content_md, cover_url: form.cover_url, tags: form.tags.split(/[,，]/).map((x) => x.trim()).filter(Boolean), owner_team_id: form.owner_team_id || null };
+      const payload = { name: form.name.trim(), content_md: form.content_md, cover_url: form.cover_url, tags: ['社区', ...form.tags.split(/[,，]/).map((x) => x.trim()).filter(Boolean)], owner_team_id: form.owner_team_id || null };
       const res = await fetch(`/api/skills/${skill.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
       if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.message || `HTTP ${res.status}`); }
       router.push(`/skills/${skill.slug || skill.id}`);
@@ -128,7 +145,30 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
             visibleDragbar={false}
           />
         </div>
-        <Field label={t('edit.tags')}><input type="text" value={form.tags} onChange={onChange('tags')} placeholder="ai, nlp" className="w-full px-3 py-2 border rounded-lg" /></Field>
+        <Field label={t('edit.tags')}><input type="text" value={form.tags} onChange={onChange('tags')} placeholder="ai, nlp" className="w-full px-3 py-2 border rounded-lg" />
+          {/* ── 预设标签 ── */}
+          <div className="mt-3 space-y-2">
+            <span className="text-xs text-gray-400">{t('tags.presetTags')}</span>
+            {PRESET_GROUP_KEYS.map(group => (
+              <div key={group} className="flex items-center gap-2">
+                <span className="text-xs text-gray-400 shrink-0 w-10">{t(`tags.${group}`)}:</span>
+                <div className="flex gap-1 flex-wrap">
+                  {PRESET_TAG_GROUPS[group].map(tag => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => addTag(tag)}
+                      disabled={form.tags.split(/[,，]/).map(x => x.trim()).filter(Boolean).includes(tag)}
+                      className="shrink-0 px-2 py-0.5 text-xs rounded-full border border-blue-300 text-blue-600 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-default transition"
+                    >
+                      {tt(tag)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Field>
         <Field label={t('edit.coverUrl')}><input type="text" value={form.cover_url} onChange={onChange('cover_url')} className="w-full px-3 py-2 border rounded-lg" /></Field>
         <Field label={t('edit.teamLabel')}>
           <div className="relative">
