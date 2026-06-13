@@ -76,7 +76,7 @@ export default function HubTagGroupsPage() {
       {/* Existing groups */}
       {groups.map(g => (
         <div key={g.id} className="bg-white border rounded-xl p-4 mb-3">
-          {editing?.id === g.id ? (
+          {editing !== null && editing.id === g.id ? (
             <div className="flex flex-wrap gap-3 items-end">
               <input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="w-24 px-2 py-1.5 text-sm border rounded" />
               <input value={editing.tagsStr} onChange={e => setEditing({ ...editing, tagsStr: e.target.value })} className="w-96 px-2 py-1.5 text-sm border rounded" />
