@@ -16,12 +16,13 @@ export default function AvatarMenu() {
   const router = useRouter();
   const pathname = usePathname();
   const { t } = useTranslation();
+  const [mounted, setMounted] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [open, setOpen] = useState(false);
 
   const refreshUser = useCallback(() => setUser(loadUser()), []);
 
-  useEffect(() => { refreshUser(); }, [pathname, refreshUser]);
+  useEffect(() => { setMounted(true); refreshUser(); }, [pathname, refreshUser]);
 
   useEffect(() => {
     const handler = () => refreshUser();
@@ -29,6 +30,7 @@ export default function AvatarMenu() {
     return () => window.removeEventListener('user-updated', handler);
   }, [refreshUser]);
 
+  if (!mounted) return null;
   if (!user) {
     return <Link href="/auth" className="px-4 py-2 border border-blue-600 text-blue-600 rounded-md hover:bg-blue-50 text-sm font-medium">{t('nav.login')}</Link>;
   }

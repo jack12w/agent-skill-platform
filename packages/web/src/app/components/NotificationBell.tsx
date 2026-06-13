@@ -23,9 +23,12 @@ function markRead(commentId: string) {
 }
 
 export default function NotificationBell() {
+  const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [allComments, setAllComments] = useState<any[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(getReadIds());
+
+  useEffect(() => { setMounted(true); }, []);
 
   const fetchNotifications = useCallback(async () => {
     const token = localStorage.getItem('token');
@@ -66,7 +69,7 @@ export default function NotificationBell() {
     setReadIds(getReadIds());
   };
 
-  if (!loadUser()) return null;
+  if (!mounted || !loadUser()) return null;
 
   return (
     <div className="relative">
