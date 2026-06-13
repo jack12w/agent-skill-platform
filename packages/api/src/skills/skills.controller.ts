@@ -35,6 +35,11 @@ export class SkillsController {
     return this.skillsService.createSkill(body, req.user.sub);
   }
 
+  @Post('fix-tags')
+  fixTags() {
+    return this.skillsService.fixAllTags();
+  }
+
   @UseGuards(AuthGuard)
   @Patch(':id')
   update(@Param('id') id: string, @Body() body: any, @Request() req: any) {

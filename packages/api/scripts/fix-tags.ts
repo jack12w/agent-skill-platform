@@ -1,6 +1,13 @@
 /**
- * 修复数据库中标签中文逗号问题 + 旧标签重命名
- * 在服务器上运行: docker exec skills-api node dist/scripts/fix-tags.js
+ * 修复数据库中标签问题：中文逗号拆分 + 旧标签重命名 + 英文小写 + 去重
+ * 
+ * ⚠️ 此脚本已废弃，请改用 API 接口：
+ *    curl -X POST http://localhost:3001/api/skills/fix-tags
+ * 
+ * API 方式优势：
+ *   1. 利用 NestJS 已有的数据库连接，无需单独配置
+ *   2. 随 Docker 镜像自动部署，无需额外 COPY scripts/
+ *   3. 返回修复报告，清晰展示变更内容
  */
 import { DataSource } from 'typeorm';
 import { Skill } from '../src/skills/skill.entity';

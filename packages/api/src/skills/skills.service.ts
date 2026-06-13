@@ -602,4 +602,59 @@ export class SkillsService {
     await this.commentRepository.delete({ id: commentId });
     return { ok: true };
   }
+
+  // ── 批量修复标签 ─────────────────────────
+  async fixAllTags() {
+    const skills = await this.skillRepository.find();
+    const report: { id: string; name: string; before: string[]; after: string[] }[] = [];
+
+    const OLD_TAG_MAP: Record<string, string> = {
+      '国际站': '阿里国际站',
+      '生意助手': '国际站生意助手',
+    };
+
+    for (const skill of skills) {
+      if (!skill.tags?.length) continue;
+
+      const normalized: string[] = [];
+
+      for (const tag of skill.tags) {
+        // 1. 中文/英文逗号拆分
+        if (/[，,]/.test(tag)) {
+          tag.split(/[，,]\s*/).map(t => t.trim()).filter(Boolean).forEach(t => normalized.push(t));
+          continue;
+        }
+
+        // 2. 旧标签重命名
+        if (OLD_TAG_MAP[tag]) {
+          normalized.push(OLD_TAG_MAP[tag]);
+          continue;
+        }
+
+        // 3. 纯英文标签转小写（中文标签保持原样）
+        const trimmed = tag.trim();
+        if (trimmed && /^[\x00-\x7F]+$/.test(trimmed)) {
+          normalized.push(trimmed.toLowerCase());
+        } else {
+          normalized.push(trimmed);
+        }
+      }
+
+      // 去重
+      const unique = [...new Set(normalized)];
+
+      if (JSON.stringify(unique) !== JSON.stringify(skill.tags)) {
+        report.push({
+          id: skill.id,
+          name: skill.name,
+          before: skill.tags,
+          after: unique,
+        });
+        skill.tags = unique;
+        await this.skillRepository.save(skill);
+      }
+    }
+
+    return { fixed: report.length, report };
+  }
 }
