@@ -144,7 +144,7 @@ function SkillSquareInner() {
             <Link key={skill.id} href={`/skills/${skill.slug || skill.id}`} className="group p-6 border rounded-2xl hover:border-blue-500 transition-all hover:shadow-lg flex flex-col">
               <h3 className="text-xl font-bold mb-2 group-hover:text-blue-600">{skill.name}</h3>
               <p className="text-gray-600 text-sm mb-3 line-clamp-2">{skill.short_summary || skill.summary}</p>
-              <div className="text-xs text-gray-400 mt-auto mb-4">
+              <div className="text-xs text-gray-400 mb-4">
                 {skill.latest_version ? `v${skill.latest_version.version}` : '—'}
                 {skill.updated_at && ` · ${new Date(skill.updated_at).toLocaleDateString()}`}
               </div>
