@@ -7,7 +7,7 @@ import { VerificationCode } from './verification-code.entity';
 import { Skill } from '../skills/skill.entity';
 import { Comment } from '../skills/comment.entity';
 import { OssService } from '../storage/oss.service';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
 // In-memory CSRF state store for WeChat OAuth (5-min TTL, auto-cleanup)
