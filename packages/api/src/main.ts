@@ -34,6 +34,12 @@ async function bootstrap() {
   // ── 关闭 Express 指纹，减少攻击面 ─────────
   app.getHttpAdapter().getInstance().disable('x-powered-by');
 
+  // ── 全局 API 不允许索引 ──────────────────
+  app.use((_req, res, next) => {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+    next();
+  });
+
   // ── 全局超时中间件：每个请求最多 30s ──────
   app.use((_req, res: any, next: () => void) => {
     res.setTimeout(30_000, () => {
