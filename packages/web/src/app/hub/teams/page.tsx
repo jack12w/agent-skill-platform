@@ -48,10 +48,10 @@ export default function HubTeamsPage() {
             <tr><th className="px-4 py-3 text-left">{t('admin.thName')}</th><th className="px-4 py-3 text-left hidden md:table-cell">{t('admin.thDescription')}</th><th className="px-4 py-3 text-center">{t('admin.thMembers')}</th><th className="px-4 py-3 text-right">{t('admin.thActions')}</th></tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {(data?.items || []).map((t: any) => (
-              <tr key={t.id} className="hover:bg-gray-50">
+            {(data?.items || []).map((team: any) => (
+              <tr key={team.id} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
-                  {editing !== null && editing.id === t.id ? (
+                  {editing !== null && editing.id === team.id ? (
                     <div className="flex flex-col gap-2">
                       <input type="text" value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="px-2 py-1 text-sm border rounded" />
                       <input type="text" value={editing.description || ''} onChange={e => setEditing({ ...editing, description: e.target.value })} className="px-2 py-1 text-sm border rounded" placeholder={t('admin.thDescription')} />
@@ -61,14 +61,14 @@ export default function HubTeamsPage() {
                       </div>
                     </div>
                   ) : (
-                    <a href={`/teams/${t.id}`} target="_blank" className="font-medium text-blue-600 hover:underline">{t.name}</a>
+                    <a href={`/teams/${team.id}`} target="_blank" className="font-medium text-blue-600 hover:underline">{team.name}</a>
                   )}
                 </td>
-                <td className="px-4 py-3 text-gray-500 text-xs hidden md:table-cell max-w-xs truncate">{t.description || '-'}</td>
-                <td className="px-4 py-3 text-center">{t.member_count || 0}</td>
+                <td className="px-4 py-3 text-gray-500 text-xs hidden md:table-cell max-w-xs truncate">{team.description || '-'}</td>
+                <td className="px-4 py-3 text-center">{team.member_count || 0}</td>
                 <td className="px-4 py-3 text-right">
-                  <button onClick={() => setEditing({ id: t.id, name: t.name, description: t.description || '' })} className="text-xs text-blue-600 hover:underline mr-3">{t('admin.edit')}</button>
-                  <button onClick={() => deleteTeam(t.id)} className="text-xs text-red-500 hover:underline">{t('admin.delete')}</button>
+                  <button onClick={() => setEditing({ id: team.id, name: team.name, description: team.description || '' })} className="text-xs text-blue-600 hover:underline mr-3">{t('admin.edit')}</button>
+                  <button onClick={() => deleteTeam(team.id)} className="text-xs text-red-500 hover:underline">{t('admin.delete')}</button>
                 </td>
               </tr>
             ))}
