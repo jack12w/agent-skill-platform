@@ -275,4 +275,34 @@ export class AdminService {
       if (!exists) await this.tagGroupRepo.save(g);
     }
   }
+
+  // ── 审核管理 ──────────────────────────────
+  async listReviews(query: { page?: number; size?: number }) {
+    const { page = 1, size = 20 } = query;
+    const [items, total] = await this.skillRepo.findAndCount({
+      where: { status: SkillStatus.PENDING },
+      relations: ['owner_user'],
+      select: {
+        id: true, name: true, slug: true, short_summary: true, tags: true, status: true, created_at: true, updated_at: true,
+        owner_user: { id: true, name: true, email: true },
+      },
+      order: { created_at: 'DESC' },
+      take: size, skip: (page - 1) * size,
+    });
+    return { items, total, page, size };
+  }
+
+  async approveSkill(id: string) {
+    const skill = await this.skillRepo.findOneBy({ id });
+    if (!skill) throw new NotFoundException('Skill not found');
+    await this.skillRepo.update(id, { status: SkillStatus.PUBLISHED });
+    return { ok: true };
+  }
+
+  async rejectSkill(id: string) {
+    const skill = await this.skillRepo.findOneBy({ id });
+    if (!skill) throw new NotFoundException('Skill not found');
+    await this.skillRepo.update(id, { status: SkillStatus.ARCHIVED });
+    return { ok: true };
+  }
 }

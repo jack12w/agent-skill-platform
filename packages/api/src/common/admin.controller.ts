@@ -119,4 +119,18 @@ export class AdminController {
 
   @Delete('tag-groups/:id')
   deleteTagGroup(@Param('id') id: string) { return this.adminService.deleteTagGroup(id); }
+
+  // ── 审核 ──
+  @Get('reviews')
+  listReviews(@Query() q: any) { return this.adminService.listReviews(q); }
+
+  @Post('reviews/:id/approve')
+  approveSkill(@Param('id') id: string, @Request() req: any) {
+    return this.adminService.approveSkill(id);
+  }
+
+  @Post('reviews/:id/reject')
+  rejectSkill(@Param('id') id: string, @Request() req: any) {
+    return this.adminService.rejectSkill(id);
+  }
 }

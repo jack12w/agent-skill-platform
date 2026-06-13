@@ -335,6 +335,7 @@ export class SkillsService {
       latest_version_id: savedVersion.id,
       short_summary: meta.description || skill.short_summary,
       tags: (meta.tags && meta.tags.length ? meta.tags : skill.tags),
+      status: SkillStatus.PENDING,
     });
 
     await this.recordEvent(skill.id, EventType.SKILL_PUBLISH, userId);

@@ -33,7 +33,7 @@ export class Skill {
   @Column({ nullable: true })
   cover_url: string;
 
-  @Column({ type: 'enum', enum: SkillStatus, default: SkillStatus.PUBLISHED })
+  @Column({ type: 'enum', enum: SkillStatus, default: SkillStatus.PENDING })
   status: SkillStatus;
 
   @OneToOne('SkillStats', 'skill')

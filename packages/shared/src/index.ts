@@ -14,6 +14,7 @@ export function scoreSubject(skillCount: number, likes: number, downloads: numbe
 }
 
 export enum SkillStatus {
+  PENDING = 'pending',
   PUBLISHED = 'published',
   ARCHIVED = 'archived'
 }
