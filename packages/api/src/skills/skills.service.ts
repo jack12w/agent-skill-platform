@@ -86,6 +86,7 @@ export class SkillsService {
         .groupBy('skill.id')
         .addGroupBy('stats.skill_id')
         .addGroupBy('owner_user.id')
+        .addGroupBy('lv.version')
         .orderBy('_score', 'DESC')
         .limit(size)
         .offset((page - 1) * size);
