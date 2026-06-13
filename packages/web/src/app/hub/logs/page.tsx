@@ -9,19 +9,28 @@ export default function HubLogsPage() {
   const { t } = useTranslation();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
   const [page, setPage] = useState(1);
 
   const fetchData = useCallback(async () => {
     const token = getToken(); if (!token) return;
     setLoading(true);
-    const r = await fetch(`/api/admin/logs?page=${page}&size=30`, { headers: { Authorization: `Bearer ${token}` } });
-    setData(await r.json());
+    try {
+      const r = await fetch(`/api/admin/logs?page=${page}&size=30`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      setData(j);
+      setErr('');
+    } catch (e: any) {
+      setErr(e.message || 'Failed to load');
+    }
     setLoading(false);
   }, [page]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>;
+  if (err) return <div className="text-center py-16 text-gray-400 text-sm">{err} — 可能需要先在数据库创建 admin_logs 表</div>;
 
   return (
     <div>

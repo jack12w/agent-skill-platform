@@ -51,14 +51,14 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
   const activeKey = pathname === '/hub' ? 'stats' : pathname.split('/hub/')[1]?.split('/')[0] || 'stats';
 
   return (
-    <div className="flex min-h-[calc(100vh-64px)]">
+    <div className="flex h-[calc(100vh-64px)] overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-56 bg-white border-r border-gray-200 shrink-0 hidden md:block">
-        <div className="px-5 py-5 border-b border-gray-100">
+      <aside className="w-56 bg-white border-r border-gray-200 shrink-0 hidden md:flex md:flex-col h-full">
+        <div className="px-5 py-5 border-b border-gray-100 shrink-0">
           <h2 className="text-sm font-semibold text-gray-900">SkillHub</h2>
           <p className="text-xs text-gray-500 mt-0.5">{t('admin.title')}</p>
         </div>
-        <nav className="py-2">
+        <nav className="py-2 overflow-y-auto flex-1">
           {MENU.map(item => (
             <Link
               key={item.key}
