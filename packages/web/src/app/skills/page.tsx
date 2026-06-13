@@ -60,11 +60,26 @@ function SkillSquareInner() {
     window.history.replaceState(null, '', newUrl);
   }, [activeTags, sort, query]);
 
+  const getTagGroup = (tag: string): string | null => {
+    for (const [group, tags] of Object.entries(TAG_GROUPS)) {
+      if (tags.includes(tag)) return group;
+    }
+    return null;
+  };
+
   const toggleTag = (tag: string) => {
+    const group = getTagGroup(tag);
     setActiveTags(prev => {
       const next = new Set(prev);
-      if (next.has(tag)) next.delete(tag);
-      else next.add(tag);
+      if (next.has(tag)) {
+        next.delete(tag);
+      } else {
+        // 单选：先清除同组所有标签，再添加新标签
+        if (group) {
+          (TAG_GROUPS[group] || []).forEach(t => next.delete(t));
+        }
+        next.add(tag);
+      }
       return next;
     });
   };
