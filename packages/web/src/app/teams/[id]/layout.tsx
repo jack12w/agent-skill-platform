@@ -31,7 +31,7 @@ export async function generateMetadata({
   const title = `${team.name} — Team Skills`;
   const description =
     team.description
-    || `${team.name} is a team on Agent Skill Platform with ${(team.skills || []).length} AI agent skills.`;
+    || `${team.name} is a team on SkillHub with ${(team.skills || []).length} AI agent skills.`;
   const url = `${BASE_URL}/teams/${team.id}`;
 
   return {

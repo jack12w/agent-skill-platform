@@ -11,7 +11,7 @@ export function WebSiteSchema() {
   const data = {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: 'Agent Skill Platform',
+    name: 'SkillHub',
     url: BASE_URL,
     description: 'Discover, share, and download AI Agent skills. The open marketplace for AI-powered tools and workflows.',
     inLanguage: ['zh-CN', 'en-US'],
@@ -34,7 +34,7 @@ export function OrganizationSchema() {
   const data = {
     '@context': 'https://schema.org',
     '@type': 'Organization',
-    name: 'Agent Skill Platform',
+    name: 'SkillHub',
     url: BASE_URL,
     logo: `${BASE_URL}/logo.svg`,
     sameAs: [] as string[],

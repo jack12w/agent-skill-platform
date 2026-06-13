@@ -1,4 +1,4 @@
-# Agent Skill Platform
+# SkillHub
 
 > AI Agent Skills Marketplace — Discover, share, and download AI agent skills.
 

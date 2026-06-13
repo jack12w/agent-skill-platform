@@ -9,7 +9,7 @@ const en = {
     search: 'Search skills...',
   },
   home: {
-    title: 'Discover Top Agent Skills',
+    title: 'Discover Top Skills on SkillHub',
     subtitle: 'Elevate your AI Agents with community-powered capabilities.',
     explore: 'Explore Skills',
     viewLeaderboard: 'View Leaderboard',

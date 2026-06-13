@@ -11,8 +11,8 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL || 'https://skills.rehomi.com'),
   title: {
-    default: 'Agent Skill Platform — AI Agent Skills Marketplace',
-    template: '%s | Agent Skill Platform',
+    default: 'SkillHub — AI Agent Skills Marketplace',
+    template: '%s | SkillHub',
   },
   description:
     'Discover, share, and download AI Agent skills. The open marketplace for AI-powered tools, workflows, and automations. Built by developers, for the AI era.',
@@ -24,11 +24,11 @@ export const metadata: Metadata = {
     'AI workflow',
     'skill sharing',
     'AI automation',
-    'agent skill platform',
+    'SkillHub',
   ],
-  authors: [{ name: 'Agent Skill Platform' }],
-  creator: 'Agent Skill Platform',
-  publisher: 'Agent Skill Platform',
+  authors: [{ name: 'SkillHub' }],
+  creator: 'SkillHub',
+  publisher: 'SkillHub',
   robots: {
     index: true,
     follow: true,
@@ -45,8 +45,8 @@ export const metadata: Metadata = {
     locale: 'zh_CN',
     alternateLocale: 'en_US',
     url: BASE_URL,
-    siteName: 'Agent Skill Platform',
-    title: 'Agent Skill Platform — AI Agent Skills Marketplace',
+    siteName: 'SkillHub',
+    title: 'SkillHub — AI Agent Skills Marketplace',
     description:
       'Discover, share, and download AI Agent skills. The open marketplace for AI-powered tools, workflows, and automations.',
     images: [
@@ -54,17 +54,17 @@ export const metadata: Metadata = {
         url: '/og-image.svg',
         width: 1200,
         height: 630,
-        alt: 'Agent Skill Platform',
+        alt: 'SkillHub',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Agent Skill Platform — AI Agent Skills Marketplace',
+    title: 'SkillHub — AI Agent Skills Marketplace',
     description:
       'Discover, share, and download AI Agent skills. The open marketplace for AI tools.',
     images: ['/og-image.svg'],
-    creator: '@agentskills',
+    creator: '@skillhub',
   },
   alternates: {
     canonical: BASE_URL,
@@ -107,7 +107,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <NavBar />
           <main className="min-h-screen">{children}</main>
           <footer className="p-6 sm:p-10 border-t text-center text-gray-500 text-sm space-y-1">
-            <p>© 2026 Agent Skill Platform. Built for the AI era.</p>
+            <p>© 2026 SkillHub. Built for the AI era.</p>
             <p>
               技术支持：
               <a href="https://rehomi.com/xinghuo" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">

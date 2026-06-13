@@ -541,7 +541,7 @@ export class SkillsService {
 
     return {
       meta: {
-        title: 'Agent Skill Platform — AI Agent Skills Feed',
+        title: 'SkillHub — AI Agent Skills Feed',
         description: 'Machine-readable feed of AI agent skills for GEO (Generative Engine Optimization).',
         total,
         page,
