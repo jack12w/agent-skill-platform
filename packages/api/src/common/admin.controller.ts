@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Delete, UseGuards, HttpCode, HttpException, HttpStatus, Query, Body, Param } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, UseGuards, HttpCode, HttpException, HttpStatus, Query, Body, Param, Request } from '@nestjs/common';
 import { StatsAggregationService } from '../stats-aggregation.service';
 import { AdminService } from './admin.service';
 import { AdminGuard } from './admin.guard';
@@ -56,8 +56,10 @@ export class AdminController {
    * Batch publish/unpublish/delete/retag skills
    */
   @Patch('skills/batch')
-  async batchUpdateSkills(@Body() body: { ids: string[]; action: string; tags?: string[] }) {
-    return this.adminService.batchUpdateSkills(body.ids, body.action, { tags: body.tags });
+  async batchUpdateSkills(@Body() body: { ids: string[]; action: string; tags?: string[] }, @Request() req: any) {
+    const result = await this.adminService.batchUpdateSkills(body.ids, body.action, { tags: body.tags });
+    await this.adminService.logAction(req.user.sub, body.action, 'skill', body.ids.join(','), `Updated ${body.ids.length} skills`);
+    return result;
   }
 
   /**
@@ -68,4 +70,40 @@ export class AdminController {
   async updateSkill(@Param('id') id: string, @Body() body: any) {
     return this.adminService.updateSkill(id, body);
   }
+
+  // ── 用户 ──
+  @Get('users')
+  listUsers(@Query() q: any) { return this.adminService.listUsers(q); }
+
+  @Patch('users/:id')
+  updateUser(@Param('id') id: string, @Body() b: any) { return this.adminService.updateUser(id, b); }
+
+  // ── 标签 ──
+  @Get('tags')
+  getTags() { return this.adminService.getTags(); }
+
+  // ── 评论 ──
+  @Get('comments')
+  listComments(@Query() q: any) { return this.adminService.listComments(q); }
+
+  @Delete('comments/:id')
+  deleteComment(@Param('id') id: string) { return this.adminService.deleteComment(id); }
+
+  // ── 团队 ──
+  @Get('teams')
+  listTeams(@Query() q: any) { return this.adminService.listTeams(q); }
+
+  @Patch('teams/:id')
+  updateTeam(@Param('id') id: string, @Body() b: any) { return this.adminService.updateTeam(id, b); }
+
+  @Delete('teams/:id')
+  deleteTeam(@Param('id') id: string) { return this.adminService.deleteTeam(id); }
+
+  // ── 日志 ──
+  @Get('logs')
+  listLogs(@Query() q: any) { return this.adminService.listLogs(q); }
+
+  // ── 设置 ──
+  @Get('settings')
+  getSettings() { return this.adminService.getSettings(); }
 }

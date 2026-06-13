@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, ILike } from 'typeorm';
 import { Skill } from '../skills/skill.entity';
 import { User } from '../auth/user.entity';
 import { Team } from '../teams/team.entity';
 import { Comment } from '../skills/comment.entity';
 import { Event } from '../skills/event.entity';
+import { AdminLog } from './admin-log.entity';
 import { SkillStatus } from '@platform/shared';
 
 @Injectable()
@@ -16,6 +17,7 @@ export class AdminService {
     @InjectRepository(Team) private teamRepo: Repository<Team>,
     @InjectRepository(Comment) private commentRepo: Repository<Comment>,
     @InjectRepository(Event) private eventRepo: Repository<Event>,
+    @InjectRepository(AdminLog) private logRepo: Repository<AdminLog>,
   ) {}
 
   async getStats() {
@@ -124,5 +126,116 @@ export class AdminService {
     if (!skill) throw new NotFoundException('Skill not found');
     await this.skillRepo.update(id, data);
     return { ok: true };
+  }
+
+  // ── 用户管理 ──────────────────────────────
+  async listUsers(query: { page?: number; size?: number; search?: string }) {
+    const { page = 1, size = 20, search } = query;
+    const qb = this.userRepo.createQueryBuilder('u')
+      .select(['u.id', 'u.email', 'u.name', 'u.role', 'u.created_at'])
+      .orderBy('u.created_at', 'DESC')
+      .take(size).skip((page - 1) * size);
+    if (search) qb.andWhere('(u.name ILIKE :q OR u.email ILIKE :q)', { q: `%${search}%` });
+    const [items, total] = await qb.getManyAndCount();
+    return { items, total, page, size };
+  }
+
+  async updateUser(id: string, data: { role?: string }) {
+    const user = await this.userRepo.findOneBy({ id });
+    if (!user) throw new NotFoundException('User not found');
+    await this.userRepo.update(id, data);
+    return { ok: true };
+  }
+
+  // ── 标签管理 ──────────────────────────────
+  async getTags() {
+    const skills = await this.skillRepo.find({ select: ['id', 'name', 'tags'], where: { status: SkillStatus.PUBLISHED } });
+    const tagCounts: Record<string, number> = {};
+    for (const s of skills) {
+      for (const t of s.tags || []) {
+        tagCounts[t] = (tagCounts[t] || 0) + 1;
+      }
+    }
+    const tags = Object.entries(tagCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => ({ name, count }));
+    return { tags, totalSkills: skills.length };
+  }
+
+  // ── 评论管理 ──────────────────────────────
+  async listComments(query: { page?: number; size?: number }) {
+    const { page = 1, size = 20 } = query;
+    const [items, total] = await this.commentRepo.findAndCount({
+      relations: ['user', 'skill'],
+      select: { id: true, content: true, created_at: true, user: { id: true, name: true, email: true }, skill: { id: true, name: true, slug: true } },
+      order: { created_at: 'DESC' } as any,
+      take: size, skip: (page - 1) * size,
+    });
+    return { items, total, page, size };
+  }
+
+  async deleteComment(id: string) {
+    const c = await this.commentRepo.findOneBy({ id });
+    if (!c) throw new NotFoundException('Comment not found');
+    await this.commentRepo.delete({ id });
+    return { ok: true };
+  }
+
+  // ── 团队管理 ──────────────────────────────
+  async listTeams(query: { page?: number; size?: number; search?: string }) {
+    const { page = 1, size = 20, search } = query;
+    const qb = this.teamRepo.createQueryBuilder('t')
+      .leftJoin('t.members', 'm')
+      .select(['t.id', 't.name', 't.description', 't.created_at'])
+      .addSelect('COUNT(m.id)::int', 'member_count')
+      .groupBy('t.id')
+      .orderBy('t.created_at', 'DESC')
+      .take(size).skip((page - 1) * size);
+    if (search) qb.andWhere('t.name ILIKE :q', { q: `%${search}%` });
+    const raw = await qb.getRawAndEntities();
+    const items = raw.entities.map((t, i) => ({ ...t, member_count: Number((raw.raw[i] as any).member_count) || 0 }));
+    return { items, total: items.length, page, size };
+  }
+
+  async updateTeam(id: string, data: { name?: string; description?: string }) {
+    const team = await this.teamRepo.findOneBy({ id });
+    if (!team) throw new NotFoundException('Team not found');
+    await this.teamRepo.update(id, data);
+    return { ok: true };
+  }
+
+  async deleteTeam(id: string) {
+    const team = await this.teamRepo.findOneBy({ id });
+    if (!team) throw new NotFoundException('Team not found');
+    await this.teamRepo.delete({ id });
+    return { ok: true };
+  }
+
+  // ── 操作日志 ──────────────────────────────
+  async logAction(adminUserId: string, action: string, target_type?: string, target_id?: string, detail?: string) {
+    return this.logRepo.save({ admin_user_id: adminUserId, action, target_type, target_id, detail });
+  }
+
+  async listLogs(query: { page?: number; size?: number }) {
+    const { page = 1, size = 30 } = query;
+    const [items, total] = await this.logRepo.findAndCount({
+      order: { created_at: 'DESC' },
+      take: size, skip: (page - 1) * size,
+    });
+    return { items, total, page, size };
+  }
+
+  // ── 系统设置 ──────────────────────────────
+  getSettings() {
+    return {
+      siteName: 'SkillHub',
+      version: '1.0',
+      dbHost: process.env.DB_HOST?.replace(/\./g, '*') || '***',
+      smtpUser: process.env.SMTP_USER || '(not set)',
+      wechatEnabled: !!process.env.WECHAT_APPSECRET,
+      wechatLoginEnabled: process.env.WECHAT_LOGIN_ENABLED === 'true',
+      publicBaseUrl: process.env.PUBLIC_BASE_URL || '',
+      nodeEnv: process.env.NODE_ENV || 'development',
+    };
   }
 }

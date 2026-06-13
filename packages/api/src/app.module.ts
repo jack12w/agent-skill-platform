@@ -15,6 +15,7 @@ import { User } from './auth/user.entity';
 import { Team } from './teams/team.entity';
 import { Comment } from './skills/comment.entity';
 import { Event } from './skills/event.entity';
+import { AdminLog } from './common/admin-log.entity';
 
 @Module({
   imports: [
@@ -41,7 +42,7 @@ import { Event } from './skills/event.entity';
       retryAttempts: process.env.NODE_ENV === 'production' ? 10 : 2,
       retryDelay: 3000,
     }),
-    TypeOrmModule.forFeature([Skill, User, Team, Comment, Event]),
+    TypeOrmModule.forFeature([Skill, User, Team, Comment, Event, AdminLog]),
     StorageModule,
     AuthModule,
     SkillsModule,
