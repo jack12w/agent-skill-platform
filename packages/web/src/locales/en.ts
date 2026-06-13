@@ -218,6 +218,24 @@ const en = {
     '供应链物流': 'Logistics',
     '合规风控': 'Compliance',
   },
+  admin: {
+    title: 'Admin Hub',
+    stats: 'Dashboard',
+    overview: 'Platform overview at a glance',
+    users: 'Users',
+    skills: 'Skills',
+    tags: 'Tags',
+    comments: 'Comments',
+    teams: 'Teams',
+    logs: 'Audit Log',
+    settings: 'Settings',
+    published: 'Published',
+    quickActions: 'Quick Actions',
+    manageTags: 'Manage Tags',
+    uploadSkill: 'Submit Skill',
+    backToSite: 'Back to site',
+    hub: 'Admin Hub',
+  },
 };
 
 export default en;

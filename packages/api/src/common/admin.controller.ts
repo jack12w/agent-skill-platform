@@ -1,18 +1,32 @@
-import { Controller, Post, HttpCode, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, UseGuards, HttpCode, HttpException, HttpStatus } from '@nestjs/common';
 import { StatsAggregationService } from '../stats-aggregation.service';
+import { AdminService } from './admin.service';
+import { AdminGuard } from './admin.guard';
+import { AuthGuard } from '../auth/auth.guard';
 
 /**
- * Admin maintenance endpoints — not exposed to the public in production.
- * In production, you can trigger these via an internal request or a cron job.
+ * Admin endpoints — protected by AuthGuard + AdminGuard.
  */
 @Controller('admin')
+@UseGuards(AuthGuard, AdminGuard)
 export class AdminController {
-  constructor(private readonly statsAggregation: StatsAggregationService) {}
+  constructor(
+    private readonly statsAggregation: StatsAggregationService,
+    private readonly adminService: AdminService,
+  ) {}
+
+  /**
+   * GET /admin/stats
+   * Dashboard overview stats
+   */
+  @Get('stats')
+  async getStats() {
+    return this.adminService.getStats();
+  }
 
   /**
    * POST /admin/sync-stats
    * Recalculates skill_stats from the events table and updates all scores.
-   * Useful when leaderboard total-rank and weekly-rank show different numbers.
    */
   @Post('sync-stats')
   @HttpCode(200)

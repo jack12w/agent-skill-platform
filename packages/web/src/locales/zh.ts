@@ -218,6 +218,24 @@ const zh = {
     '供应链物流': '供应链物流',
     '合规风控': '合规风控',
   },
+  admin: {
+    title: '管理后台',
+    stats: '数据总览',
+    overview: '平台核心数据一览',
+    users: '用户管理',
+    skills: '技能管理',
+    tags: '标签管理',
+    comments: '评论管理',
+    teams: '团队管理',
+    logs: '操作日志',
+    settings: '系统设置',
+    published: '已发布',
+    quickActions: '快捷操作',
+    manageTags: '管理标签',
+    uploadSkill: '提交技能',
+    backToSite: '返回网站',
+    hub: '管理后台',
+  },
 };
 
 export default zh;

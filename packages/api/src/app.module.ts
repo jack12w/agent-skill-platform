@@ -8,6 +8,12 @@ import { StorageModule } from './storage/storage.module';
 import { UsersModule } from './users/users.module';
 import { HealthController } from './common/health.controller';
 import { AdminController } from './common/admin.controller';
+import { AdminService } from './common/admin.service';
+import { AdminGuard } from './common/admin.guard';
+import { Skill } from './skills/skill.entity';
+import { User } from './auth/user.entity';
+import { Team } from './teams/team.entity';
+import { Comment } from './skills/comment.entity';
 
 @Module({
   imports: [
@@ -34,6 +40,7 @@ import { AdminController } from './common/admin.controller';
       retryAttempts: process.env.NODE_ENV === 'production' ? 10 : 2,
       retryDelay: 3000,
     }),
+    TypeOrmModule.forFeature([Skill, User, Team, Comment]),
     StorageModule,
     AuthModule,
     SkillsModule,
@@ -42,5 +49,6 @@ import { AdminController } from './common/admin.controller';
     UsersModule,
   ],
   controllers: [HealthController, AdminController],
+  providers: [AdminService, AdminGuard],
 })
 export class AppModule {}

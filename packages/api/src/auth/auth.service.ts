@@ -40,7 +40,7 @@ export class AuthService {
     const password_hash = await bcrypt.hash(pass, salt);
     const user = this.userRepository.create({ email, password_hash, name });
     const saved = await this.userRepository.save(user);
-    const payload = { sub: saved.id, email: saved.email };
+    const payload = { sub: saved.id, email: saved.email, role: saved.role };
     return {
       access_token: await this.jwtService.signAsync(payload),
       user: { id: saved.id, email: saved.email, name: saved.name, avatar_url: saved.avatar_url },
@@ -50,7 +50,7 @@ export class AuthService {
   async login(email: string, pass: string) {
     const user = await this.userRepository.findOne({
       where: { email },
-      select: ['id', 'email', 'password_hash', 'name', 'avatar_url'],
+      select: ['id', 'email', 'password_hash', 'name', 'avatar_url', 'role'],
     });
     if (user && (await bcrypt.compare(pass, user.password_hash))) {
       const payload = { sub: user.id, email: user.email };
@@ -174,7 +174,7 @@ export class AuthService {
     // 3. 查找或创建用户
     let user = await this.userRepository.findOne({
       where: { wechat_openid: openid },
-      select: ['id', 'email', 'name', 'avatar_url', 'wechat_openid', 'wechat_unionid'],
+      select: ['id', 'email', 'name', 'avatar_url', 'wechat_openid', 'wechat_unionid', 'role'],
     });
     if (!user) {
       user = this.userRepository.create({
@@ -200,7 +200,7 @@ export class AuthService {
     const mockName = nickname || '微信用户(测试)';
     let user = await this.userRepository.findOne({
       where: { wechat_openid: mockOpenId },
-      select: ['id', 'email', 'name', 'avatar_url', 'wechat_openid', 'wechat_unionid'],
+      select: ['id', 'email', 'name', 'avatar_url', 'wechat_openid', 'wechat_unionid', 'role'],
     });
     if (!user) {
       user = this.userRepository.create({
