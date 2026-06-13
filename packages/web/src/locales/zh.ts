@@ -241,7 +241,7 @@ const zh = {
     reject: '驳回',
     rejectConfirm: '确定驳回？技能将变为已归档状态',
     noPending: '暂无待审核技能',
-    tagGroups: '标签分组管理',
+    tagGroups: '标签分组',
     tagGroupsDesc: '修改后前端的技能广场、编辑页、提交页标签同步生效',
     addGroup: '新增分组',
     tagKey: 'Key (英文标识)',
@@ -301,6 +301,11 @@ const zh = {
     noSkills: '暂无技能',
     prev: '上一页',
     next: '下一页',
+    fixTagsBtn: '修复所有标签（逗号分割、转小写、去重）',
+    fixing: '修复中...',
+    fixed: '修复了 {count} 个技能',
+    currentTags: '当前标签 ({count})',
+    error: '错误',
   },
 };
 

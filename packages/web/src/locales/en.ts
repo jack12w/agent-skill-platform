@@ -300,6 +300,11 @@ const en = {
     noSkills: 'No skills',
     prev: 'Prev',
     next: 'Next',
+    fixTagsBtn: 'Fix All Tags (split, lowercase, deduplicate)',
+    fixing: 'Fixing...',
+    fixed: 'Fixed {count} skills',
+    currentTags: 'Current Tags ({count})',
+    error: 'Error',
   },
 };
 
