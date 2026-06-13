@@ -1,6 +1,6 @@
-import { Controller, Post, Patch, Delete, Get, Body, UseGuards, Request, Param, Query, UseInterceptors, UploadedFile, BadRequestException, Res } from '@nestjs/common';
+import { Controller, Post, Patch, Delete, Get, Body, UseGuards, Request, Param, Query, UseInterceptors, UploadedFile, UploadedFiles, BadRequestException, Res } from '@nestjs/common';
 import { Response } from 'express';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { JwtService } from '@nestjs/jwt';
 import { SkillsService } from './skills.service';
 import { AuthGuard } from '../auth/auth.guard';
@@ -38,6 +38,19 @@ export class SkillsController {
   @Post('fix-tags')
   fixTags() {
     return this.skillsService.fixAllTags();
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('batch')
+  @UseInterceptors(FilesInterceptor('files', 50, { limits: { fileSize: 300 * 1024 } }))
+  batchUpload(@UploadedFiles() files: any[], @Request() req: any, @Body('tags') tags?: string) {
+    if (!files || files.length === 0) throw new BadRequestException('At least one file is required');
+    const tagList = tags ? tags.split(/[,，]/).map((t: string) => t.trim()).filter(Boolean) : [];
+    return this.skillsService.batchUpload(
+      files.map(f => ({ buffer: f.buffer, originalname: f.originalname })),
+      req.user.sub,
+      tagList,
+    );
   }
 
   @UseGuards(AuthGuard)

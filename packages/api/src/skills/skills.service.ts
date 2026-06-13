@@ -604,6 +604,54 @@ export class SkillsService {
     return { ok: true };
   }
 
+  // ── 批量上传 ─────────────────────────────
+  async batchUpload(files: { buffer: Buffer; originalname: string }[], userId: string, tags?: string[]) {
+    const AdmZip = (await import('adm-zip')).default;
+    const results: { name: string; ok: boolean; id?: string; error?: string }[] = [];
+
+    for (const file of files) {
+      try {
+        // Parse SKILL.md from zip
+        let meta: ReturnType<typeof parseSkillMd>;
+        try {
+          const zip = new AdmZip(file.buffer);
+          const candidates = zip.getEntries().filter(e => !e.isDirectory && /(^|\/)skill\.md$/i.test(e.entryName));
+          if (candidates.length === 0) throw new Error('SKILL.md not found');
+          candidates.sort((a: any, b: any) => a.entryName.split('/').length - b.entryName.split('/').length);
+          meta = parseSkillMd(candidates[0].getData().toString('utf8'));
+        } catch { throw new Error('Invalid SKILL.md'); }
+
+        // Create skill
+        const id = randomUUID();
+        const skill = this.skillRepository.create({
+          id, slug: id,
+          name: meta.name,
+          content_md: meta.description || null,
+          short_summary: meta.description?.slice(0, 160) || null,
+          tags: [...(meta.tags || []), ...(tags || [])],
+          owner_user_id: userId,
+        });
+        const saved = await this.skillRepository.save(skill);
+        await this.statsRepository.save({ skill_id: saved.id });
+
+        // Upload version
+        const objectKey = `skills/${saved.id}/1.0.0.zip`;
+        const packageUrl = await this.ossService.putBuffer(objectKey, file.buffer);
+        const version = this.versionRepository.create({
+          skill_id: saved.id, version: meta.version || '1.0.0',
+          manifest_json: meta as any, package_url: packageUrl, size: file.buffer.length,
+        });
+        const savedVersion = await this.versionRepository.save(version);
+        await this.skillRepository.update(saved.id, { latest_version_id: savedVersion.id });
+
+        results.push({ name: meta.name || file.originalname, ok: true, id: saved.id });
+      } catch (err: any) {
+        results.push({ name: file.originalname, ok: false, error: err.message || String(err) });
+      }
+    }
+    return { results, total: files.length, success: results.filter(r => r.ok).length };
+  }
+
   // ── 批量修复标签 ─────────────────────────
   async fixAllTags() {
     const skills = await this.skillRepository.find();

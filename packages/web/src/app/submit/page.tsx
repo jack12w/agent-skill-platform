@@ -78,6 +78,13 @@ export default function SubmitSkill() {
   const [myTeams, setMyTeams] = useState<any[]>([]);
   const [parsing, setParsing] = useState(false);
   const [tagGroups, setTagGroups] = useState(FALLBACK_PRESET_TAGS);
+  const [mode, setMode] = useState<'single' | 'batch'>('single');
+
+  // Batch state
+  const [batchFiles, setBatchFiles] = useState<{ file: File; name: string; tags?: string; error?: string }[]>([]);
+  const [batchTags, setBatchTags] = useState('');
+  const [batchResults, setBatchResults] = useState<{ name: string; ok: boolean; id?: string; error?: string }[]>([]);
+  const [batchSubmitting, setBatchSubmitting] = useState(false);
 
   useEffect(() => { fetchTagGroups().then(g => { const filtered: Record<string, string[]> = {}; for (const k of GROUP_KEYS) if (g[k]) filtered[k] = g[k]; if (Object.keys(filtered).length) setTagGroups(filtered); }); }, []);
 
@@ -128,6 +135,46 @@ export default function SubmitSkill() {
     });
   };
 
+  // Batch handlers
+  const handleBatchFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const newFiles: typeof batchFiles = [];
+    for (const file of files) {
+      if (file.size > MAX_SIZE) {
+        newFiles.push({ file, name: file.name, error: `File too large (${(file.size / 1024).toFixed(0)}KB)` });
+        continue;
+      }
+      try {
+        const result = await parseZipForSkillMd(file);
+        if (result) newFiles.push({ file, name: result.name || file.name, tags: result.tags });
+        else newFiles.push({ file, name: file.name, error: 'SKILL.md not found or invalid' });
+      } catch { newFiles.push({ file, name: file.name, error: 'Parse error' }); }
+    }
+    setBatchFiles(prev => [...prev, ...newFiles]);
+    e.target.value = '';
+  };
+
+  const removeBatchFile = (idx: number) => {
+    setBatchFiles(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleBatchSubmit = async () => {
+    const valid = batchFiles.filter(f => !f.error);
+    if (!valid.length) { alert('No valid files to upload'); return; }
+    setBatchSubmitting(true);
+    const token = localStorage.getItem('token');
+    if (!token) { router.push('/auth'); return; }
+    try {
+      const fd = new FormData();
+      valid.forEach(f => fd.append('files', f.file));
+      if (batchTags.trim()) fd.append('tags', batchTags.trim());
+      const r = await fetch('/api/skills/batch', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
+      const j = await r.json();
+      setBatchResults(j.results || []);
+    } catch (e: any) { alert('Error: ' + e.message); }
+    setBatchSubmitting(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) { alert(t('submit.nameRequired')); return; }
@@ -163,6 +210,17 @@ export default function SubmitSkill() {
         <div className="w-5 sm:w-16 shrink-0" />
       </div>
 
+      {/* Tab switcher */}
+      <div className="flex border-b border-gray-200 mb-6">
+        <button type="button" onClick={() => setMode('single')} className={`px-6 py-2.5 text-sm font-medium border-b-2 transition-colors ${mode === 'single' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          单技能上传
+        </button>
+        <button type="button" onClick={() => setMode('batch')} className={`px-6 py-2.5 text-sm font-medium border-b-2 transition-colors ${mode === 'batch' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          批量上传
+        </button>
+      </div>
+
+      {mode === 'single' ? (
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* ── 第 1 步：上传技能包（置顶） ── */}
         <div className="p-6 sm:p-8 border-2 border-dashed rounded-xl text-center bg-blue-50/30 border-blue-300">
@@ -261,6 +319,68 @@ export default function SubmitSkill() {
 
         <button type="submit" disabled={loading} className="w-full py-4 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-400">{loading ? t('submit.publishing') : t('submit.publish')}</button>
       </form>
+      ) : (
+      <div className="space-y-6">
+        {/* Batch: file selector */}
+        <div className="p-6 sm:p-8 border-2 border-dashed rounded-xl text-center bg-purple-50/30 border-purple-300">
+          <input type="file" accept=".zip" multiple className="hidden" id="batch-upload" onChange={handleBatchFiles} />
+          <label htmlFor="batch-upload" className="cursor-pointer">
+            <div className="text-purple-600 font-bold mb-2 text-lg">拖入多个 .zip 文件或点击选择</div>
+            <p className="text-sm text-gray-500">每个 zip 需包含 SKILL.md（单个最大 300KB）</p>
+          </label>
+        </div>
+
+        {/* Batch: file list */}
+        {batchFiles.length > 0 && (
+          <div>
+            <h3 className="text-sm font-semibold mb-2">已选文件 ({batchFiles.length})</h3>
+            <div className="bg-white border rounded-xl divide-y">
+              {batchFiles.map((f, i) => (
+                <div key={i} className="flex items-center justify-between px-4 py-3">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium truncate block">{f.name}</span>
+                    {f.error ? (
+                      <span className="text-xs text-red-500">{f.error}</span>
+                    ) : (
+                      f.tags && <span className="text-xs text-gray-400">{f.tags}</span>
+                    )}
+                  </div>
+                  <button onClick={() => removeBatchFile(i)} className="ml-3 text-xs text-red-500 hover:underline shrink-0">移除</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Batch: shared tags */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">共享标签（可选，应用到全部）</label>
+          <input type="text" value={batchTags} onChange={e => setBatchTags(e.target.value)} className="w-full p-3 border rounded-lg text-sm" placeholder="workbuddy, 阿里国际站" />
+        </div>
+
+        {/* Batch: submit */}
+        <button onClick={handleBatchSubmit} disabled={batchSubmitting || !batchFiles.filter(f => !f.error).length}
+          className="w-full py-4 bg-purple-600 text-white rounded-lg font-bold hover:bg-purple-700 disabled:bg-gray-400">
+          {batchSubmitting ? '提交中...' : `批量提交 (${batchFiles.filter(f => !f.error).length} 个技能)`}
+        </button>
+
+        {/* Batch: results */}
+        {batchResults.length > 0 && (
+          <div className="bg-white border rounded-xl p-4">
+            <h3 className="text-sm font-semibold mb-2">提交结果</h3>
+            <div className="space-y-1">
+              {batchResults.map((r, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <span className={r.ok ? 'text-green-600' : 'text-red-500'}>{r.ok ? '✅' : '❌'}</span>
+                  <span className="flex-1 truncate">{r.name}</span>
+                  {r.ok && r.id ? <a href={`/skills/${r.id}`} target="_blank" className="text-blue-600 text-xs hover:underline">查看</a> : <span className="text-xs text-red-400">{r.error}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      )}
     </div>
   );
 }
