@@ -79,6 +79,17 @@ export default function SubmitSkill() {
   const [parsing, setParsing] = useState(false);
   const [tagGroups, setTagGroups] = useState(FALLBACK_PRESET_TAGS);
   const [mode, setMode] = useState<'single' | 'batch'>('single');
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setIsAdmin(payload.role === 'admin');
+      }
+    } catch {}
+  }, []);
 
   // Batch state
   const [batchFiles, setBatchFiles] = useState<{ file: File; name: string; tags?: string; error?: string }[]>([]);
@@ -215,9 +226,11 @@ export default function SubmitSkill() {
         <button type="button" onClick={() => setMode('single')} className={`px-6 py-2.5 text-sm font-medium border-b-2 transition-colors ${mode === 'single' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
           单技能上传
         </button>
-        <button type="button" onClick={() => setMode('batch')} className={`px-6 py-2.5 text-sm font-medium border-b-2 transition-colors ${mode === 'batch' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-          批量上传
-        </button>
+        {isAdmin && (
+          <button type="button" onClick={() => setMode('batch')} className={`px-6 py-2.5 text-sm font-medium border-b-2 transition-colors ${mode === 'batch' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            批量上传
+          </button>
+        )}
       </div>
 
       {mode === 'single' ? (
