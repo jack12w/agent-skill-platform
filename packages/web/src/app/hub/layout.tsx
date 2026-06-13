@@ -55,7 +55,7 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
       {/* Sidebar */}
       <aside className="w-56 bg-white border-r border-gray-200 shrink-0 hidden md:block">
         <div className="px-5 py-5 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">SkillHub Hub</h2>
+          <h2 className="text-sm font-semibold text-gray-900">SkillHub</h2>
           <p className="text-xs text-gray-500 mt-0.5">{t('admin.title')}</p>
         </div>
         <nav className="py-2">
