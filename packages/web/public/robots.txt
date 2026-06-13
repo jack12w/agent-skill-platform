@@ -5,6 +5,7 @@ Allow: /skills/*
 Allow: /leaderboard$
 Allow: /teams/*
 Disallow: /auth
+Disallow: /hub
 Disallow: /dashboard
 Disallow: /submit
 Disallow: /*/edit
