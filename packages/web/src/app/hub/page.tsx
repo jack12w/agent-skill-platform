@@ -166,32 +166,32 @@ export default function HubPage() {
       {/* Analytics section */}
       {analytics && (
         <>
-          <h2 className="text-sm font-semibold text-gray-700 mb-3 mt-8">Website Analytics</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3 mt-8">{t('admin.websiteAnalytics')}</h2>
           <div className="grid grid-cols-3 gap-3 mb-4">
             <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 text-center">
               <p className="text-2xl font-bold text-violet-700">{analytics.totalPV.toLocaleString()}</p>
-              <p className="text-xs text-violet-500">Total PV</p>
+              <p className="text-xs text-violet-500">{t('admin.totalPV')}</p>
             </div>
             <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 text-center">
               <p className="text-2xl font-bold text-violet-700">{analytics.todayPV}</p>
-              <p className="text-xs text-violet-500">Today PV</p>
+              <p className="text-xs text-violet-500">{t('admin.todayPV')}</p>
             </div>
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
               <p className="text-2xl font-bold text-amber-700">{analytics.uv7d.toLocaleString()}</p>
-              <p className="text-xs text-amber-500">7-Day UV</p>
+              <p className="text-xs text-amber-500">{t('admin.sevenDayUV')}</p>
             </div>
           </div>
 
           {analytics.trends.length > 0 && (
             <div className="bg-white border border-gray-200 rounded-xl p-5 mb-4">
-              <h2 className="text-sm font-semibold text-gray-700 mb-3">PV / UV Trends</h2>
+              <h2 className="text-sm font-semibold text-gray-700 mb-3">{t('admin.pvUvTrend')}</h2>
               <div style={{ height: 200 }}><canvas ref={analyticsChartRef} /></div>
             </div>
           )}
 
           {analytics.topPages.length > 0 && (
             <div className="bg-white border border-gray-200 rounded-xl p-5 mb-4">
-              <h2 className="text-sm font-semibold text-gray-700 mb-3">Top Pages (7d)</h2>
+              <h2 className="text-sm font-semibold text-gray-700 mb-3">{t('admin.topPages')}</h2>
               <div className="space-y-1">
                 {analytics.topPages.map((p: any) => (
                   <div key={p.path} className="flex items-center justify-between px-3 py-1.5 rounded hover:bg-gray-50">

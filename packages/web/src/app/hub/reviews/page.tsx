@@ -31,8 +31,8 @@ export default function HubReviewsPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold text-gray-900 mb-1">技能审核</h1>
-      <p className="text-xs text-gray-500 mb-4">用户提交或更新技能后进入审核，通过后在前端展示</p>
+      <h1 className="text-xl font-bold text-gray-900 mb-1">{t('admin.reviews')}</h1>
+      <p className="text-xs text-gray-500 mb-4">{t('admin.reviewDesc')}</p>
 
       <div className="bg-white border rounded-xl overflow-hidden">
         <table className="w-full text-sm">
@@ -61,14 +61,14 @@ export default function HubReviewsPage() {
                 <td className="px-4 py-3 text-gray-400 text-xs hidden sm:table-cell whitespace-nowrap">{new Date(s.updated_at || s.created_at).toLocaleDateString()}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex gap-2 justify-end">
-                    <button onClick={() => review(s.id, 'approve')} className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700">通过</button>
-                    <button onClick={() => { if (confirm('确定驳回？技能将变为已归档状态')) review(s.id, 'reject'); }} className="px-3 py-1.5 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600">驳回</button>
+                    <button onClick={() => review(s.id, 'approve')} className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700">{t('admin.approve')}</button>
+                    <button onClick={() => { if (confirm(t('admin.rejectConfirm'))) review(s.id, 'reject'); }} className="px-3 py-1.5 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600">{t('admin.reject')}</button>
                   </div>
                 </td>
               </tr>
             ))}
             {(!data || data.items.length === 0) && (
-              <tr><td colSpan={5} className="px-4 py-12 text-center text-gray-400 text-sm">暂无待审核技能</td></tr>
+              <tr><td colSpan={5} className="px-4 py-12 text-center text-gray-400 text-sm">{t('admin.noPending')}</td></tr>
             )}
           </tbody>
         </table>

@@ -30,7 +30,7 @@ export default function HubLogsPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>;
-  if (err) return <div className="text-center py-16 text-gray-400 text-sm">{err} — 可能需要先在数据库创建 admin_logs 表</div>;
+  if (err) return <div className="text-center py-16 text-gray-400 text-sm">{err} — {t('admin.logTableHint')}</div>;
 
   return (
     <div>
