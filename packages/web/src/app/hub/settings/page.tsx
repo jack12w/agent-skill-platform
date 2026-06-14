@@ -29,16 +29,16 @@ export default function HubSettingsPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold text-gray-900 mb-4">{t('admin.settings')}</h1>
-      <div className="bg-white border rounded-xl divide-y divide-gray-100">
+      <h1 className="text-xl font-bold text-neutral-900 mb-4">{t('admin.settings')}</h1>
+      <div className="bg-white border rounded-xl divide-y divide-neutral-100">
         {rows.map(r => (
           <div key={r.label} className="flex items-center justify-between px-5 py-3">
-            <span className="text-sm text-gray-600">{r.label}</span>
-            <span className="text-sm font-medium text-gray-900">{String(r.value)}</span>
+            <span className="text-sm text-neutral-600">{r.label}</span>
+            <span className="text-sm font-medium text-neutral-900">{String(r.value)}</span>
           </div>
         ))}
       </div>
-      <p className="mt-4 text-xs text-gray-400">{t('admin.logTableHint')}</p>
+      <p className="mt-4 text-xs text-neutral-400">{t('admin.logTableHint')}</p>
     </div>
   );
 }

@@ -129,7 +129,7 @@ function SkillSquareInner() {
       {/* ── 标题 + 排序 ── */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-4xl font-bold">{t('skills.square')}</h1>
-        <div className="flex gap-2 p-1 bg-gray-100 rounded-lg self-start sm:self-auto">
+        <div className="flex gap-2 p-1 bg-neutral-100 rounded-lg self-start sm:self-auto">
           <button onClick={() => setSort('weekly')} className={`px-3 sm:px-4 py-2 rounded-md text-sm ${sort === 'weekly' ? 'bg-white shadow-sm' : ''}`}>{t('skills.weeklyHot')}</button>
           <button onClick={() => setSort('total')} className={`px-3 sm:px-4 py-2 rounded-md text-sm ${sort === 'total' ? 'bg-white shadow-sm' : ''}`}>{t('skills.allTime')}</button>
           <button onClick={() => setSort('new')} className={`px-3 sm:px-4 py-2 rounded-md text-sm ${sort === 'new' ? 'bg-white shadow-sm' : ''}`}>{t('skills.newest')}</button>
@@ -146,7 +146,7 @@ function SkillSquareInner() {
             <div key={group} className="flex gap-1.5 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none' as any, msOverflowStyle: 'none' }}>
               <button
                 onClick={() => clearGroup(group)}
-                className={`shrink-0 px-3 py-1.5 text-sm rounded-full whitespace-nowrap transition ${!hasActive ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                className={`shrink-0 px-3 py-1.5 text-sm rounded-full whitespace-nowrap transition ${!hasActive ? 'bg-brand-600 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}
               >
                 {t(`tags.${allKey}`)}
               </button>
@@ -154,7 +154,7 @@ function SkillSquareInner() {
                 <button
                   key={tag}
                   onClick={() => toggleTag(tag)}
-                  className={`shrink-0 px-3 py-1.5 text-sm rounded-full whitespace-nowrap transition ${activeTags.has(tag) ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                  className={`shrink-0 px-3 py-1.5 text-sm rounded-full whitespace-nowrap transition ${activeTags.has(tag) ? 'bg-brand-600 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}
                 >
                   {tt(tag)}
                 </button>
@@ -167,25 +167,25 @@ function SkillSquareInner() {
       {/* ── 搜索提示 ── */}
       {query && (
         <div className="mb-6 flex items-center gap-2">
-          <span className="text-sm text-gray-500">搜索：</span>
-          <span className="px-3 py-1 bg-blue-50 text-blue-700 text-sm rounded-full">{query}</span>
-          <button onClick={() => { setQuery(''); }} className="text-xs text-gray-400 hover:text-red-500">✕ 清除</button>
+          <span className="text-sm text-neutral-500">搜索：</span>
+          <span className="px-3 py-1 bg-brand-50 text-brand-700 text-sm rounded-full">{query}</span>
+          <button onClick={() => { setQuery(''); }} className="text-xs text-neutral-400 hover:text-danger-500">✕ 清除</button>
         </div>
       )}
 
       {/* ── 技能列表 ── */}
       {loading ? (
-        <div className="text-center py-24 text-gray-500">{t('skills.loading')}</div>
+        <div className="text-center py-24 text-neutral-500">{t('skills.loading')}</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {skills.length === 0 && (
-            <div className="col-span-full text-center py-12 text-gray-400">{t('skills.noSkills')}</div>
+            <div className="col-span-full text-center py-12 text-neutral-400">{t('skills.noSkills')}</div>
           )}
           {skills.map(skill => (
-            <Link key={skill.id} href={`/skills/${skill.slug || skill.id}`} className="group p-6 border rounded-2xl hover:border-blue-500 transition-all hover:shadow-lg flex flex-col">
-              <h3 className="text-xl font-bold mb-2 group-hover:text-blue-600">{skill.name}</h3>
-              <p className="text-gray-600 text-sm mb-3 line-clamp-2">{skill.short_summary || skill.summary}</p>
-              <div className="text-xs text-gray-400 mb-4">
+            <Link key={skill.id} href={`/skills/${skill.slug || skill.id}`} className="group p-6 border rounded-2xl hover:border-brand-500 transition-all hover:shadow-lg flex flex-col glass">
+              <h3 className="text-xl font-bold mb-2 group-hover:text-brand-600">{skill.name}</h3>
+              <p className="text-neutral-600 text-sm mb-3 line-clamp-2">{skill.short_summary || skill.summary}</p>
+              <div className="text-xs text-neutral-400 mb-4">
                 {skill.latest_version ? `v${skill.latest_version.version}` : '—'}
                 {skill.updated_at && ` · ${new Date(skill.updated_at).toLocaleDateString()}`}
               </div>
@@ -194,11 +194,11 @@ function SkillSquareInner() {
                   {skill.owner_user?.avatar_url ? (
                     <img src={skill.owner_user.avatar_url} alt={skill.owner_user?.name || ''} className="w-6 h-6 rounded-full object-cover" />
                   ) : (
-                    <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-[10px] font-bold text-blue-600">{skill.owner_user?.name?.[0] || 'U'}</div>
+                    <div className="w-6 h-6 bg-brand-100 rounded-full flex items-center justify-center text-[10px] font-bold text-brand-600">{skill.owner_user?.name?.[0] || 'U'}</div>
                   )}
                   <span className="text-sm font-medium">{skill.owner_user?.name || 'Anonymous'}</span>
                 </div>
-                <div className="text-sm font-black text-blue-600">
+                <div className="text-sm font-black text-brand-600">
                   {parseFloat(
                     sort === 'weekly' ? (skill.stats?.weekly_score || 0) : (skill.stats?.total_score || 0)
                   ).toFixed(1)} {t('skills.score')}
@@ -211,10 +211,10 @@ function SkillSquareInner() {
       {/* Infinite scroll sentinel */}
       <div id="scroll-sentinel" className="h-1" />
       {loadingMore && (
-        <div className="text-center py-8 text-gray-400 text-sm">加载更多技能...</div>
+        <div className="text-center py-8 text-neutral-400 text-sm">加载更多技能...</div>
       )}
       {!hasMore && skills.length > 0 && (
-        <div className="text-center py-8 text-gray-300 text-xs">— 已加载全部技能 —</div>
+        <div className="text-center py-8 text-neutral-300 text-xs">— 已加载全部技能 —</div>
       )}
     </div>
   );
@@ -222,7 +222,7 @@ function SkillSquareInner() {
 
 export default function SkillSquare() {
   return (
-    <Suspense fallback={<div className="text-center py-24 text-gray-500">加载中...</div>}>
+    <Suspense fallback={<div className="text-center py-24 text-neutral-500">加载中...</div>}>
       <SkillSquareInner />
     </Suspense>
   );

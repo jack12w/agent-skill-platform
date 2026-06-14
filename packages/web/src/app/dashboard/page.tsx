@@ -96,7 +96,7 @@ export default function Dashboard() {
     finally { setUploadingAvatar(false); }
   };
 
-  if (!user) return <div className="p-24 text-center">Please <Link href="/auth" className="text-blue-600">login</Link> to view your dashboard.</div>;
+  if (!user) return <div className="p-24 text-center">Please <Link href="/auth" className="text-brand-600">login</Link> to view your dashboard.</div>;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
@@ -104,9 +104,9 @@ export default function Dashboard() {
         <label className="relative cursor-pointer group shrink-0">
           <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" disabled={uploadingAvatar} />
           {user.avatar_url ? (
-            <img src={user.avatar_url} alt={user.name} className="w-20 h-20 rounded-full object-cover border-2 border-gray-200" />
+            <img src={user.avatar_url} alt={user.name} className="w-20 h-20 rounded-full object-cover border-2 border-neutral-200" />
           ) : (
-            <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-3xl font-bold text-white">{user.name[0]}</div>
+            <div className="w-20 h-20 bg-brand-600 rounded-full flex items-center justify-center text-3xl font-bold text-white">{user.name[0]}</div>
           )}
           <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
             <span className="text-white text-xs font-medium">{uploadingAvatar ? '...' : '更换'}</span>
@@ -116,18 +116,18 @@ export default function Dashboard() {
           {editingName ? (
             <div className="flex items-center gap-2">
               <input value={profileName} onChange={e => setProfileName(e.target.value)} className="text-2xl sm:text-3xl font-bold w-full max-w-xs px-2 py-1 border rounded" autoFocus onKeyDown={e => { if (e.key === 'Enter') handleSaveProfile(); if (e.key === 'Escape') setEditingName(false); }} />
-              <button onClick={handleSaveProfile} disabled={savingProfile || !profileName.trim()} className="shrink-0 px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50">{savingProfile ? '...' : '保存'}</button>
-              <button onClick={() => setEditingName(false)} className="shrink-0 px-3 py-1 border text-sm rounded hover:bg-gray-50">取消</button>
+              <button onClick={handleSaveProfile} disabled={savingProfile || !profileName.trim()} className="shrink-0 px-3 py-1 bg-brand-600 text-white text-sm rounded hover:bg-brand-700 disabled:opacity-50">{savingProfile ? '...' : '保存'}</button>
+              <button onClick={() => setEditingName(false)} className="shrink-0 px-3 py-1 border text-sm rounded hover:bg-neutral-100">取消</button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
               <h1 className="text-2xl sm:text-3xl font-bold truncate">{user.name}</h1>
-              <button onClick={() => { setProfileName(user.name); setEditingName(true); }} className="shrink-0 text-gray-400 hover:text-blue-500">
+              <button onClick={() => { setProfileName(user.name); setEditingName(true); }} className="shrink-0 text-neutral-400 hover:text-brand-500">
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
             </div>
           )}
-          <p className="text-gray-500 text-sm mt-0.5">{user.email}</p>
+          <p className="text-neutral-500 text-sm mt-0.5">{user.email}</p>
         </div>
       </div>
       <div className="grid md:grid-cols-3 gap-12">
@@ -136,38 +136,38 @@ export default function Dashboard() {
           <div className="space-y-4">
             {skills.map(skill => (
               <div key={skill.id} className="p-4 border rounded-xl flex justify-between items-center">
-                <div><h3 className="font-bold">{skill.name}</h3><p className="text-sm text-gray-500 line-clamp-2">{skill.short_summary}</p></div>
+                <div><h3 className="font-bold">{skill.name}</h3><p className="text-sm text-neutral-500 line-clamp-2">{skill.short_summary}</p></div>
                 <div className="flex items-center gap-3 min-w-[68px]">
-                  <Link href={`/skills/${skill.slug || skill.id}`} className="text-blue-600 text-sm font-medium">{t('dashboard.manage')}</Link>
-                  <button onClick={() => handleDeleteSkill(skill.id, skill.name)} disabled={deleting === skill.id} className="text-red-500 text-sm font-medium hover:text-red-700 disabled:opacity-40">{deleting === skill.id ? t('dashboard.deleting') : t('dashboard.delete')}</button>
+                  <Link href={`/skills/${skill.slug || skill.id}`} className="text-brand-600 text-sm font-medium">{t('dashboard.manage')}</Link>
+                  <button onClick={() => handleDeleteSkill(skill.id, skill.name)} disabled={deleting === skill.id} className="text-danger-500 text-sm font-medium hover:text-danger-700 disabled:opacity-40">{deleting === skill.id ? t('dashboard.deleting') : t('dashboard.delete')}</button>
                 </div>
               </div>
             ))}
-            {skills.length === 0 && <div className="text-gray-400 py-8 border-2 border-dashed rounded-xl text-center">{t('dashboard.noSkills')}</div>}
-            <Link href="/submit" className="block w-full py-4 text-center border-2 border-dashed rounded-xl text-blue-600 font-bold hover:bg-blue-50">{t('dashboard.addNewSkill')}</Link>
+            {skills.length === 0 && <div className="text-neutral-400 py-8 border-2 border-dashed rounded-xl text-center">{t('dashboard.noSkills')}</div>}
+            <Link href="/submit" className="block w-full py-4 text-center border-2 border-dashed rounded-xl text-brand-600 font-bold hover:bg-brand-50">{t('dashboard.addNewSkill')}</Link>
           </div>
         </div>
         <div>
           <h2 className="text-2xl font-bold mb-6">{t('dashboard.myTeams')}</h2>
           <div className="space-y-4">
             {teams.map(m => (
-              <Link key={m.team.id} href={`/teams/${m.team.id}`} className="flex items-center justify-between p-4 border rounded-xl hover:border-gray-400 hover:bg-gray-50 transition gap-3">
-                <div><h3 className="font-bold">{m.team.name}</h3><p className="text-sm text-gray-500 capitalize">{m.role}</p></div>
-                <svg className="w-5 h-5 shrink-0 text-gray-400" viewBox="0 0 1024 1024" fill="currentColor"><path d="M273.9 852.5c0 7.6 3.1 14.9 8.6 20.1l40.2 40.2c5.2 5.5 12.5 8.7 20.1 8.6 5.7 0 11.5-2.9 17.2-8.6L742.4 530.6c5.8-5.7 8.6-11.5 8.6-17.2 0-7.6-3.1-14.9-8.6-20.1L360.1 111c-5.7-5.7-11.5-8.6-17.2-8.6-7.6 0-14.9 3.1-20.1 8.6l-40.2 40.2c-5.5 5.2-8.7 12.5-8.6 20.1 0 5.7 2.9 11.5 8.6 17.2L604.4 513.3l-321.9 321.9c-5.8 5.8-8.6 11.5-8.6 17.3z"/></svg>
+              <Link key={m.team.id} href={`/teams/${m.team.id}`} className="flex items-center justify-between p-4 border rounded-xl hover:border-neutral-400 hover:bg-neutral-100 transition gap-3">
+                <div><h3 className="font-bold">{m.team.name}</h3><p className="text-sm text-neutral-500 capitalize">{m.role}</p></div>
+                <svg className="w-5 h-5 shrink-0 text-neutral-400" viewBox="0 0 1024 1024" fill="currentColor"><path d="M273.9 852.5c0 7.6 3.1 14.9 8.6 20.1l40.2 40.2c5.2 5.5 12.5 8.7 20.1 8.6 5.7 0 11.5-2.9 17.2-8.6L742.4 530.6c5.8-5.7 8.6-11.5 8.6-17.2 0-7.6-3.1-14.9-8.6-20.1L360.1 111c-5.7-5.7-11.5-8.6-17.2-8.6-7.6 0-14.9 3.1-20.1 8.6l-40.2 40.2c-5.5 5.2-8.7 12.5-8.6 20.1 0 5.7 2.9 11.5 8.6 17.2L604.4 513.3l-321.9 321.9c-5.8 5.8-8.6 11.5-8.6 17.3z"/></svg>
               </Link>
             ))}
-            {teams.length === 0 && <div className="text-gray-400 py-4 text-sm">{t('dashboard.noTeams')}</div>}
+            {teams.length === 0 && <div className="text-neutral-400 py-4 text-sm">{t('dashboard.noTeams')}</div>}
             {showCreate ? (
-              <form onSubmit={handleCreateTeam} className="p-4 border rounded-xl space-y-3 bg-gray-50">
+              <form onSubmit={handleCreateTeam} className="p-4 border rounded-xl space-y-3 bg-neutral-100">
                 <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t('dashboard.teamName')} required autoFocus className="w-full px-3 py-2 border rounded-lg text-sm" />
                 <textarea value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder={t('dashboard.description')} rows={2} className="w-full px-3 py-2 border rounded-lg text-sm" />
                 <div className="flex gap-2">
-                  <button type="submit" disabled={creating || !newName.trim()} className="flex-1 py-2 bg-gray-900 text-white rounded-lg text-sm font-bold hover:bg-black disabled:opacity-50">{creating ? t('dashboard.creating') : t('dashboard.create')}</button>
+                  <button type="submit" disabled={creating || !newName.trim()} className="flex-1 py-2 bg-neutral-900 text-white rounded-lg text-sm font-bold hover:bg-black disabled:opacity-50">{creating ? t('dashboard.creating') : t('dashboard.create')}</button>
                   <button type="button" onClick={() => { setShowCreate(false); setNewName(''); setNewDesc(''); }} className="px-4 py-2 border rounded-lg text-sm font-medium hover:bg-white">{t('dashboard.cancel')}</button>
                 </div>
               </form>
             ) : (
-              <button type="button" onClick={() => setShowCreate(true)} className="w-full py-3 bg-gray-900 text-white rounded-lg font-bold hover:bg-black">{t('dashboard.createTeam')}</button>
+              <button type="button" onClick={() => setShowCreate(true)} className="w-full py-3 bg-neutral-900 text-white rounded-lg font-bold hover:bg-black">{t('dashboard.createTeam')}</button>
             )}
           </div>
         </div>

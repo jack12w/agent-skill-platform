@@ -98,20 +98,20 @@ export default function AuthPage() {
   return (
     <div className="max-w-md mx-auto px-4 sm:px-6 py-16 sm:py-24">
       <h1 className="text-3xl font-bold text-center mb-8">{t('auth.title')}</h1>
-      <div className="flex mb-6 p-1 bg-gray-100 rounded-lg">
+      <div className="flex mb-6 p-1 bg-neutral-100 rounded-lg">
         <button onClick={() => setTab('login')} className={`flex-1 py-2 rounded-md ${tab === 'login' ? 'bg-white shadow-sm' : ''}`}>{t('auth.login')}</button>
         <button onClick={() => setTab('register')} className={`flex-1 py-2 rounded-md ${tab === 'register' ? 'bg-white shadow-sm' : ''}`}>{t('auth.register')}</button>
       </div>
       <form onSubmit={handleSubmit} className="space-y-4">
         {tab === 'register' && (
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.name')}</label>
+          <div><label className="block text-sm font-medium text-neutral-700 mb-1">{t('auth.name')}</label>
             <input type="text" required className="w-full px-3 py-2 border rounded-lg" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
           </div>
         )}
-        <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.email')}</label>
+        <div><label className="block text-sm font-medium text-neutral-700 mb-1">{t('auth.email')}</label>
           <input type="email" required className="w-full px-3 py-2 border rounded-lg" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
         </div>
-        <div><label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.password')}</label>
+        <div><label className="block text-sm font-medium text-neutral-700 mb-1">{t('auth.password')}</label>
           <input type="password" required className="w-full px-3 py-2 border rounded-lg" value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
         </div>
         {tab === 'register' && (
@@ -123,7 +123,7 @@ export default function AuthPage() {
             </button>
           </div>
         )}
-        <button type="submit" disabled={loading} className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-400">
+        <button type="submit" disabled={loading} className="w-full py-3 bg-brand-600 text-white rounded-lg font-bold hover:bg-brand-700 disabled:bg-neutral-400">
           {loading ? '...' : tab === 'login' ? t('auth.login') : t('auth.register')}
         </button>
       </form>
@@ -132,9 +132,9 @@ export default function AuthPage() {
       {process.env.NEXT_PUBLIC_WECHAT_LOGIN_ENABLED === 'true' && (
         <div className="mt-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="flex-1 border-t border-gray-200" />
-            <span className="text-sm text-gray-400">或</span>
-            <div className="flex-1 border-t border-gray-200" />
+            <div className="flex-1 border-t border-neutral-200" />
+            <span className="text-sm text-neutral-400">或</span>
+            <div className="flex-1 border-t border-neutral-200" />
           </div>
           <button onClick={handleWechatLogin} className="w-full py-3 bg-green-500 text-white rounded-lg font-bold hover:bg-green-600 flex items-center justify-center gap-2">
             <svg className="w-5 h-5" viewBox="0 0 1024 1024" fill="currentColor">
@@ -144,18 +144,18 @@ export default function AuthPage() {
             微信登录
           </button>
           {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
-            <button onClick={handleMockWechatLogin} className="w-full py-2 mt-2 border-2 border-dashed border-gray-300 text-gray-400 rounded-lg text-sm hover:border-green-400 hover:text-green-500">
+            <button onClick={handleMockWechatLogin} className="w-full py-2 mt-2 border-2 border-dashed border-neutral-300 text-neutral-400 rounded-lg text-sm hover:border-green-400 hover:text-green-500">
               Dev 微信登录 (模拟)
             </button>
           )}
         </div>
       )}
 
-      <p className="text-center text-sm text-gray-500 mt-4">
+      <p className="text-center text-sm text-neutral-500 mt-4">
         {tab === 'login' ? (
-          <button onClick={() => setTab('register')} className="text-blue-600">{t('auth.noAccount')}</button>
+          <button onClick={() => setTab('register')} className="text-brand-600">{t('auth.noAccount')}</button>
         ) : (
-          <button onClick={() => setTab('login')} className="text-blue-600">{t('auth.hasAccount')}</button>
+          <button onClick={() => setTab('login')} className="text-brand-600">{t('auth.hasAccount')}</button>
         )}
       </p>
     </div>

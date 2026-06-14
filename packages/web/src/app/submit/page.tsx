@@ -233,7 +233,7 @@ export default function SubmitSkill() {
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
       <div className="flex items-center gap-2 sm:gap-0 mb-6 sm:mb-8">
-        <Link href="/dashboard" className="shrink-0 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900">
+        <Link href="/dashboard" className="shrink-0 inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-900">
           <svg className="w-5 h-5" viewBox="0 0 1024 1024" fill="currentColor"><path d="M277.818 543.962l401.629 384.163c18.504 17.681 48.475 17.68 66.947 0s18.474-46.361 0-64.043L378.2 511.953l368.194-352.155c18.474-17.68 18.474-46.331 0-64.012-18.474-17.682-48.444-17.682-66.947 0L277.818 479.949c-18.504 17.652-18.504 46.331 0 64.012z"/></svg>
           <span className="hidden sm:inline">{t('submit.back')}</span>
         </Link>
@@ -242,12 +242,12 @@ export default function SubmitSkill() {
       </div>
 
       {/* Tab switcher */}
-      <div className="flex border-b border-gray-200 mb-6">
-        <button type="button" onClick={() => setMode('single')} className={`px-6 py-2.5 text-sm font-medium border-b-2 transition-colors ${mode === 'single' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+      <div className="flex border-b border-neutral-200 mb-6">
+        <button type="button" onClick={() => setMode('single')} className={`px-6 py-2.5 text-sm font-medium border-b-2 transition-colors ${mode === 'single' ? 'border-brand-600 text-brand-600' : 'border-transparent text-neutral-500 hover:text-neutral-700'}`}>
           单技能上传
         </button>
         {isAdmin && (
-          <button type="button" onClick={() => setMode('batch')} className={`px-6 py-2.5 text-sm font-medium border-b-2 transition-colors ${mode === 'batch' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          <button type="button" onClick={() => setMode('batch')} className={`px-6 py-2.5 text-sm font-medium border-b-2 transition-colors ${mode === 'batch' ? 'border-brand-600 text-brand-600' : 'border-transparent text-neutral-500 hover:text-neutral-700'}`}>
             批量上传
           </button>
         )}
@@ -256,21 +256,21 @@ export default function SubmitSkill() {
       {mode === 'single' ? (
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* ── 第 1 步：上传技能包（置顶） ── */}
-        <div className="p-6 sm:p-8 border-2 border-dashed rounded-xl text-center bg-blue-50/30 border-blue-300">
+        <div className="p-6 sm:p-8 border-2 border-dashed rounded-xl text-center bg-brand-50/30 border-brand-300">
           <input type="file" accept=".zip" className="hidden" id="file-upload" onChange={handleFileChange} />
           <label htmlFor="file-upload" className="cursor-pointer">
-            <div className="text-blue-600 font-bold mb-2 text-lg">
+            <div className="text-brand-600 font-bold mb-2 text-lg">
               {parsing ? '解析中...' : file ? file.name : t('submit.zipLabel')}
             </div>
-            <p className="text-sm text-gray-500">{t('submit.zipHint')}（{t('submit.zipLimitHint', { limit: 300 })}）</p>
+            <p className="text-sm text-neutral-500">{t('submit.zipHint')}（{t('submit.zipLimitHint', { limit: 300 })}）</p>
           </label>
           {file && <p className="text-xs text-green-600 mt-2">✅ 已选择文件，下方内容已自动填充</p>}
         </div>
 
         {/* ── SKILL.md 格式示例 ── */}
-        <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
-          <p className="text-sm font-medium text-gray-700 mb-2">{t('submit.skillMdExample')}</p>
-          <pre className="text-[11px] text-gray-600 overflow-x-auto">{`---\nname: my-skill\nversion: 1.0.0\ndescription: Skill description\ntags: [search, web]\n---\n\n# My Skill\n(instructions / content)`}</pre>
+        <div className="p-4 bg-neutral-100 border border-neutral-200 rounded-lg">
+          <p className="text-sm font-medium text-neutral-700 mb-2">{t('submit.skillMdExample')}</p>
+          <pre className="text-[11px] text-neutral-600 overflow-x-auto">{`---\nname: my-skill\nversion: 1.0.0\ndescription: Skill description\ntags: [search, web]\n---\n\n# My Skill\n(instructions / content)`}</pre>
         </div>
 
         {/* ── 第 2 步：Markdown 编辑器（实时预览） ── */}
@@ -284,7 +284,7 @@ export default function SubmitSkill() {
             .md-editor-clean .w-md-editor-text-input::-webkit-scrollbar,
             .md-editor-clean .w-md-editor-preview::-webkit-scrollbar { display: none; }
           `}</style>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-neutral-700 mb-2">
               {t('submit.summary')}
             </label>
           <MDEditor
@@ -299,13 +299,13 @@ export default function SubmitSkill() {
 
         {/* ── 第 3 步：技能名称（自动填充） ── */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-neutral-700 mb-1">
             {t('submit.name')} {file && <span className="text-green-500 text-xs">（已从 SKILL.md 自动填充）</span>}
           </label>
           <input type="text" required className="w-full p-3 border rounded-lg" placeholder="SEO Audit Agent" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
           {/* 实时同名检测反馈 */}
           {nameFeedback.loading && (
-            <p className="mt-1 text-xs text-gray-400">{t('submit.nameChecking')}</p>
+            <p className="mt-1 text-xs text-neutral-400">{t('submit.nameChecking')}</p>
           )}
           {!nameFeedback.loading && nameFeedback.similar.length > 0 && (
             <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
@@ -325,16 +325,16 @@ export default function SubmitSkill() {
 
         {/* ── 标签 ── */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-neutral-700 mb-1">
             {t('submit.tags')} {file && formData.tags && <span className="text-green-500 text-xs">（已从 SKILL.md 自动填充）</span>}
           </label>
           <input type="text" className="w-full p-3 border rounded-lg" placeholder="SEO, Marketing" value={formData.tags} onChange={e => setFormData({...formData, tags: e.target.value})} />
           {/* ── 预设标签 ── */}
           <div className="mt-3 space-y-2">
-            <span className="text-xs text-gray-400">{t('tags.presetTags')}</span>
+            <span className="text-xs text-neutral-400">{t('tags.presetTags')}</span>
             {GROUP_KEYS.map(group => (
               <div key={group} className="flex items-center gap-2">
-                <span className="text-xs text-gray-400 shrink-0 w-10">{t(`tags.${group}`)}:</span>
+                <span className="text-xs text-neutral-400 shrink-0 w-10">{t(`tags.${group}`)}:</span>
                 <div className="flex gap-1 flex-wrap">
                   {tagGroups[group].filter(tag => !['精选','Featured','featured','FEATURED'].includes(tag)).map(tag => (
                     <button
@@ -342,7 +342,7 @@ export default function SubmitSkill() {
                       type="button"
                       onClick={() => addTag(tag)}
                       disabled={formData.tags.split(/[,，]/).map(x => x.trim()).filter(Boolean).includes(tag)}
-                      className="shrink-0 px-2 py-0.5 text-xs rounded-full border border-blue-300 text-blue-600 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-default transition"
+                      className="shrink-0 px-2 py-0.5 text-xs rounded-full border border-brand-300 text-brand-600 hover:bg-brand-50 disabled:opacity-40 disabled:cursor-default transition"
                     >
                       {tt(tag)}
                     </button>
@@ -356,28 +356,28 @@ export default function SubmitSkill() {
         {/* ── 团队选择 ── */}
         {myTeams.length > 0 && (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('submit.teamLabel')}</label>
+            <label className="block text-sm font-medium text-neutral-700 mb-1">{t('submit.teamLabel')}</label>
             <div className="relative">
               <select value={formData.owner_team_id} onChange={e => setFormData({...formData, owner_team_id: e.target.value})} className="w-full p-3 pr-10 border rounded-lg bg-white appearance-none">
                 <option value="">{t('submit.teamPersonal')}</option>
                 {myTeams.map((m: any) => (<option key={m.team.id} value={m.team.id}>{m.team.name}</option>))}
               </select>
-              <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" viewBox="0 0 1024 1024" fill="currentColor"><path d="M543.962 746.182l384.163-401.629c17.681-18.504 17.68-48.475 0-66.947s-46.361-18.474-64.043 0L511.953 645.8l-352.155-368.194c-17.68-18.474-46.331-18.474-64.012 0s-17.682 48.444 0 66.947L479.949 746.182c17.652 18.504 46.331 18.504 64.012 0z"/></svg>
+              <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" viewBox="0 0 1024 1024" fill="currentColor"><path d="M543.962 746.182l384.163-401.629c17.681-18.504 17.68-48.475 0-66.947s-46.361-18.474-64.043 0L511.953 645.8l-352.155-368.194c-17.68-18.474-46.331-18.474-64.012 0s-17.682 48.444 0 66.947L479.949 746.182c17.652 18.504 46.331 18.504 64.012 0z"/></svg>
             </div>
-            <span className="block text-xs text-gray-500 mt-1">{t('submit.teamHint')}</span>
+            <span className="block text-xs text-neutral-500 mt-1">{t('submit.teamHint')}</span>
           </div>
         )}
 
-        <button type="submit" disabled={loading} className="w-full py-4 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-400">{loading ? t('submit.publishing') : t('submit.publish')}</button>
+        <button type="submit" disabled={loading} className="w-full py-4 bg-brand-600 text-white rounded-lg font-bold hover:bg-brand-700 disabled:bg-neutral-400">{loading ? t('submit.publishing') : t('submit.publish')}</button>
       </form>
       ) : (
       <div className="space-y-6">
         {/* Batch: file selector */}
-        <div className="p-6 sm:p-8 border-2 border-dashed rounded-xl text-center bg-purple-50/30 border-purple-300">
+        <div className="p-6 sm:p-8 border-2 border-dashed rounded-xl text-center bg-accent-50/30 border-accent-300">
           <input type="file" accept=".zip" multiple className="hidden" id="batch-upload" onChange={handleBatchFiles} />
           <label htmlFor="batch-upload" className="cursor-pointer">
-            <div className="text-purple-600 font-bold mb-2 text-lg">拖入多个 .zip 文件或点击选择</div>
-            <p className="text-sm text-gray-500">每个 zip 需包含 SKILL.md（单个最大 300KB）</p>
+            <div className="text-accent-600 font-bold mb-2 text-lg">拖入多个 .zip 文件或点击选择</div>
+            <p className="text-sm text-neutral-500">每个 zip 需包含 SKILL.md（单个最大 300KB）</p>
           </label>
         </div>
 
@@ -393,7 +393,7 @@ export default function SubmitSkill() {
                     {f.error ? (
                       <span className="text-xs text-red-500">{f.error}</span>
                     ) : (
-                      f.tags && <span className="text-xs text-gray-400">{f.tags}</span>
+                      f.tags && <span className="text-xs text-neutral-400">{f.tags}</span>
                     )}
                   </div>
                   <button onClick={() => removeBatchFile(i)} className="ml-3 text-xs text-red-500 hover:underline shrink-0">移除</button>
@@ -405,13 +405,13 @@ export default function SubmitSkill() {
 
         {/* Batch: shared tags */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">共享标签（可选，应用到全部）</label>
+          <label className="block text-sm font-medium text-neutral-700 mb-1">共享标签（可选，应用到全部）</label>
           <input type="text" value={batchTags} onChange={e => setBatchTags(e.target.value)} className="w-full p-3 border rounded-lg text-sm" placeholder="workbuddy, 阿里国际站" />
         </div>
 
         {/* Batch: submit */}
         <button onClick={handleBatchSubmit} disabled={batchSubmitting || !batchFiles.filter(f => !f.error).length}
-          className="w-full py-4 bg-purple-600 text-white rounded-lg font-bold hover:bg-purple-700 disabled:bg-gray-400">
+          className="w-full py-4 bg-accent-600 text-white rounded-lg font-bold hover:bg-accent-700 disabled:bg-neutral-400">
           {batchSubmitting ? '提交中...' : `批量提交 (${batchFiles.filter(f => !f.error).length} 个技能)`}
         </button>
 
@@ -424,7 +424,7 @@ export default function SubmitSkill() {
                 <div key={i} className="flex items-center gap-2 text-sm">
                   <span className={r.ok ? 'text-green-600' : 'text-red-500'}>{r.ok ? '✅' : '❌'}</span>
                   <span className="flex-1 truncate">{r.name}</span>
-                  {r.ok && r.id ? <a href={`/skills/${r.id}`} target="_blank" className="text-blue-600 text-xs hover:underline">查看</a> : <span className="text-xs text-red-400">{r.error}</span>}
+                  {r.ok && r.id ? <a href={`/skills/${r.id}`} target="_blank" className="text-brand-600 text-xs hover:underline">查看</a> : <span className="text-xs text-red-400">{r.error}</span>}
                 </div>
               ))}
             </div>

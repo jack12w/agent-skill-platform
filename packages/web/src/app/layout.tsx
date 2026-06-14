@@ -108,11 +108,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <AnalyticsTracker />
           <NavBar />
           <main className="min-h-screen">{children}</main>
-          <footer className="p-6 sm:p-10 border-t text-center text-gray-500 text-sm space-y-1">
+          <footer className="p-6 sm:p-10 border-t text-center text-neutral-500 text-sm space-y-1">
             <p>© 2026 SkillDepot. Built for the AI era.</p>
             <p>
               技术支持：
-              <a href="https://rehomi.com/xinghuo" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+              <a href="https://rehomi.com/xinghuo" target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline">
                 星火工作室
               </a>
             </p>

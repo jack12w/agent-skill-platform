@@ -28,27 +28,27 @@ export default function HubCommentsPage() {
     fetchData();
   };
 
-  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>;
+  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" /></div>;
 
   return (
     <div>
-      <h1 className="text-xl font-bold text-gray-900 mb-4">{t('admin.comments')}</h1>
+      <h1 className="text-xl font-bold text-neutral-900 mb-4">{t('admin.comments')}</h1>
       <div className="bg-white border rounded-xl overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+          <thead className="bg-neutral-100 text-neutral-500 text-xs uppercase">
             <tr><th className="px-4 py-3 text-left">{t('admin.thComment')}</th><th className="px-4 py-3 text-left hidden md:table-cell">{t('admin.thSkill')}</th><th className="px-4 py-3 text-left">{t('admin.thUser')}</th><th className="px-4 py-3 text-left hidden sm:table-cell">{t('admin.thDate')}</th><th className="px-4 py-3 text-right">{t('admin.thDelete')}</th></tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-neutral-100">
             {(data?.items || []).map((c: any) => (
-              <tr key={c.id} className="hover:bg-gray-50">
+              <tr key={c.id} className="hover:bg-neutral-100">
                 <td className="px-4 py-3 max-w-xs truncate">{c.content}</td>
                 <td className="px-4 py-3 hidden md:table-cell">
-                  <a href={`/skills/${c.skill?.slug || c.skill?.id}`} target="_blank" className="text-blue-600 hover:underline text-xs">{c.skill?.name}</a>
+                  <a href={`/skills/${c.skill?.slug || c.skill?.id}`} target="_blank" className="text-brand-600 hover:underline text-xs">{c.skill?.name}</a>
                 </td>
-                <td className="px-4 py-3 text-gray-600">{c.user?.name || c.user?.email}</td>
-                <td className="px-4 py-3 text-gray-400 text-xs hidden sm:table-cell">{new Date(c.created_at).toLocaleDateString()}</td>
+                <td className="px-4 py-3 text-neutral-600">{c.user?.name || c.user?.email}</td>
+                <td className="px-4 py-3 text-neutral-400 text-xs hidden sm:table-cell">{new Date(c.created_at).toLocaleDateString()}</td>
                 <td className="px-4 py-3 text-right">
-                  <button onClick={() => deleteComment(c.id)} className="text-xs text-red-500 hover:underline">{t('admin.delete')}</button>
+                  <button onClick={() => deleteComment(c.id)} className="text-xs text-danger-500 hover:underline">{t('admin.delete')}</button>
                 </td>
               </tr>
             ))}
@@ -56,7 +56,7 @@ export default function HubCommentsPage() {
         </table>
       </div>
       {data && data.total > 20 && (
-        <div className="flex justify-between mt-4 text-sm text-gray-500">
+        <div className="flex justify-between mt-4 text-sm text-neutral-500">
           <span>{(page-1)*20+1}-{Math.min(page*20, data.total)} of {data.total}</span>
           <div className="flex gap-2">
             <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1} className="px-3 py-1 border rounded disabled:opacity-30">{t('admin.prev')}</button>

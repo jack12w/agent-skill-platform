@@ -49,8 +49,8 @@ export default function HubTagGroupsPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold text-gray-900 mb-1">{t('admin.tagGroups')}</h1>
-      <p className="text-xs text-gray-500 mb-4">{t('admin.tagGroupsDesc')}</p>
+      <h1 className="text-xl font-bold text-neutral-900 mb-1">{t('admin.tagGroups')}</h1>
+      <p className="text-xs text-neutral-500 mb-4">{t('admin.tagGroupsDesc')}</p>
       {msg && <p className="text-sm text-green-600 mb-2">{msg}</p>}
 
       {/* Add new */}
@@ -58,18 +58,18 @@ export default function HubTagGroupsPage() {
         <h2 className="text-sm font-semibold mb-3">{t('admin.addGroup')}</h2>
         <div className="flex flex-wrap gap-3 items-end">
           <div>
-            <label className="text-xs text-gray-500">{t('admin.tagKey')}</label>
+            <label className="text-xs text-neutral-500">{t('admin.tagKey')}</label>
             <input value={newGroup.key} onChange={e => setNewGroup({ ...newGroup, key: e.target.value })} className="w-24 px-2 py-1.5 text-sm border rounded" placeholder="role" />
           </div>
           <div>
-            <label className="text-xs text-gray-500">{t('admin.displayName')}</label>
+            <label className="text-xs text-neutral-500">{t('admin.displayName')}</label>
             <input value={newGroup.name} onChange={e => setNewGroup({ ...newGroup, name: e.target.value })} className="w-24 px-2 py-1.5 text-sm border rounded" placeholder="role" />
           </div>
           <div>
-            <label className="text-xs text-gray-500">{t('admin.tagsComma')}</label>
+            <label className="text-xs text-neutral-500">{t('admin.tagsComma')}</label>
             <input value={newGroup.tagsStr} onChange={e => setNewGroup({ ...newGroup, tagsStr: e.target.value })} className="w-64 px-2 py-1.5 text-sm border rounded" placeholder={t('admin.tagsPlaceholder')} />
           </div>
-          <button onClick={create} className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">{t('admin.add')}</button>
+          <button onClick={create} className="px-4 py-1.5 text-sm bg-brand-600 text-white rounded-lg hover:bg-brand-700">{t('admin.add')}</button>
         </div>
       </div>
 
@@ -81,24 +81,24 @@ export default function HubTagGroupsPage() {
               <input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className="w-24 px-2 py-1.5 text-sm border rounded" />
               <input value={editing.tagsStr} onChange={e => setEditing({ ...editing, tagsStr: e.target.value })} className="w-96 px-2 py-1.5 text-sm border rounded" />
               <button onClick={update} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded">{t('admin.save')}</button>
-              <button onClick={() => setEditing(null)} className="px-3 py-1.5 text-sm bg-gray-200 rounded">{t('admin.cancel')}</button>
+              <button onClick={() => setEditing(null)} className="px-3 py-1.5 text-sm bg-neutral-200 rounded">{t('admin.cancel')}</button>
             </div>
           ) : (
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs bg-gray-100 px-1.5 py-0.5 rounded font-mono text-gray-500">{g.key}</span>
-                  <span className="text-sm font-medium text-gray-800">{g.name}</span>
-                  <span className="text-xs text-gray-400">({(g.tags?.length || 0)} {t('admin.nTags')})</span>
+                  <span className="text-xs bg-neutral-100 px-1.5 py-0.5 rounded font-mono text-neutral-500">{g.key}</span>
+                  <span className="text-sm font-medium text-neutral-800">{g.name}</span>
+                  <span className="text-xs text-neutral-400">({(g.tags?.length || 0)} {t('admin.nTags')})</span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {(g.tags || []).map((tag: string) => (
-                    <span key={tag} className={`px-2 py-0.5 rounded text-xs ${tag === '精选' ? 'bg-orange-50 text-orange-800 border border-orange-200' : 'bg-blue-50 text-blue-700'}`}>{tag}</span>
+                    <span key={tag} className={`px-2 py-0.5 rounded text-xs ${tag === '精选' ? 'bg-orange-50 text-orange-800 border border-orange-200' : 'bg-brand-50 text-brand-700'}`}>{tag}</span>
                   ))}
                 </div>
               </div>
               <div className="flex gap-2 shrink-0 ml-4">
-                <button onClick={() => setEditing({ id: g.id, name: g.name, tagsStr: (g.tags || []).join(', ') })} className="text-xs text-blue-600 hover:underline">{t('admin.edit')}</button>
+                <button onClick={() => setEditing({ id: g.id, name: g.name, tagsStr: (g.tags || []).join(', ') })} className="text-xs text-brand-600 hover:underline">{t('admin.edit')}</button>
                 <button onClick={() => del(g.id)} className="text-xs text-red-500 hover:underline">{t('admin.delete')}</button>
               </div>
             </div>

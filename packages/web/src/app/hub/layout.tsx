@@ -57,10 +57,10 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
       <style>{`body { overflow: hidden; } footer { display: none !important; }`}</style>
       <div className="flex h-[calc(100vh-64px)] overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-56 bg-white border-r border-gray-200 shrink-0 hidden md:flex md:flex-col h-full">
-        <div className="px-5 py-5 border-b border-gray-100 shrink-0">
-          <h2 className="text-sm font-semibold text-gray-900">SkillDepot</h2>
-          <p className="text-xs text-gray-500 mt-0.5">{t('admin.title')}</p>
+      <aside className="w-56 bg-white border-r border-neutral-200 shrink-0 hidden md:flex md:flex-col h-full">
+        <div className="px-5 py-5 border-b border-neutral-100 shrink-0">
+          <h2 className="text-sm font-semibold text-neutral-900">SkillDepot</h2>
+          <p className="text-xs text-neutral-500 mt-0.5">{t('admin.title')}</p>
         </div>
         <nav className="py-2 overflow-y-auto flex-1">
           {MENU.map(item => (
@@ -69,8 +69,8 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
               href={item.key === 'stats' ? '/hub' : `/hub/${item.key}`}
               className={`flex items-center gap-3 px-5 py-2.5 text-sm transition-colors ${
                 activeKey === item.key
-                  ? 'bg-blue-50 text-blue-700 font-medium border-r-2 border-blue-600'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  ? 'bg-brand-50 text-brand-700 font-medium border-r-2 border-brand-600'
+                  : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
               }`}
             >
               <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -80,8 +80,8 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
-        <div className="absolute bottom-0 left-0 w-56 p-4 border-t border-gray-100">
-          <Link href="/" className="flex items-center gap-2 text-xs text-gray-400 hover:text-gray-600 transition-colors">
+        <div className="absolute bottom-0 left-0 w-56 p-4 border-t border-neutral-100">
+          <Link href="/" className="flex items-center gap-2 text-xs text-neutral-400 hover:text-neutral-600 transition-colors">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
@@ -91,13 +91,13 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Mobile nav */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40 flex overflow-x-auto">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-neutral-200 z-40 flex overflow-x-auto">
         {MENU.map(item => (
           <Link
             key={item.key}
             href={item.key === 'stats' ? '/hub' : `/hub/${item.key}`}
             className={`flex flex-col items-center justify-center min-w-[64px] py-2 px-1 text-[10px] ${
-              activeKey === item.key ? 'text-blue-600' : 'text-gray-400'
+              activeKey === item.key ? 'text-brand-600' : 'text-neutral-400'
             }`}
           >
             <svg className="w-5 h-5 mb-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -109,7 +109,7 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Content */}
-      <main className="flex-1 bg-gray-50 p-4 md:p-6 pb-20 md:pb-6 overflow-auto">
+      <main className="flex-1 bg-neutral-100 p-4 md:p-6 pb-20 md:pb-6 overflow-auto">
         {children}
       </main>
     </div>

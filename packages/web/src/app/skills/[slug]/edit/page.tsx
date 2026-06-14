@@ -98,13 +98,13 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
     finally { setUploading(false); }
   };
 
-  if (loading) return <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center text-gray-500">{t('skills.loading')}</div>;
-  if (error) return (<div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center"><h1 className="text-2xl font-bold mb-2">Cannot edit</h1><p className="text-gray-500 mb-6">{error}</p>{skill && <Link href={`/skills/${skill.slug || skill.id}`} className="text-blue-600 underline">Back to skill</Link>}</div>);
+  if (loading) return <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center text-neutral-500">{t('skills.loading')}</div>;
+  if (error) return (<div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center"><h1 className="text-2xl font-bold mb-2">Cannot edit</h1><p className="text-neutral-500 mb-6">{error}</p>{skill && <Link href={`/skills/${skill.slug || skill.id}`} className="text-brand-600 underline">Back to skill</Link>}</div>);
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
       <div className="flex items-center gap-2 sm:gap-0 mb-6 sm:mb-8">
-        <Link href={`/skills/${skill.slug || skill.id}`} className="shrink-0 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900">
+        <Link href={`/skills/${skill.slug || skill.id}`} className="shrink-0 inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-900">
           <svg className="w-5 h-5" viewBox="0 0 1024 1024" fill="currentColor"><path d="M277.818 543.962l401.629 384.163c18.504 17.681 48.475 17.68 66.947 0s18.474-46.361 0-64.043L378.2 511.953l368.194-352.155c18.474-17.68 18.474-46.331 0-64.012-18.474-17.682-48.444-17.682-66.947 0L277.818 479.949c-18.504 17.652-18.504 46.331 0 64.012z"/></svg>
           <span className="hidden sm:inline">{t('edit.back')}</span>
         </Link>
@@ -113,18 +113,18 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
       </div>
 
       {/* ── 上传新版本（置顶） ── */}
-      <div className="mb-8 p-5 sm:p-6 border-2 border-dashed rounded-xl bg-blue-50/30 border-blue-300">
+      <div className="mb-8 p-5 sm:p-6 border-2 border-dashed rounded-xl bg-brand-50/30 border-brand-300">
         <h2 className="text-lg font-bold mb-3">{t('edit.uploadVersion')}</h2>
-        <p className="text-xs text-gray-500 mb-3">{t('edit.uploadHint')}（{t('edit.uploadLimitHint', { limit: 300 })}）</p>
+        <p className="text-xs text-neutral-500 mb-3">{t('edit.uploadHint')}（{t('edit.uploadLimitHint', { limit: 300 })}）</p>
         <textarea value={versionNotes} onChange={(e) => setVersionNotes(e.target.value)} placeholder={t('edit.versionNotesPlaceholder')} rows={2} className="w-full px-3 py-2 border rounded-lg text-sm mb-3" />
-        <div className="flex flex-col sm:flex-row gap-3"><input ref={fileRef} type="file" accept=".zip" className="flex-1 text-sm min-w-0" /><button type="button" onClick={handleUpload} disabled={uploading} className="w-full sm:w-auto px-5 py-2 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-700 disabled:opacity-50">{uploading ? t('edit.uploading') : t('edit.upload')}</button></div>
+        <div className="flex flex-col sm:flex-row gap-3"><input ref={fileRef} type="file" accept=".zip" className="flex-1 text-sm min-w-0" /><button type="button" onClick={handleUpload} disabled={uploading} className="w-full sm:w-auto px-5 py-2 bg-neutral-900 text-white rounded-lg font-medium hover:bg-neutral-700 disabled:opacity-50">{uploading ? t('edit.uploading') : t('edit.upload')}</button></div>
       </div>
 
       {/* ── 版本历史 ── */}
       <div className="mb-10 p-5 sm:p-6 border rounded-xl bg-white">
         <h2 className="text-xl font-bold mb-4">{t('edit.versions')}</h2>
-        <div className="space-y-2 mb-4">{versions.length === 0 && <p className="text-gray-500 text-sm">No versions yet.</p>}
-          {versions.map((v) => { const isLatest = skill.latest_version_id === v.id; return (<div key={v.id} className="p-3 bg-gray-50 rounded-lg"><div className="flex items-center justify-between"><div><span className="font-mono font-medium">v{v.version}</span><span className="text-xs text-gray-500 ml-3">{v.size ? `${(v.size / 1024).toFixed(1)} KB · ` : ''}{new Date(v.created_at).toLocaleString()}</span></div><div className="flex items-center gap-2">{isLatest && <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">{t('detail.latest')}</span>}{!isLatest && <button type="button" onClick={() => handleDeleteVersion(v.id, v.version)} className="text-xs px-2 py-1 border border-red-300 text-red-600 rounded hover:bg-red-50">{t('edit.deleteVersion')}</button>}</div></div>{v.notes && <p className="text-xs text-gray-500 mt-1 ml-1">{v.notes}</p>}</div>); })}
+        <div className="space-y-2 mb-4">{versions.length === 0 && <p className="text-neutral-500 text-sm">No versions yet.</p>}
+          {versions.map((v) => { const isLatest = skill.latest_version_id === v.id; return (<div key={v.id} className="p-3 bg-neutral-100 rounded-lg"><div className="flex items-center justify-between"><div><span className="font-mono font-medium">v{v.version}</span><span className="text-xs text-neutral-500 ml-3">{v.size ? `${(v.size / 1024).toFixed(1)} KB · ` : ''}{new Date(v.created_at).toLocaleString()}</span></div><div className="flex items-center gap-2">{isLatest && <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">{t('detail.latest')}</span>}{!isLatest && <button type="button" onClick={() => handleDeleteVersion(v.id, v.version)} className="text-xs px-2 py-1 border border-red-300 text-red-600 rounded hover:bg-red-50">{t('edit.deleteVersion')}</button>}</div></div>{v.notes && <p className="text-xs text-neutral-500 mt-1 ml-1">{v.notes}</p>}</div>); })}
         </div>
       </div>
 
@@ -141,7 +141,7 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
             .md-editor-clean .w-md-editor-text-input::-webkit-scrollbar,
             .md-editor-clean .w-md-editor-preview::-webkit-scrollbar { display: none; }
           `}</style>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="block text-sm font-medium text-neutral-700 mb-2">
             {t('edit.description')}
           </label>
           <MDEditor
@@ -155,10 +155,10 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
         <Field label={t('edit.tags')}><input type="text" value={form.tags} onChange={onChange('tags')} placeholder="ai, nlp" className="w-full px-3 py-2 border rounded-lg" />
           {/* ── 预设标签 ── */}
           <div className="mt-3 space-y-2">
-            <span className="text-xs text-gray-400">{t('tags.presetTags')}</span>
+            <span className="text-xs text-neutral-400">{t('tags.presetTags')}</span>
             {GROUP_KEYS.map(group => (
               <div key={group} className="flex items-center gap-2">
-                <span className="text-xs text-gray-400 shrink-0 w-10">{t(`tags.${group}`)}:</span>
+                <span className="text-xs text-neutral-400 shrink-0 w-10">{t(`tags.${group}`)}:</span>
                 <div className="flex gap-1 flex-wrap">
                   {tagGroups[group].filter(tag => !['精选','Featured','featured','FEATURED'].includes(tag)).map(tag => (
                     <button
@@ -166,7 +166,7 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
                       type="button"
                       onClick={() => addTag(tag)}
                       disabled={form.tags.split(/[,，]/).map(x => x.trim()).filter(Boolean).includes(tag)}
-                      className="shrink-0 px-2 py-0.5 text-xs rounded-full border border-blue-300 text-blue-600 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-default transition"
+                      className="shrink-0 px-2 py-0.5 text-xs rounded-full border border-brand-300 text-brand-600 hover:bg-brand-50 disabled:opacity-40 disabled:cursor-default transition"
                     >
                       {tt(tag)}
                     </button>
@@ -183,13 +183,13 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
               <option value="">{t('edit.teamPersonal')}</option>
               {myTeams.map((m: any) => (<option key={m.team.id} value={m.team.id}>{m.team.name}</option>))}
             </select>
-            <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" viewBox="0 0 1024 1024" fill="currentColor"><path d="M543.962 746.182l384.163-401.629c17.681-18.504 17.68-48.475 0-66.947s-46.361-18.474-64.043 0L511.953 645.8l-352.155-368.194c-17.68-18.474-46.331-18.474-64.012 0s-17.682 48.444 0 66.947L479.949 746.182c17.652 18.504 46.331 18.504 64.012 0z"/></svg>
+            <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" viewBox="0 0 1024 1024" fill="currentColor"><path d="M543.962 746.182l384.163-401.629c17.681-18.504 17.68-48.475 0-66.947s-46.361-18.474-64.043 0L511.953 645.8l-352.155-368.194c-17.68-18.474-46.331-18.474-64.012 0s-17.682 48.444 0 66.947L479.949 746.182c17.652 18.504 46.331 18.504 64.012 0z"/></svg>
           </div>
-          <span className="block text-xs text-gray-500 mt-1">{t('edit.teamHint')}</span>
+          <span className="block text-xs text-neutral-500 mt-1">{t('edit.teamHint')}</span>
         </Field>
         <div className="flex gap-3 pt-2">
-          <button type="submit" disabled={saving} className="px-5 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50">{saving ? t('edit.saving') : t('edit.save')}</button>
-          <Link href={`/skills/${skill.slug || skill.id}`} className="px-5 py-2 border rounded-lg font-medium hover:bg-gray-50">{t('edit.cancel')}</Link>
+          <button type="submit" disabled={saving} className="px-5 py-2 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 disabled:opacity-50">{saving ? t('edit.saving') : t('edit.save')}</button>
+          <Link href={`/skills/${skill.slug || skill.id}`} className="px-5 py-2 border rounded-lg font-medium hover:bg-neutral-100">{t('edit.cancel')}</Link>
         </div>
       </form>
     </div>
@@ -197,5 +197,5 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
 }
 
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
-  return <label className="block"><span className="block text-sm font-medium text-gray-700 mb-1">{label}{required && <span className="text-red-500 ml-0.5">*</span>}</span>{children}</label>;
+  return <label className="block"><span className="block text-sm font-medium text-neutral-700 mb-1">{label}{required && <span className="text-red-500 ml-0.5">*</span>}</span>{children}</label>;
 }
