@@ -57,7 +57,7 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
       <style>{`body { overflow: hidden; } footer { display: none !important; }`}</style>
       <div className="flex h-[calc(100vh-64px)] overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-56 bg-white border-r border-neutral-200 shrink-0 hidden md:flex md:flex-col h-full">
+      <aside className="w-56 bg-white border-r border-neutral-200 shrink-0 hidden md:flex md:flex-col h-full relative">
         <div className="px-5 py-5 border-b border-neutral-100 shrink-0">
           <h2 className="text-sm font-semibold text-neutral-900">SkillDepot</h2>
           <p className="text-xs text-neutral-500 mt-0.5">{t('admin.title')}</p>

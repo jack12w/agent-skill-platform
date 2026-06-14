@@ -38,7 +38,6 @@ export default function HubSettingsPage() {
           </div>
         ))}
       </div>
-      <p className="mt-4 text-xs text-neutral-400">{t('admin.logTableHint')}</p>
     </div>
   );
 }
