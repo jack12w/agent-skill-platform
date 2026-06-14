@@ -106,11 +106,19 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
       <div className="flex flex-col md:flex-row gap-12">
         <div className="flex-1 min-w-0 md:min-w-[460px]">
           <div className="flex items-start justify-between gap-4 mb-4"><h1 className="text-2xl sm:text-4xl font-bold">{skill.name}</h1>{isOwner && <Link href={`/skills/${skill.slug || skill.id}/edit`} className="shrink-0 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50">{t('detail.edit')}</Link>}</div>
-          <div className="flex items-center gap-2 mb-4 flex-wrap">{tags.map((tag) => (
-            <button key={tag} onClick={() => router.push(`/skills?tag=${encodeURIComponent(tag)}`)} className="px-3 py-1 bg-blue-50 text-blue-600 text-sm rounded-full hover:bg-blue-100 hover:text-blue-700 transition cursor-pointer">
-              {tag}
-            </button>
-          ))}</div>
+          <div className="flex items-center gap-2 mb-4 flex-wrap">{tags.map((tag) => {
+            const isFeatured = tag === '精选';
+            return (
+              <button key={tag} onClick={() => router.push(`/skills?tag=${encodeURIComponent(tag)}`)}
+                className={`px-3 py-1 text-sm rounded-full hover:opacity-80 transition cursor-pointer ${
+                  isFeatured
+                    ? 'bg-orange-50 text-orange-800 border border-orange-200'
+                    : 'bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700'
+                }`}>
+                {tag}
+              </button>
+            );
+          })}</div>
           {skill.content_md && (
             <div data-color-mode="light" className="mb-6 p-5 border rounded-xl bg-white max-h-[288px] md:max-h-[388px] overflow-y-auto [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none' as any }}>
               <MDEditor.Markdown source={skill.content_md} />

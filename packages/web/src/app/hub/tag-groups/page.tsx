@@ -93,7 +93,7 @@ export default function HubTagGroupsPage() {
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {(g.tags || []).map((tag: string) => (
-                    <span key={tag} className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs">{tag}</span>
+                    <span key={tag} className={`px-2 py-0.5 rounded text-xs ${tag === '精选' ? 'bg-orange-50 text-orange-800 border border-orange-200' : 'bg-blue-50 text-blue-700'}`}>{tag}</span>
                   ))}
                 </div>
               </div>

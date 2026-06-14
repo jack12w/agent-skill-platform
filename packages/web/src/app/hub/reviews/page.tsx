@@ -55,7 +55,7 @@ export default function HubReviewsPage() {
                 <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{s.owner_user?.name || s.owner_user?.email}</td>
                 <td className="px-4 py-3 hidden lg:table-cell">
                   <div className="flex flex-wrap gap-1">
-                    {(s.tags || []).slice(0, 3).map((t: string) => <span key={t} className="px-1.5 py-0.5 bg-yellow-50 text-yellow-700 rounded text-xs">{t}</span>)}
+                    {(s.tags || []).slice(0, 3).map((t: string) => <span key={t} className={`px-1.5 py-0.5 rounded text-xs ${t === '精选' ? 'bg-orange-50 text-orange-800 border border-orange-200' : 'bg-yellow-50 text-yellow-700'}`}>{t}</span>)}
                   </div>
                 </td>
                 <td className="px-4 py-3 text-gray-400 text-xs hidden sm:table-cell whitespace-nowrap">{new Date(s.updated_at || s.created_at).toLocaleDateString()}</td>

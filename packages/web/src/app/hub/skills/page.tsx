@@ -155,7 +155,7 @@ export default function HubSkillsPage() {
                     <td className="px-4 py-3 text-gray-600 hidden md:table-cell">{s.owner_user?.name || s.owner_user?.email}</td>
                     <td className="px-4 py-3 hidden lg:table-cell">
                       <div className="flex flex-wrap gap-1">
-                        {(s.tags || []).slice(0, 3).map(t => <span key={t} className="px-1.5 py-0.5 bg-gray-100 rounded text-xs text-gray-600">{t}</span>)}
+                        {(s.tags || []).slice(0, 3).map(t => <span key={t} className={`px-1.5 py-0.5 rounded text-xs ${t === '精选' ? 'bg-orange-50 text-orange-800 border border-orange-200' : 'bg-gray-100 text-gray-600'}`}>{t}</span>)}
                         {(s.tags || []).length > 3 && <span className="text-xs text-gray-400">+{s.tags.length - 3}</span>}
                       </div>
                     </td>
