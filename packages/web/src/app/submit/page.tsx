@@ -322,6 +322,7 @@ export default function SubmitSkill() {
           {!nameFeedback.loading && nameFeedback.similar.length === 0 && formData.name.trim().length >= 3 && (
             <p className="mt-1 text-xs text-green-600">未检测到相似技能</p>
           )}
+        </div>
 
         {/* ── 标签 ── */}
         <div>
