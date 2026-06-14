@@ -39,9 +39,9 @@ export default function NavBar() {
       {/* 桌面端：搜索 + 导航 + 语言 + 头像 */}
       <div className="hidden md:flex items-center gap-4">
         <form onSubmit={handleSearch} className="w-48">
-          <div className="relative">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('nav.search')} className="w-full pl-9 pr-3 py-1.5 text-sm border border-neutral-200 rounded-full bg-white/30 backdrop-blur-sm focus:bg-white/80 focus:border-brand-400 focus:outline-none" />
+          <div className="relative group">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 group-focus-within:text-neutral-600 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('nav.search')} className="w-full pl-9 pr-3 py-1.5 text-sm border border-neutral-200 rounded-full bg-white/50 backdrop-blur-sm focus:bg-white/90 focus:border-brand-400 focus:outline-none transition-colors" />
             <button type="submit" className="hidden" />
           </div>
         </form>
