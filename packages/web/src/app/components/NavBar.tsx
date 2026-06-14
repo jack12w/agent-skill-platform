@@ -31,7 +31,7 @@ export default function NavBar() {
   };
 
   return (
-    <nav className="flex items-center justify-between p-4 md:p-6 border-b gap-4">
+    <nav className="sticky top-0 z-10 flex items-center justify-between p-4 md:p-6 border-b gap-4 bg-white/80 backdrop-blur-md">
       <Link href="/" className="flex items-center gap-2 shrink-0">
         <img src="/logo.svg" alt="SkillDepot" className="h-8 md:h-9 w-auto" />
       </Link>
