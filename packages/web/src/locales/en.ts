@@ -4,6 +4,7 @@ const en = {
     leaderboard: 'Leaderboard',
     dashboard: 'Dashboard',
     submit: 'Submit',
+    help: 'Help',
     login: 'Login',
     logout: 'Logout',
     search: 'Search skills...',

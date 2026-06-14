@@ -15,6 +15,7 @@ export default function NavBar() {
   const navLinks = [
     { href: '/skills', label: t('nav.skills'), blue: false },
     { href: '/leaderboard', label: t('nav.leaderboard'), blue: false },
+    { href: '/help', label: t('nav.help'), blue: false },
     { href: '/submit', label: t('nav.submit'), blue: true },
   ];
 

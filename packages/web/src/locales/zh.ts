@@ -4,6 +4,7 @@ const zh = {
     leaderboard: '排行榜',
     dashboard: '个人中心',
     submit: '提交技能',
+    help: '帮助',
     login: '登录',
     logout: '退出',
     search: '搜索技能...',

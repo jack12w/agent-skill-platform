@@ -18,8 +18,10 @@ import { Event } from './skills/event.entity';
 import { AdminLog } from './common/admin-log.entity';
 import { TagGroup } from './common/tag-group.entity';
 import { PageView } from './common/page-view.entity';
+import { Feedback } from './common/feedback.entity';
 import { PublicTagGroupsController } from './common/public-tag-groups.controller';
 import { AnalyticsController } from './common/analytics.controller';
+import { FeedbackController } from './common/feedback.controller';
 
 @Module({
   imports: [
@@ -46,7 +48,7 @@ import { AnalyticsController } from './common/analytics.controller';
       retryAttempts: process.env.NODE_ENV === 'production' ? 10 : 2,
       retryDelay: 3000,
     }),
-    TypeOrmModule.forFeature([Skill, User, Team, Comment, Event, AdminLog, TagGroup, PageView]),
+    TypeOrmModule.forFeature([Skill, User, Team, Comment, Event, AdminLog, TagGroup, PageView, Feedback]),
     StorageModule,
     AuthModule,
     SkillsModule,
@@ -54,7 +56,7 @@ import { AnalyticsController } from './common/analytics.controller';
     LeaderboardModule,
     UsersModule,
   ],
-  controllers: [HealthController, AdminController, PublicTagGroupsController, AnalyticsController],
+  controllers: [HealthController, AdminController, PublicTagGroupsController, AnalyticsController, FeedbackController],
   providers: [AdminService, AdminGuard],
 })
 export class AppModule {}
