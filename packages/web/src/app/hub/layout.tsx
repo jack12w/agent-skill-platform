@@ -54,8 +54,8 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <meta name="robots" content="noindex, nofollow" />
-      <style>{`body { overflow: hidden; } footer { display: none !important; }`}</style>
-      <div className="flex h-[calc(100vh-64px)] overflow-hidden">
+      <style>{`html, body { overflow: hidden; height: 100%; } footer { display: none !important; }`}</style>
+      <div className="flex h-screen overflow-hidden" data-hub="">
       {/* Sidebar */}
       <aside className="w-56 bg-white border-r border-neutral-200 shrink-0 hidden md:flex md:flex-col h-full relative">
         <div className="px-5 py-5 border-b border-neutral-100 shrink-0">
