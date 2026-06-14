@@ -32,7 +32,7 @@
     <line x1="-22" y1="10" x2="22" y2="10" stroke="#fff" stroke-width="3" opacity="0.25"/>
   </g>
   <!-- Text -->
-  <text x="320" y="285" font-family="Inter, -apple-system, sans-serif" font-size="64" font-weight="700" fill="#fff" letter-spacing="-1">SkillHub</text>
+  <text x="320" y="285" font-family="Inter, -apple-system, sans-serif" font-size="64" font-weight="700" fill="#fff" letter-spacing="-1">SkillDepot</text>
   <text x="320" y="350" font-family="Inter, -apple-system, sans-serif" font-size="28" fill="#9ba3af" letter-spacing="0">Discover, share, and download AI Agent skills</text>
   <text x="320" y="400" font-family="Inter, -apple-system, sans-serif" font-size="20" fill="#4b5563">The open marketplace for AI-powered tools and workflows</text>
   <!-- Bottom bar -->

@@ -33,7 +33,7 @@ export default function NavBar() {
   return (
     <nav className="flex items-center justify-between p-4 md:p-6 border-b gap-4">
       <Link href="/" className="flex items-center gap-2 shrink-0">
-        <img src="/logo.svg" alt="SkillHub" className="h-8 md:h-9 w-auto" />
+        <img src="/logo.svg" alt="SkillDepot" className="h-8 md:h-9 w-auto" />
       </Link>
 
       {/* 桌面端：搜索 + 导航 + 语言 + 头像 */}

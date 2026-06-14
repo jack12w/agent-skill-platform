@@ -23,5 +23,5 @@
   </g>
   <!-- Text in one line, vertically centered with icon -->
   <text x="56" y="33" font-family="Inter, -apple-system, sans-serif" font-size="22" font-weight="700" fill="#16213e" letter-spacing="-0.5">Skill</text>
-  <text x="115" y="33" font-family="Inter, -apple-system, sans-serif" font-size="22" font-weight="400" fill="#4a5568" letter-spacing="-0.5">Hub</text>
+  <text x="115" y="33" font-family="Inter, -apple-system, sans-serif" font-size="22" font-weight="400" fill="#4a5568" letter-spacing="-0.5">Depot</text>
 </svg>

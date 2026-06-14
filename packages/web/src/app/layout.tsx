@@ -12,8 +12,8 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL || 'https://skills.rehomi.com'),
   title: {
-    default: 'SkillHub — AI Agent Skills Marketplace',
-    template: '%s | SkillHub',
+    default: 'SkillDepot — AI Agent Skills Marketplace',
+    template: '%s | SkillDepot',
   },
   description:
     'Discover, share, and download AI Agent skills. The open marketplace for AI-powered tools, workflows, and automations. Built by developers, for the AI era.',
@@ -25,11 +25,11 @@ export const metadata: Metadata = {
     'AI workflow',
     'skill sharing',
     'AI automation',
-    'SkillHub',
+    'SkillDepot',
   ],
-  authors: [{ name: 'SkillHub' }],
-  creator: 'SkillHub',
-  publisher: 'SkillHub',
+  authors: [{ name: 'SkillDepot' }],
+  creator: 'SkillDepot',
+  publisher: 'SkillDepot',
   robots: {
     index: true,
     follow: true,
@@ -46,8 +46,8 @@ export const metadata: Metadata = {
     locale: 'zh_CN',
     alternateLocale: 'en_US',
     url: BASE_URL,
-    siteName: 'SkillHub',
-    title: 'SkillHub — AI Agent Skills Marketplace',
+    siteName: 'SkillDepot',
+    title: 'SkillDepot — AI Agent Skills Marketplace',
     description:
       'Discover, share, and download AI Agent skills. The open marketplace for AI-powered tools, workflows, and automations.',
     images: [
@@ -55,17 +55,17 @@ export const metadata: Metadata = {
         url: '/og-image.svg',
         width: 1200,
         height: 630,
-        alt: 'SkillHub',
+        alt: 'SkillDepot',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'SkillHub — AI Agent Skills Marketplace',
+    title: 'SkillDepot — AI Agent Skills Marketplace',
     description:
       'Discover, share, and download AI Agent skills. The open marketplace for AI tools.',
     images: ['/og-image.svg'],
-    creator: '@skillhub',
+    creator: '@SkillDepot',
   },
   alternates: {
     canonical: BASE_URL,
@@ -109,7 +109,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <NavBar />
           <main className="min-h-screen">{children}</main>
           <footer className="p-6 sm:p-10 border-t text-center text-gray-500 text-sm space-y-1">
-            <p>© 2026 SkillHub. Built for the AI era.</p>
+            <p>© 2026 SkillDepot. Built for the AI era.</p>
             <p>
               技术支持：
               <a href="https://rehomi.com/xinghuo" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">

@@ -103,7 +103,7 @@ export class AuthService {
       await transporter.sendMail({
         from: `"Skill Register" <${process.env.SMTP_USER || 'noreply@example.com'}>`,
         to: email,
-        subject: 'SkillHub - 邮箱验证码',
+        subject: 'SkillDepot - 邮箱验证码',
         text: `您的验证码是：${code}，10 分钟内有效。`,
       });
     } catch (e: any) {

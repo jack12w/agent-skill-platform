@@ -2,15 +2,15 @@ export async function GET() {
   const API_BASE = `http://${process.env.API_HOST || 'localhost'}:${process.env.API_PORT || '3001'}`;
   const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://skills.rehomi.com';
 
-  let content = `# SkillHub — Full Content
+  let content = `# SkillDepot — Full Content
 
-> AI SkillHub Marketplace
+> AI SkillDepot Marketplace
 > Generated: ${new Date().toISOString()}
 > This file is intended for AI crawlers (ChatGPT, Claude, Perplexity, etc.)
 
 ## About
 
-SkillHub is an open marketplace for discovering, sharing, and downloading AI agent skills.
+SkillDepot is an open marketplace for discovering, sharing, and downloading AI agent skills.
 Skills are tools, workflows, and automations powered by AI agents.
 
 ## All Published Skills

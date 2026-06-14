@@ -542,7 +542,7 @@ export class SkillsService {
 
     return {
       meta: {
-        title: 'SkillHub — AI Agent Skills Feed',
+        title: 'SkillDepot — AI Agent Skills Feed',
         description: 'Machine-readable feed of AI agent skills for GEO (Generative Engine Optimization).',
         total,
         page,

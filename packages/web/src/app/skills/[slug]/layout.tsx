@@ -30,7 +30,7 @@ export async function generateMetadata({
 
   const title = `${skill.name} — AI Agent Skill`;
   const description =
-    skill.short_summary || skill.summary || `Discover ${skill.name}, an AI agent skill on SkillHub.`;
+    skill.short_summary || skill.summary || `Discover ${skill.name}, an AI agent skill on SkillDepot.`;
   const url = `${BASE_URL}/skills/${skill.slug || skill.id}`;
 
   return {

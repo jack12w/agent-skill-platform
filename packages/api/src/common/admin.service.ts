@@ -245,7 +245,7 @@ export class AdminService {
   // ── 系统设置 ──────────────────────────────
   getSettings() {
     return {
-      siteName: 'SkillHub',
+      siteName: 'SkillDepot',
       version: '1.0',
       dbHost: process.env.DB_HOST?.replace(/\./g, '*') || '***',
       smtpUser: process.env.SMTP_USER || '(not set)',
