@@ -41,7 +41,7 @@ export default function NavBar() {
         <form onSubmit={handleSearch} className="w-48">
           <div className="relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('nav.search')} className="w-full pl-9 pr-3 py-1.5 text-sm border border-neutral-200 rounded-full bg-neutral-100 focus:bg-white focus:border-brand-400 focus:outline-none" />
+            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('nav.search')} className="w-full pl-9 pr-3 py-1.5 text-sm border border-neutral-200 rounded-full bg-white/30 backdrop-blur-sm focus:bg-white/80 focus:border-brand-400 focus:outline-none" />
             <button type="submit" className="hidden" />
           </div>
         </form>
@@ -75,7 +75,7 @@ export default function NavBar() {
 
       {/* 移动端搜索栏（点击展开） */}
       {showMobileSearch && (
-        <div className="absolute top-16 left-0 right-0 bg-white border-b shadow-lg md:hidden z-50 p-4">
+        <div className="absolute top-16 left-0 right-0 bg-white/90 backdrop-blur-md border-b shadow-lg md:hidden z-50 p-4">
           <form onSubmit={handleSearch}>
             <div className="relative">
               <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -88,7 +88,7 @@ export default function NavBar() {
 
       {/* 移动端下拉菜单 */}
       {menuOpen && (
-        <div className="absolute top-16 left-0 right-0 bg-white border-b shadow-lg md:hidden z-50">
+        <div className="absolute top-16 left-0 right-0 bg-white/90 backdrop-blur-md border-b shadow-lg md:hidden z-50">
           <div className="flex flex-col p-4 space-y-3">
             {navLinks.map((link) => (
               <Link key={link.href} href={link.href} onClick={() => setMenuOpen(false)}

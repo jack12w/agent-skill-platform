@@ -28,13 +28,13 @@ export default function Leaderboard() {
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
       <h1 className="text-2xl sm:text-3xl font-bold mb-6 sm:mb-8">{t('leaderboard.title')}</h1>
       <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6 sm:mb-8">
-        <div className="flex p-1 bg-neutral-100 rounded-lg self-start">
-          <button onClick={() => setTab('personal')} className={`px-3 sm:px-4 py-2 rounded-md text-sm ${tab === 'personal' ? 'bg-white shadow-sm' : ''}`}>{t('leaderboard.personal')}</button>
-          <button onClick={() => setTab('team')} className={`px-3 sm:px-4 py-2 rounded-md text-sm ${tab === 'team' ? 'bg-white shadow-sm' : ''}`}>{t('leaderboard.team')}</button>
+        <div className="flex p-1 bg-neutral-100/50 backdrop-blur-sm rounded-lg self-start">
+          <button onClick={() => setTab('personal')} className={`px-3 sm:px-4 py-2 rounded-md text-sm ${tab === 'personal' ? 'bg-white/80 shadow-sm backdrop-blur-md' : ''}`}>{t('leaderboard.personal')}</button>
+          <button onClick={() => setTab('team')} className={`px-3 sm:px-4 py-2 rounded-md text-sm ${tab === 'team' ? 'bg-white/80 shadow-sm backdrop-blur-md' : ''}`}>{t('leaderboard.team')}</button>
         </div>
-        <div className="flex p-1 bg-neutral-100 rounded-lg self-start sm:ml-auto">
-          <button onClick={() => setPeriod('weekly')} className={`px-3 sm:px-4 py-2 rounded-md text-sm ${period === 'weekly' ? 'bg-white shadow-sm' : ''}`}>{t('leaderboard.weekly')}</button>
-          <button onClick={() => setPeriod('all')} className={`px-3 sm:px-4 py-2 rounded-md text-sm ${period === 'all' ? 'bg-white shadow-sm' : ''}`}>{t('leaderboard.allTime')}</button>
+        <div className="flex p-1 bg-neutral-100/50 backdrop-blur-sm rounded-lg self-start sm:ml-auto">
+          <button onClick={() => setPeriod('weekly')} className={`px-3 sm:px-4 py-2 rounded-md text-sm ${period === 'weekly' ? 'bg-white/80 shadow-sm backdrop-blur-md' : ''}`}>{t('leaderboard.weekly')}</button>
+          <button onClick={() => setPeriod('all')} className={`px-3 sm:px-4 py-2 rounded-md text-sm ${period === 'all' ? 'bg-white/80 shadow-sm backdrop-blur-md' : ''}`}>{t('leaderboard.allTime')}</button>
         </div>
       </div>
 
@@ -55,7 +55,7 @@ export default function Leaderboard() {
           </thead>
           <tbody>
             {data.map((item, i) => (
-              <tr key={item.id} className="border-b hover:bg-neutral-100">
+              <tr key={item.id} className="border-b hover:bg-neutral-100/60">
                 <td className="py-2 px-1 font-bold text-neutral-400 text-left">{i + 1}</td>
                 <td className="py-2 px-1 max-w-[60px] truncate">
                   <Link
