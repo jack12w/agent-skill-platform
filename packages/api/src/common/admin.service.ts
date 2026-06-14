@@ -117,7 +117,26 @@ export class AdminService {
         break;
       case 'retag':
         if (Array.isArray(payload?.tags)) {
-          await this.skillRepo.update({ id: In(ids) }, { tags: payload.tags });
+          // 保护「精选」标签：批量修改标签时，保留已有技能的精选标签
+          const skills = await this.skillRepo.find({
+            select: ['id', 'tags'],
+            where: { id: In(ids) },
+          });
+          const featuredIds = new Set(
+            skills.filter(s => s.tags?.includes('精选')).map(s => s.id),
+          );
+          if (featuredIds.size > 0) {
+            // 对有精选标签的技能，额外追加精选
+            const tagsWithFeatured = [...payload.tags.filter((t: string) => t !== '精选'), '精选'];
+            const idsArr = Array.from(featuredIds);
+            const nonFeaturedIds = ids.filter(id => !featuredIds.has(id));
+            if (nonFeaturedIds.length > 0) {
+              await this.skillRepo.update({ id: In(nonFeaturedIds) }, { tags: payload.tags });
+            }
+            await this.skillRepo.update({ id: In(idsArr) }, { tags: tagsWithFeatured });
+          } else {
+            await this.skillRepo.update({ id: In(ids) }, { tags: payload.tags });
+          }
         }
         break;
       default:
@@ -130,6 +149,10 @@ export class AdminService {
   async updateSkill(id: string, data: { name?: string; short_summary?: string; tags?: string[]; cover_url?: string }) {
     const skill = await this.skillRepo.findOneBy({ id });
     if (!skill) throw new NotFoundException('Skill not found');
+    // 保护「精选」标签：管理员修改其他标签时，如果技能当前有精选标签，始终保持
+    if (Array.isArray(data.tags) && skill.tags?.includes('精选') && !data.tags.includes('精选')) {
+      data.tags.push('精选');
+    }
     await this.skillRepo.update(id, data);
     return { ok: true };
   }

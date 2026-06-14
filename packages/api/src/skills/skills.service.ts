@@ -246,7 +246,11 @@ export class SkillsService {
         patch.summary = data.content_md;
       }
     }
-    if (Array.isArray(data.tags)) patch.tags = data.tags;
+    if (Array.isArray(data.tags)) {
+      // 保护「精选」标签：管理员添加的精选标签不可被用户编辑覆盖
+      if (skill.tags?.includes('精选')) data.tags = [...data.tags.filter((t: string) => t !== '精选'), '精选'];
+      patch.tags = data.tags;
+    }
     if (typeof data.cover_url === 'string') patch.cover_url = data.cover_url;
 
     // owner_team_id: '' / null → detach; '<uuid>' → must be a team the user belongs to
@@ -334,7 +338,9 @@ export class SkillsService {
     await this.skillRepository.update(skill.id, {
       latest_version_id: savedVersion.id,
       short_summary: meta.description || skill.short_summary,
-      tags: (meta.tags && meta.tags.length ? meta.tags : skill.tags),
+      tags: (meta.tags && meta.tags.length
+        ? [...new Set([...meta.tags, ...(skill.tags?.includes('精选') ? ['精选'] : [])])]
+        : skill.tags),
       status: SkillStatus.PENDING,
     });
 

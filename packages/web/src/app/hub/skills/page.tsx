@@ -26,6 +26,7 @@ export default function HubSkillsPage() {
   const [actionLoading, setActionLoading] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ name: '', short_summary: '', tags: '' });
+  const [editingSkill, setEditingSkill] = useState<SkillItem | null>(null);
 
   const fetchData = useCallback(async () => {
     const token = getToken();
@@ -72,7 +73,10 @@ export default function HubSkillsPage() {
 
   const startEdit = (s: SkillItem) => {
     setEditingId(s.id);
-    setEditForm({ name: s.name, short_summary: s.slug, tags: (s.tags || []).join(', ') });
+    setEditingSkill(s);
+    // 编辑时自动从输入框中移除「精选」（后端会保护它），避免管理员误删
+    const otherTags = (s.tags || []).filter(t => t !== '精选').join(', ');
+    setEditForm({ name: s.name, short_summary: s.slug, tags: otherTags });
   };
   const saveEdit = async () => {
     if (!editingId) return;
@@ -139,7 +143,13 @@ export default function HubSkillsPage() {
                       {editingId === s.id ? (
                         <div className="space-y-2">
                           <input type="text" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} className="w-full px-2 py-1 text-sm border rounded" />
-                          <input type="text" value={editForm.tags} onChange={e => setEditForm({ ...editForm, tags: e.target.value })} className="w-full px-2 py-1 text-sm border rounded" placeholder="tag1, tag2" />
+                          <div className="flex items-center gap-2">
+                            <input type="text" value={editForm.tags} onChange={e => setEditForm({ ...editForm, tags: e.target.value })} className="flex-1 px-2 py-1 text-sm border rounded" placeholder="tag1, tag2" />
+                            {editingSkill?.tags?.includes('精选') && (
+                              <span className="shrink-0 px-2 py-0.5 rounded text-xs bg-orange-50 text-orange-700 border border-orange-200 whitespace-nowrap">精选 ✓</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-400">{editingSkill?.tags?.includes('精选') ? '「精选」标签受保护，保存时会自动保留' : ''}</div>
                           <div className="flex gap-2">
                             <button onClick={saveEdit} className="px-2 py-1 text-xs bg-blue-600 text-white rounded">{t('admin.save')}</button>
                             <button onClick={() => setEditingId(null)} className="px-2 py-1 text-xs bg-gray-200 rounded">{t('admin.cancel')}</button>
