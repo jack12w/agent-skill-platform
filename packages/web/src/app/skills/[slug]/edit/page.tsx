@@ -67,7 +67,7 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
 
   const handleSave = async (e: React.FormEvent) => { e.preventDefault(); if (!skill) return; const token = localStorage.getItem('token'); if (!token) return router.push('/auth'); setSaving(true);
     try {
-      const payload = { name: form.name.trim(), content_md: form.content_md, cover_url: form.cover_url, tags: ['社区', ...form.tags.split(/[,，]/).map((x) => x.trim()).filter(Boolean)], owner_team_id: form.owner_team_id || null };
+      const payload = { name: form.name.trim(), content_md: form.content_md, cover_url: form.cover_url, tags: ['社区', ...form.tags.split(/[,，]/).map((x) => x.trim()).filter(Boolean).filter(x => x !== '精选')], owner_team_id: form.owner_team_id || null };
       const res = await fetch(`/api/skills/${skill.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
       if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.message || `HTTP ${res.status}`); }
       router.push(`/skills/${skill.slug || skill.id}`);
