@@ -220,7 +220,7 @@ export class SkillsService {
     // 同名相似度检测（pg_trgm）：阻止相似度 ≥ 85% 的重复技能
     const similar = await this.checkSimilarName(name);
     if (similar.length > 0) {
-      const similarNames = similar.map(s => `"${s.name}"（${Math.round(s.similarity * 100)}%）`).join('、');
+      const similarNames = similar.map(s => `"${s.skill_name}"（${Math.round(s.similarity * 100)}%）`).join('、');
       throw new BadRequestException(
         `技能名称与已有技能过于相似：${similarNames}。请修改名称后重试。`,
       );
