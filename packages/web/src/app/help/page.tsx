@@ -31,12 +31,13 @@ export default function HelpCenterPage() {
   const submitFeedback = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fbName.trim() || !fbContent.trim()) return;
+    const t = localStorage.getItem('token');
+    if (!t) { window.location.href = '/auth'; return; }
     setFbSending(true);
     try {
-      const t = localStorage.getItem('token');
       const r = await fetch('/api/feedback', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}) },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
         body: JSON.stringify({ name: fbName.trim(), email: fbEmail.trim(), content: fbContent.trim() }),
       });
       const j = await r.json();
@@ -166,9 +167,13 @@ tags: [搜索, 数据分析]
           {active === 'feedback' && (
             <div className="prose prose-sm max-w-none">
               <h1 className="text-2xl font-bold mb-2">反馈建议</h1>
-              <p className="text-gray-500 text-sm mb-6">我们非常重视你的意见，请在下方提交反馈或功能建议。</p>
+              <p className="text-gray-500 text-sm mb-4">我们非常重视你的意见，请在下方提交反馈或功能建议。</p>
 
-              {fbSent ? (
+              {typeof window !== 'undefined' && !localStorage.getItem('token') ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-700">
+                  请先<a href="/auth" className="text-blue-600 hover:underline font-medium">登录</a>后再提交反馈。
+                </div>
+              ) : fbSent ? (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-sm text-green-700">
                   感谢你的反馈！我们会尽快处理。
                 </div>

@@ -137,4 +137,11 @@ export class AdminController {
   // ── 统计 ──
   @Get('analytics')
   getAnalytics() { return this.adminService.getAnalytics(); }
+
+  // ── 反馈 ──
+  @Get('feedbacks')
+  listFeedbacks(@Query() q: any) { return this.adminService.listFeedbacks(q); }
+
+  @Delete('feedbacks/:id')
+  deleteFeedback(@Param('id') id: string) { return this.adminService.deleteFeedback(id); }
 }

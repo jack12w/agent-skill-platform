@@ -9,6 +9,7 @@ import { Event } from '../skills/event.entity';
 import { AdminLog } from './admin-log.entity';
 import { TagGroup } from './tag-group.entity';
 import { PageView } from './page-view.entity';
+import { Feedback } from './feedback.entity';
 import { SkillStatus } from '@platform/shared';
 
 @Injectable()
@@ -22,6 +23,7 @@ export class AdminService {
     @InjectRepository(AdminLog) private logRepo: Repository<AdminLog>,
     @InjectRepository(TagGroup) private tagGroupRepo: Repository<TagGroup>,
     @InjectRepository(PageView) private pvRepo: Repository<PageView>,
+    @InjectRepository(Feedback) private fbRepo: Repository<Feedback>,
   ) {}
 
   async getStats() {
@@ -359,5 +361,20 @@ export class AdminService {
       trends: dailyPV,
       topPages,
     };
+  }
+
+  // ── 反馈管理 ──────────────────────────────
+  async listFeedbacks(query: { page?: number; size?: number }) {
+    const { page = 1, size = 20 } = query;
+    const [items, total] = await this.fbRepo.findAndCount({
+      order: { created_at: 'DESC' },
+      take: size, skip: (page - 1) * size,
+    });
+    return { items, total, page, size };
+  }
+
+  async deleteFeedback(id: string) {
+    await this.fbRepo.delete({ id });
+    return { ok: true };
   }
 }
