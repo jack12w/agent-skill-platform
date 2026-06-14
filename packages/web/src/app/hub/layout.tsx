@@ -81,7 +81,7 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div className="absolute bottom-0 left-0 w-56 p-4 border-t border-neutral-100">
-          <Link href="/" className="flex items-center gap-2 text-xs text-neutral-400 hover:text-neutral-600 transition-colors">
+          <Link href="/" className="flex items-center gap-2 text-xs text-neutral-500 hover:text-neutral-700 transition-colors">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
