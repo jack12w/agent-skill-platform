@@ -40,7 +40,7 @@ function SkillSquareInner() {
     if (pageNum === 1) setLoading(true);
     else setLoadingMore(true);
     try {
-      let url = `/api/skills?sort=${sort}&page=${pageNum}&size=12`;
+      let url = `/api/skills?sort=${sort}&page=${pageNum}&size=20`;
       if (query) url += `&query=${encodeURIComponent(query)}`;
       if (activeTags.size > 0) url += `&tags=${encodeURIComponent(activeTagsStr)}`;
       const res = await fetch(url, { signal: controller.signal });
@@ -48,7 +48,7 @@ function SkillSquareInner() {
       const list = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : Array.isArray(data?.data) ? data.data : [];
       if (append) setSkills(prev => [...prev, ...list]);
       else setSkills(list);
-      setHasMore(list.length >= 12);
+      setHasMore(list.length >= 20);
     } catch (e) { if ((e as Error).name !== 'AbortError') console.error(e); }
     finally { setLoading(false); setLoadingMore(false); }
     return controller;
