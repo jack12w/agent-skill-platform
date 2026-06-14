@@ -195,12 +195,28 @@ tags: [搜索, 数据分析]
                     <input type="email" value={fbEmail} onChange={e => setFbEmail(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400" placeholder="your@email.com" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('help.fbType')}</label>
-                    <select value={fbType} onChange={e => setFbType(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 bg-white">
-                      <option value="suggestion">{t('help.fbSuggestion')}</option>
-                      <option value="bug">{t('help.fbBug')}</option>
-                      <option value="other">{t('help.fbOther')}</option>
-                    </select>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('help.fbType')}</label>
+                    <div className="flex gap-3">
+                      {[
+                        { key: 'suggestion', icon: '💡', label: t('help.fbSuggestion') },
+                        { key: 'bug', icon: '🐛', label: t('help.fbBug') },
+                        { key: 'other', icon: '💬', label: t('help.fbOther') },
+                      ].map(opt => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => setFbType(opt.key)}
+                          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+                            fbType === opt.key
+                              ? 'border-blue-500 bg-blue-50 text-blue-700'
+                              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                          }`}
+                        >
+                          <span>{opt.icon}</span>
+                          <span>{opt.label}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">{t('help.fbContent')} *</label>
