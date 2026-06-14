@@ -63,9 +63,8 @@ export class LeaderboardService {
         FROM skills s
         LEFT JOIN event_agg ea     ON ea.skill_id = s.id
         LEFT JOIN ${subjectTable} subj ON subj.id = ${subjectIdCol}
-        WHERE ${subjectIdCol} IS NOT NULL
+        WHERE ${subjectIdCol} IS NOT NULL AND s.status = 'published'
         GROUP BY ${subjectIdCol}, subj.name
-        HAVING COALESCE(SUM(ea.likes), 0) + COALESCE(SUM(ea.downloads), 0) > 0
         ORDER BY score DESC
         LIMIT 50
         `,
@@ -85,9 +84,8 @@ export class LeaderboardService {
         FROM skills s
         LEFT JOIN skill_stats st   ON st.skill_id = s.id
         LEFT JOIN ${subjectTable} subj ON subj.id = ${subjectIdCol}
-        WHERE ${subjectIdCol} IS NOT NULL
+        WHERE ${subjectIdCol} IS NOT NULL AND s.status = 'published'
         GROUP BY ${subjectIdCol}, subj.name
-        HAVING COALESCE(SUM(st.likes_total), 0) + COALESCE(SUM(st.downloads_total), 0) > 0
         ORDER BY score DESC
         LIMIT 50
         `,
