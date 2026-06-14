@@ -23,6 +23,9 @@ function SkillSquareInner() {
   const tagsParam = searchParams.get('tags') || '';
   const [skills, setSkills] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [sort, setSort] = useState('weekly');
   const [query, setQuery] = useState(searchParam);
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set(tagsParam ? tagsParam.split(',').filter(Boolean) : []));
@@ -32,26 +35,50 @@ function SkillSquareInner() {
 
   const activeTagsStr = Array.from(activeTags).join(',');
 
-  const fetchSkills = useCallback(async () => {
+  const fetchSkills = useCallback(async (pageNum: number, append: boolean) => {
     const controller = new AbortController();
-    setLoading(true);
+    if (pageNum === 1) setLoading(true);
+    else setLoadingMore(true);
     try {
-      let url = `/api/skills?sort=${sort}`;
+      let url = `/api/skills?sort=${sort}&page=${pageNum}&size=12`;
       if (query) url += `&query=${encodeURIComponent(query)}`;
       if (activeTags.size > 0) url += `&tags=${encodeURIComponent(activeTagsStr)}`;
       const res = await fetch(url, { signal: controller.signal });
       const data = await res.json();
       const list = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : Array.isArray(data?.data) ? data.data : [];
-      setSkills(list);
+      if (append) setSkills(prev => [...prev, ...list]);
+      else setSkills(list);
+      setHasMore(list.length >= 12);
     } catch (e) { if ((e as Error).name !== 'AbortError') console.error(e); }
-    finally { setLoading(false); }
+    finally { setLoading(false); setLoadingMore(false); }
     return controller;
   }, [sort, query, activeTagsStr]);
 
+  // Initial load + reset on filter change
   useEffect(() => {
-    const ctrl = fetchSkills();
+    setPage(1);
+    const ctrl = fetchSkills(1, false);
     return () => { ctrl.then(c => c.abort()); };
   }, [fetchSkills]);
+
+  // Load more
+  const loadMore = useCallback(() => {
+    if (loadingMore || !hasMore) return;
+    const next = page + 1;
+    setPage(next);
+    fetchSkills(next, true);
+  }, [page, loadingMore, hasMore, fetchSkills]);
+
+  // IntersectionObserver for infinite scroll
+  useEffect(() => {
+    const sentinel = document.getElementById('scroll-sentinel');
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) loadMore();
+    }, { rootMargin: '200px' });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadMore, skills.length]);
 
   /* 同步 URL */
   useEffect(() => {
@@ -180,6 +207,14 @@ function SkillSquareInner() {
             </Link>
           ))}
         </div>
+      )}
+      {/* Infinite scroll sentinel */}
+      <div id="scroll-sentinel" className="h-1" />
+      {loadingMore && (
+        <div className="text-center py-8 text-gray-400 text-sm">加载更多技能...</div>
+      )}
+      {!hasMore && skills.length > 0 && (
+        <div className="text-center py-8 text-gray-300 text-xs">— 已加载全部技能 —</div>
       )}
     </div>
   );
