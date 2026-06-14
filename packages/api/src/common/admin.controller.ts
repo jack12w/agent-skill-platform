@@ -6,6 +6,7 @@ import { AuthGuard } from '../auth/auth.guard';
 
 /**
  * Admin endpoints — protected by AuthGuard + AdminGuard.
+ * All write operations log to admin_logs table.
  */
 @Controller('admin')
 @UseGuards(AuthGuard, AdminGuard)
@@ -17,7 +18,6 @@ export class AdminController {
 
   /**
    * GET /admin/stats
-   * Dashboard overview stats
    */
   @Get('stats')
   async getStats() {
@@ -26,13 +26,13 @@ export class AdminController {
 
   /**
    * POST /admin/sync-stats
-   * Recalculates skill_stats from the events table and updates all scores.
    */
   @Post('sync-stats')
   @HttpCode(200)
-  async syncStats() {
+  async syncStats(@Request() req: any) {
     try {
       await this.statsAggregation.aggregateStats();
+      await this.adminService.logAction(req.user.sub, 'sync_stats', 'system', '', 'Recalculated all skill scores from events');
       return { ok: true, message: 'Stats synced from events table.' };
     } catch (err: any) {
       throw new HttpException(
@@ -44,7 +44,6 @@ export class AdminController {
 
   /**
    * GET /admin/skills
-   * List all skills with search/filter/pagination
    */
   @Get('skills')
   async listSkills(@Query() q: any) {
@@ -53,22 +52,22 @@ export class AdminController {
 
   /**
    * PATCH /admin/skills/batch
-   * Batch publish/unpublish/delete/retag skills
    */
   @Patch('skills/batch')
   async batchUpdateSkills(@Body() body: { ids: string[]; action: string; tags?: string[] }, @Request() req: any) {
     const result = await this.adminService.batchUpdateSkills(body.ids, body.action, { tags: body.tags });
-    await this.adminService.logAction(req.user.sub, body.action, 'skill', body.ids.join(','), `Updated ${body.ids.length} skills`);
+    await this.adminService.logAction(req.user.sub, body.action, 'skill', body.ids.join(','), `Batch ${body.action} ${body.ids.length} skills`);
     return result;
   }
 
   /**
    * PATCH /admin/skills/:id
-   * Edit a single skill (admin override)
    */
   @Patch('skills/:id')
-  async updateSkill(@Param('id') id: string, @Body() body: any) {
-    return this.adminService.updateSkill(id, body);
+  async updateSkill(@Param('id') id: string, @Body() body: any, @Request() req: any) {
+    const result = await this.adminService.updateSkill(id, body);
+    await this.adminService.logAction(req.user.sub, 'update_skill', 'skill', id, `Updated skill: ${body.name || id}`);
+    return result;
   }
 
   // ── 用户 ──
@@ -76,7 +75,11 @@ export class AdminController {
   listUsers(@Query() q: any) { return this.adminService.listUsers(q); }
 
   @Patch('users/:id')
-  updateUser(@Param('id') id: string, @Body() b: any) { return this.adminService.updateUser(id, b); }
+  async updateUser(@Param('id') id: string, @Body() b: any, @Request() req: any) {
+    const result = await this.adminService.updateUser(id, b);
+    await this.adminService.logAction(req.user.sub, 'update_user', 'user', id, `Updated user role: ${b.role || 'unchanged'}`);
+    return result;
+  }
 
   // ── 标签 ──
   @Get('tags')
@@ -87,17 +90,29 @@ export class AdminController {
   listComments(@Query() q: any) { return this.adminService.listComments(q); }
 
   @Delete('comments/:id')
-  deleteComment(@Param('id') id: string) { return this.adminService.deleteComment(id); }
+  async deleteComment(@Param('id') id: string, @Request() req: any) {
+    const result = await this.adminService.deleteComment(id);
+    await this.adminService.logAction(req.user.sub, 'delete_comment', 'comment', id, 'Deleted comment');
+    return result;
+  }
 
   // ── 团队 ──
   @Get('teams')
   listTeams(@Query() q: any) { return this.adminService.listTeams(q); }
 
   @Patch('teams/:id')
-  updateTeam(@Param('id') id: string, @Body() b: any) { return this.adminService.updateTeam(id, b); }
+  async updateTeam(@Param('id') id: string, @Body() b: any, @Request() req: any) {
+    const result = await this.adminService.updateTeam(id, b);
+    await this.adminService.logAction(req.user.sub, 'update_team', 'team', id, `Updated team: ${b.name || id}`);
+    return result;
+  }
 
   @Delete('teams/:id')
-  deleteTeam(@Param('id') id: string) { return this.adminService.deleteTeam(id); }
+  async deleteTeam(@Param('id') id: string, @Request() req: any) {
+    const result = await this.adminService.deleteTeam(id);
+    await this.adminService.logAction(req.user.sub, 'delete_team', 'team', id, 'Deleted team');
+    return result;
+  }
 
   // ── 日志 ──
   @Get('logs')
@@ -112,26 +127,42 @@ export class AdminController {
   listTagGroups() { return this.adminService.listTagGroups(); }
 
   @Post('tag-groups')
-  createTagGroup(@Body() b: any) { return this.adminService.createTagGroup(b); }
+  async createTagGroup(@Body() b: any, @Request() req: any) {
+    const result = await this.adminService.createTagGroup(b);
+    await this.adminService.logAction(req.user.sub, 'create_tag_group', 'tag_group', '', `Created tag group: ${b.displayName}`);
+    return result;
+  }
 
   @Patch('tag-groups/:id')
-  updateTagGroup(@Param('id') id: string, @Body() b: any) { return this.adminService.updateTagGroup(id, b); }
+  async updateTagGroup(@Param('id') id: string, @Body() b: any, @Request() req: any) {
+    const result = await this.adminService.updateTagGroup(id, b);
+    await this.adminService.logAction(req.user.sub, 'update_tag_group', 'tag_group', id, `Updated tag group: ${b.displayName || id}`);
+    return result;
+  }
 
   @Delete('tag-groups/:id')
-  deleteTagGroup(@Param('id') id: string) { return this.adminService.deleteTagGroup(id); }
+  async deleteTagGroup(@Param('id') id: string, @Request() req: any) {
+    const result = await this.adminService.deleteTagGroup(id);
+    await this.adminService.logAction(req.user.sub, 'delete_tag_group', 'tag_group', id, 'Deleted tag group');
+    return result;
+  }
 
   // ── 审核 ──
   @Get('reviews')
   listReviews(@Query() q: any) { return this.adminService.listReviews(q); }
 
   @Post('reviews/:id/approve')
-  approveSkill(@Param('id') id: string, @Request() req: any) {
-    return this.adminService.approveSkill(id);
+  async approveSkill(@Param('id') id: string, @Request() req: any) {
+    const result = await this.adminService.approveSkill(id);
+    await this.adminService.logAction(req.user.sub, 'approve_skill', 'skill', id, 'Approved skill');
+    return result;
   }
 
   @Post('reviews/:id/reject')
-  rejectSkill(@Param('id') id: string, @Request() req: any) {
-    return this.adminService.rejectSkill(id);
+  async rejectSkill(@Param('id') id: string, @Request() req: any) {
+    const result = await this.adminService.rejectSkill(id);
+    await this.adminService.logAction(req.user.sub, 'reject_skill', 'skill', id, 'Rejected skill');
+    return result;
   }
 
   // ── 统计 ──
@@ -143,5 +174,9 @@ export class AdminController {
   listFeedbacks(@Query() q: any) { return this.adminService.listFeedbacks(q); }
 
   @Delete('feedbacks/:id')
-  deleteFeedback(@Param('id') id: string) { return this.adminService.deleteFeedback(id); }
+  async deleteFeedback(@Param('id') id: string, @Request() req: any) {
+    const result = await this.adminService.deleteFeedback(id);
+    await this.adminService.logAction(req.user.sub, 'delete_feedback', 'feedback', id, 'Deleted feedback');
+    return result;
+  }
 }
