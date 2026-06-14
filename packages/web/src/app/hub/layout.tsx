@@ -54,8 +54,8 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <meta name="robots" content="noindex, nofollow" />
-      <style>{`html, body { overflow: hidden; height: 100%; } footer { display: none !important; }`}</style>
-      <div className="flex h-screen overflow-hidden" data-hub="">
+      <style>{`body { overflow: hidden; } footer { display: none !important; }`}</style>
+      <div className="flex h-screen" data-hub="">
       {/* Sidebar */}
       <aside className="w-56 bg-white border-r border-neutral-200 shrink-0 hidden md:flex md:flex-col h-full relative">
         <div className="px-5 py-5 border-b border-neutral-100 shrink-0">
@@ -80,7 +80,7 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
-        <div className="absolute bottom-0 left-0 w-56 p-4 border-t border-neutral-100">
+        <div className="shrink-0 p-4 border-t border-neutral-100">
           <Link href="/" className="flex items-center gap-2 text-xs text-neutral-500 hover:text-neutral-700 transition-colors">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
