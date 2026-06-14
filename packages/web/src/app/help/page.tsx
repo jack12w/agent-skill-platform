@@ -14,6 +14,7 @@ export default function HelpCenterPage() {
   const [active, setActive] = useState('quickstart');
   const [fbName, setFbName] = useState('');
   const [fbEmail, setFbEmail] = useState('');
+  const [fbType, setFbType] = useState('suggestion');
   const [fbContent, setFbContent] = useState('');
   const [fbSent, setFbSent] = useState(false);
   const [fbSending, setFbSending] = useState(false);
@@ -21,6 +22,15 @@ export default function HelpCenterPage() {
   useEffect(() => {
     const hash = window.location.hash?.replace('#', '');
     if (hash && MENU.some(m => m.key === hash)) setActive(hash);
+    // Auto-fill email from token
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        if (payload.email) setFbEmail(payload.email);
+        if (payload.name) setFbName(payload.name);
+      }
+    } catch {}
   }, []);
 
   const switchTab = (key: string) => {
@@ -38,7 +48,7 @@ export default function HelpCenterPage() {
       const r = await fetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
-        body: JSON.stringify({ name: fbName.trim(), email: fbEmail.trim(), content: fbContent.trim() }),
+        body: JSON.stringify({ name: fbName.trim(), email: fbEmail.trim(), content: fbContent.trim(), type: fbType }),
       });
       const j = await r.json();
       if (j.ok) { setFbSent(true); setFbName(''); setFbEmail(''); setFbContent(''); }
@@ -150,7 +160,7 @@ tags: [搜索, 数据分析]
               <div className="space-y-3 text-sm text-gray-600">
                 <div className="flex items-center gap-2">
                   <span className="text-gray-400 w-16 shrink-0">邮箱</span>
-                  <a href="mailto:support@rehomi.com" className="text-blue-600 hover:underline">support@rehomi.com</a>
+                  <a href="mailto:287083583@qq.com" className="text-blue-600 hover:underline">287083583@qq.com</a>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-gray-400 w-16 shrink-0">GitHub</span>
@@ -186,6 +196,14 @@ tags: [搜索, 数据分析]
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">邮箱</label>
                     <input type="email" value={fbEmail} onChange={e => setFbEmail(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400" placeholder="your@email.com" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">类型</label>
+                    <select value={fbType} onChange={e => setFbType(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400 bg-white">
+                      <option value="suggestion">建议</option>
+                      <option value="bug">BUG 报错</option>
+                      <option value="other">其它</option>
+                    </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">反馈内容 *</label>

@@ -14,6 +14,9 @@ export class Feedback {
   @Column('text')
   content: string;
 
+  @Column({ default: 'other' })
+  type: string; // suggestion, bug, other
+
   @Column({ nullable: true })
   user_id: string;
 

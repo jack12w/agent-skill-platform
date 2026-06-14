@@ -13,13 +13,14 @@ export class FeedbackController {
 
   @UseGuards(AuthGuard)
   @Post()
-  async submit(@Body() body: { name: string; email: string; content: string }, @Req() req: any) {
+  async submit(@Body() body: { name: string; email: string; content: string; type?: string }, @Req() req: any) {
     if (!body.name?.trim() || !body.content?.trim()) return { ok: false, message: 'Name and content are required' };
 
     await this.fbRepo.save({
       name: body.name.slice(0, 100),
       email: body.email?.slice(0, 200) || '',
       content: body.content.slice(0, 5000),
+      type: body.type || 'other',
       user_id: req.user.sub,
     });
     return { ok: true };

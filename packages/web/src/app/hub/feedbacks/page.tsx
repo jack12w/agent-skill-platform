@@ -37,6 +37,7 @@ export default function HubFeedbacksPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
             <tr>
+              <th className="px-4 py-3 text-left">Type</th>
               <th className="px-4 py-3 text-left">Name</th>
               <th className="px-4 py-3 text-left hidden md:table-cell">Email</th>
               <th className="px-4 py-3 text-left">Content</th>
@@ -47,6 +48,11 @@ export default function HubFeedbacksPage() {
           <tbody className="divide-y divide-gray-100">
             {(data?.items || []).map((f: any) => (
               <tr key={f.id} className="hover:bg-gray-50">
+                <td className="px-4 py-3">
+                  <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${f.type === 'bug' ? 'bg-red-50 text-red-600' : f.type === 'suggestion' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-600'}`}>
+                    {f.type === 'bug' ? 'BUG' : f.type === 'suggestion' ? '建议' : '其它'}
+                  </span>
+                </td>
                 <td className="px-4 py-3 font-medium text-gray-800">{f.name}</td>
                 <td className="px-4 py-3 text-gray-500 hidden md:table-cell">{f.email || '-'}</td>
                 <td className="px-4 py-3 text-gray-600 max-w-sm truncate">{f.content}</td>
