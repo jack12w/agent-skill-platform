@@ -157,7 +157,7 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
               <div key={group} className="flex items-center gap-2">
                 <span className="text-xs text-gray-400 shrink-0 w-10">{t(`tags.${group}`)}:</span>
                 <div className="flex gap-1 flex-wrap">
-                  {tagGroups[group].map(tag => (
+                  {tagGroups[group].filter(tag => tag !== '精选').map(tag => (
                     <button
                       key={tag}
                       type="button"
