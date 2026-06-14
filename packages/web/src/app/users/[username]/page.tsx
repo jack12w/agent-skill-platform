@@ -174,7 +174,7 @@ export default function UserProfile({ params }: { params: { username: string } }
                 {s.tags && s.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mt-3">
                     {s.tags.slice(0, 4).map((tag: string) => (
-                      <span key={tag} className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
+                      <span key={tag} className={`text-xs px-2 py-0.5 rounded-full ${tag === '精选' ? 'bg-orange-50 text-orange-800 border border-orange-200' : 'bg-gray-100 text-gray-600'}`}>
                         {tag}
                       </span>
                     ))}
