@@ -232,6 +232,7 @@ const en = {
     tags: 'Tags',
     comments: 'Comments',
     teams: 'Teams',
+    feedbacks: 'Feedback',
     logs: 'Audit Log',
     settings: 'Settings',
     published: 'Published',

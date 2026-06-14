@@ -133,7 +133,57 @@ CREATE TABLE IF NOT EXISTS comments (
 
 CREATE INDEX IF NOT EXISTS idx_comments_skill ON comments(skill_id, created_at DESC);
 
--- 10. Verification codes table
+-- 11. Admin audit log table
+CREATE TABLE IF NOT EXISTS admin_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    admin_user_id UUID NOT NULL REFERENCES users(id),
+    action TEXT NOT NULL,
+    target_type TEXT,
+    target_id TEXT,
+    detail TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_logs_created ON admin_logs(created_at DESC);
+
+-- 12. Tag groups table
+CREATE TABLE IF NOT EXISTS tag_groups (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    key TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    tags TEXT[] NOT NULL DEFAULT '{}',
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 13. Page views table (website analytics)
+CREATE TABLE IF NOT EXISTS page_views (
+    id BIGSERIAL PRIMARY KEY,
+    path TEXT NOT NULL,
+    user_agent TEXT,
+    ip_hash TEXT,
+    referrer TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_page_views_created ON page_views(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_page_views_path ON page_views(path);
+
+-- 14. User feedback table
+CREATE TABLE IF NOT EXISTS feedbacks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    type TEXT DEFAULT 'suggestion',
+    name TEXT,
+    email TEXT,
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedbacks_created ON feedbacks(created_at DESC);
+
+-- 15. Verification codes table
 CREATE TABLE IF NOT EXISTS verification_codes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email TEXT NOT NULL,

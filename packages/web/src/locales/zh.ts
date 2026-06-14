@@ -232,6 +232,7 @@ const zh = {
     tags: '标签管理',
     comments: '评论管理',
     teams: '团队管理',
+    feedbacks: '反馈建议',
     logs: '操作日志',
     settings: '系统设置',
     published: '已发布',
