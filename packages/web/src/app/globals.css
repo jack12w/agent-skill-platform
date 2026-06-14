@@ -4,33 +4,33 @@
 
 /* ============================================
    Design Tokens — Agent Skill Platform
-   Inspired by Apple Human Interface + skillhub.cn
+   Scheme: Violet + Cyan (紫韵)
    ============================================ */
 
 :root {
-  /* ── Brand Colors ── */
-  --brand-50:  #EFF4FF;
-  --brand-100: #DCE7FF;
-  --brand-200: #B7CCFF;
-  --brand-300: #8DACFF;
-  --brand-400: #5C85FF;
-  --brand-500: #3366FF;
-  --brand-600: #2952E3;
-  --brand-700: #1F3EB8;
-  --brand-800: #162D8C;
-  --brand-900: #0E1D61;
+  /* ── Brand Colors (Violet) ── */
+  --brand-50:  #F8F6FF;
+  --brand-100: #EDE9FE;
+  --brand-200: #DDD6FE;
+  --brand-300: #C4B5FD;
+  --brand-400: #A78BFA;
+  --brand-500: #8B5CF6;
+  --brand-600: #7C3AED;
+  --brand-700: #6D28D9;
+  --brand-800: #5B21B6;
+  --brand-900: #4C1D95;
 
-  /* ── Accent: Violet ── */
-  --accent-50:  #F8F6FF;
-  --accent-100: #EDE9FE;
-  --accent-200: #DDD6FE;
-  --accent-300: #C4B5FD;
-  --accent-400: #A78BFA;
-  --accent-500: #8B5CF6;
-  --accent-600: #7C3AED;
-  --accent-700: #6D28D9;
-  --accent-800: #5B21B6;
-  --accent-900: #4C1D95;
+  /* ── Accent: Cyan ── */
+  --accent-50:  #ECFEFF;
+  --accent-100: #CFFAFE;
+  --accent-200: #A5F3FC;
+  --accent-300: #67E8F9;
+  --accent-400: #22D3EE;
+  --accent-500: #06B6D4;
+  --accent-600: #0891B2;
+  --accent-700: #0E7490;
+  --accent-800: #155E75;
+  --accent-900: #164E63;
 
   /* ── Neutral (warm zinc tones) ── */
   --neutral-50:  #FAFAFA;
@@ -73,7 +73,7 @@
   --text-tertiary:   #71717A;
   --text-disabled:   #A1A1AA;
   --text-inverse:    #FFFFFF;
-  --text-link:       #2952E3;
+  --text-link:       #7C3AED;
 
   /* ── Border Colors ── */
   --border-light:    #E4E4E7;
@@ -86,7 +86,7 @@
   --shadow-md:  0 4px 6px rgba(0, 0, 0, 0.05), 0 2px 4px rgba(0, 0, 0, 0.04);
   --shadow-lg:  0 10px 15px rgba(0, 0, 0, 0.06), 0 4px 6px rgba(0, 0, 0, 0.04);
   --shadow-xl:  0 20px 25px rgba(0, 0, 0, 0.07), 0 8px 10px rgba(0, 0, 0, 0.04);
-  --shadow-brand: 0 4px 14px rgba(41, 82, 227, 0.25);
+  --shadow-brand: 0 4px 14px rgba(124, 58, 237, 0.25);
 
   /* ── Glass Morphism ── */
   --glass-bg:       rgba(255, 255, 255, 0.72);
@@ -102,6 +102,11 @@
   --radius-xl:   1rem;
   --radius-2xl:  1.25rem;
   --radius-full: 9999px;
+
+  /* ── Aurora Gradient Colors ── */
+  --aurora-violet:  rgba(124, 58, 237, 0.07);
+  --aurora-cyan:    rgba(6, 182, 212, 0.05);
+  --aurora-amber:   rgba(245, 158, 11, 0.03);
 
   /* ── Legacy compatibility ── */
   --foreground-rgb: 24, 24, 27;
@@ -121,11 +126,14 @@
     --text-secondary:  #A1A1AA;
     --text-tertiary:   #71717A;
     --text-disabled:   #52525B;
-    --text-link:       #5C85FF;
+    --text-link:       #A78BFA;
 
     --border-light:    #27272A;
     --border-default:  #3F3F46;
     --border-strong:   #52525B;
+
+    --glass-bg:        rgba(30, 30, 40, 0.72);
+    --glass-border:    rgba(255, 255, 255, 0.06);
   }
 }
 
@@ -135,6 +143,61 @@ body {
   background: var(--surface-page);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Aurora Animated Background ── */
+.aurora-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.aurora-bg::before {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(ellipse 80% 60% at 15% 25%, var(--aurora-violet) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 80% at 85% 15%, var(--aurora-cyan) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 50% at 50% 85%, var(--aurora-amber) 0%, transparent 50%);
+  animation: auroraShift 18s ease-in-out infinite alternate;
+}
+
+@keyframes auroraShift {
+  0% {
+    transform: scale(1) translate(0, 0);
+  }
+  25% {
+    transform: scale(1.08) translate(-1.5%, 1%);
+  }
+  50% {
+    transform: scale(1.04) translate(1%, -1.5%);
+  }
+  75% {
+    transform: scale(1.1) translate(-0.5%, 0.5%);
+  }
+  100% {
+    transform: scale(1.06) translate(0.5%, -0.5%);
+  }
+}
+
+.aurora-bg::after {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(ellipse 50% 40% at 70% 70%, var(--aurora-violet) 0%, transparent 50%),
+    radial-gradient(ellipse 40% 60% at 30% 50%, var(--aurora-cyan) 0%, transparent 50%);
+  animation: auroraPulse 12s ease-in-out infinite;
+  opacity: 0.6;
+  mix-blend-mode: multiply;
+}
+
+@keyframes auroraPulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.05); }
 }
 
 /* ── Glass Component ── */
@@ -155,7 +218,7 @@ body {
 
 /* ── Gradient Text ── */
 .text-gradient-brand {
-  background: linear-gradient(135deg, #3366FF, #8B5CF6);
+  background: linear-gradient(135deg, #7C3AED, #06B6D4);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

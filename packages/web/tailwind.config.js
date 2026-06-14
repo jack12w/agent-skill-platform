@@ -22,18 +22,6 @@ module.exports = {
       },
       colors: {
         brand: {
-          50:  '#EFF4FF',
-          100: '#DCE7FF',
-          200: '#B7CCFF',
-          300: '#8DACFF',
-          400: '#5C85FF',
-          500: '#3366FF',
-          600: '#2952E3',
-          700: '#1F3EB8',
-          800: '#162D8C',
-          900: '#0E1D61',
-        },
-        accent: {
           50:  '#F8F6FF',
           100: '#EDE9FE',
           200: '#DDD6FE',
@@ -44,6 +32,18 @@ module.exports = {
           700: '#6D28D9',
           800: '#5B21B6',
           900: '#4C1D95',
+        },
+        accent: {
+          50:  '#ECFEFF',
+          100: '#CFFAFE',
+          200: '#A5F3FC',
+          300: '#67E8F9',
+          400: '#22D3EE',
+          500: '#06B6D4',
+          600: '#0891B2',
+          700: '#0E7490',
+          800: '#155E75',
+          900: '#164E63',
         },
         neutral: {
           50:  '#FAFAFA',
@@ -66,7 +66,7 @@ module.exports = {
       },
       boxShadow: {
         'xs':    '0 1px 2px rgba(0,0,0,0.04)',
-        'brand': '0 4px 14px rgba(41,82,227,0.25)',
+        'brand': '0 4px 14px rgba(124,58,237,0.25)',
         'glass': '0 8px 32px rgba(0,0,0,0.06)',
         'card':  '0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
       },
@@ -75,6 +75,17 @@ module.exports = {
       },
       backdropBlur: {
         'glass': '16px',
+      },
+      keyframes: {
+        aurora: {
+          '0%, 100%': { transform: 'scale(1) translate(0, 0)', opacity: '1' },
+          '25%': { transform: 'scale(1.08) translate(-1%, 1%)', opacity: '0.9' },
+          '50%': { transform: 'scale(1.04) translate(1%, -2%)', opacity: '0.85' },
+          '75%': { transform: 'scale(1.1) translate(-0.5%, 0.5%)', opacity: '0.9' },
+        },
+      },
+      animation: {
+        aurora: 'aurora 18s ease-in-out infinite alternate',
       },
     },
   },

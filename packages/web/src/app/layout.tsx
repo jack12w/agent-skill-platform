@@ -103,12 +103,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="font-sans">
+        <div className="aurora-bg" aria-hidden="true" />
         <LangInit lang={shortLang} />
         <AuthProvider>
           <AnalyticsTracker />
           <NavBar />
-          <main className="min-h-screen">{children}</main>
-          <footer className="p-6 sm:p-10 border-t text-center text-neutral-500 text-sm space-y-1">
+          <main className="min-h-screen relative z-[1]">{children}</main>
+          <footer className="relative z-[1] p-6 sm:p-10 border-t text-center text-neutral-500 text-sm space-y-1">
             <p>© 2026 SkillDepot. Built for the AI era.</p>
             <p>
               技术支持：
