@@ -118,6 +118,10 @@ CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
 CREATE INDEX IF NOT EXISTS idx_skill_stats_total_score ON skill_stats(total_score DESC);
 CREATE INDEX IF NOT EXISTS idx_skill_stats_weekly_score ON skill_stats(weekly_score DESC);
 
+-- pg_trgm extension for fuzzy name similarity search
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS idx_skills_name_trgm ON skills USING GIN (name gin_trgm_ops);
+
 -- 9. Comments table
 CREATE TABLE IF NOT EXISTS comments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

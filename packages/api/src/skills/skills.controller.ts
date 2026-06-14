@@ -59,6 +59,12 @@ export class SkillsController {
     return this.skillsService.updateSkill(id, body, req.user.sub);
   }
 
+  @Get('check-name')
+  checkName(@Query('name') name: string) {
+    if (!name || !name.trim()) return { similar: [] };
+    return this.skillsService.checkSimilarName(name.trim()).then(similar => ({ similar }));
+  }
+
   @Get(':id/versions')
   versions(@Param('id') id: string) {
     return this.skillsService.listVersions(id);

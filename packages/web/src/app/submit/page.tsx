@@ -80,6 +80,26 @@ export default function SubmitSkill() {
   const [tagGroups, setTagGroups] = useState(FALLBACK_PRESET_TAGS);
   const [mode, setMode] = useState<'single' | 'batch'>('single');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [nameFeedback, setNameFeedback] = useState<{ loading: boolean; similar: any[] }>({ loading: false, similar: [] });
+
+  // 实时检测技能名称相似度（防抖 500ms）
+  useEffect(() => {
+    if (!formData.name.trim() || formData.name.trim().length < 3) {
+      setNameFeedback({ loading: false, similar: [] });
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setNameFeedback(prev => ({ ...prev, loading: true }));
+      try {
+        const res = await fetch(`/api/skills/check-name?name=${encodeURIComponent(formData.name.trim())}`);
+        const data = await res.json();
+        setNameFeedback({ loading: false, similar: data.similar || [] });
+      } catch {
+        setNameFeedback({ loading: false, similar: [] });
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [formData.name]);
 
   useEffect(() => {
     try {
@@ -283,7 +303,25 @@ export default function SubmitSkill() {
             {t('submit.name')} {file && <span className="text-green-500 text-xs">（已从 SKILL.md 自动填充）</span>}
           </label>
           <input type="text" required className="w-full p-3 border rounded-lg" placeholder="SEO Audit Agent" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-        </div>
+          {/* 实时同名检测反馈 */}
+          {nameFeedback.loading && (
+            <p className="mt-1 text-xs text-gray-400">检测中...</p>
+          )}
+          {!nameFeedback.loading && nameFeedback.similar.length > 0 && (
+            <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
+              <span>检测到相似技能：</span>
+              {nameFeedback.similar.map((s: any, i: number) => (
+                <span key={i} className="ml-1">
+                  <strong>「{s.skill_name}」</strong>（{Math.round(s.similarity * 100)}% 相似）
+                  {i < nameFeedback.similar.length - 1 && '、'}
+                </span>
+              ))}
+              <span className="block mt-0.5">建议修改名称以避免重复</span>
+            </div>
+          )}
+          {!nameFeedback.loading && nameFeedback.similar.length === 0 && formData.name.trim().length >= 3 && (
+            <p className="mt-1 text-xs text-green-600">未检测到相似技能</p>
+          )}
 
         {/* ── 标签 ── */}
         <div>

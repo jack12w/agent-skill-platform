@@ -179,6 +179,27 @@ export class SkillsService {
     return skills;
   }
 
+  /**
+   * 检查技能名称是否与已有技能过于相似（pg_trgm trigram 匹配）
+   * 返回相似度 ≥ 85% 的技能列表，按相似度降序排列
+   */
+  async checkSimilarName(name: string) {
+    const normalized = name.trim();
+    if (!normalized) return [];
+
+    const result = await this.skillRepository
+      .createQueryBuilder('skill')
+      .select(['skill.name', 'skill.slug'])
+      .addSelect(`similarity(skill.name, :name)`, 'similarity')
+      .where(`similarity(skill.name, :name) >= 0.85`)
+      .setParameter('name', normalized)
+      .orderBy('similarity', 'DESC')
+      .limit(3)
+      .getRawMany();
+
+    return result as { skill_name: string; skill_slug: string; similarity: number }[];
+  }
+
   async createSkill(data: Partial<Skill>, userId: string) {
     // Validate owner_team_id: must be null or a team the user belongs to
     const teamId: string | null = (data.owner_team_id as string) || null;
@@ -194,6 +215,15 @@ export class SkillsService {
     const name = (data.name || '').trim();
     if (!name) {
       throw new BadRequestException('Skill name is required');
+    }
+
+    // 同名相似度检测（pg_trgm）：阻止相似度 ≥ 85% 的重复技能
+    const similar = await this.checkSimilarName(name);
+    if (similar.length > 0) {
+      const similarNames = similar.map(s => `"${s.name}"（${Math.round(s.similarity * 100)}%）`).join('、');
+      throw new BadRequestException(
+        `技能名称与已有技能过于相似：${similarNames}。请修改名称后重试。`,
+      );
     }
 
     // Use UUID as both id and slug so the URL matches the OSS storage path
@@ -626,6 +656,12 @@ export class SkillsService {
           candidates.sort((a: any, b: any) => a.entryName.split('/').length - b.entryName.split('/').length);
           meta = parseSkillMd(candidates[0].getData().toString('utf8'));
         } catch { throw new Error('Invalid SKILL.md'); }
+
+        // Check for similar name
+        const similar = await this.checkSimilarName(meta.name);
+        if (similar.length > 0) {
+          throw new Error(`Name too similar to: ${similar.map(s => s.skill_name).join(', ')}`);
+        }
 
         // Create skill
         const id = randomUUID();
