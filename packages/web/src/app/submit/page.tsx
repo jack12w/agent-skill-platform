@@ -305,22 +305,21 @@ export default function SubmitSkill() {
           <input type="text" required className="w-full p-3 border rounded-lg" placeholder="SEO Audit Agent" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
           {/* 实时同名检测反馈 */}
           {nameFeedback.loading && (
-            <p className="mt-1 text-xs text-gray-400">检测中...</p>
+            <p className="mt-1 text-xs text-gray-400">{t('submit.nameChecking')}</p>
           )}
           {!nameFeedback.loading && nameFeedback.similar.length > 0 && (
             <div className="mt-1 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
-              <span>检测到相似技能：</span>
+              <span>{t('submit.nameSimilarFound')}</span>
               {nameFeedback.similar.map((s: any, i: number) => (
                 <span key={i} className="ml-1">
-                  <strong>「{s.skill_name}」</strong>（{Math.round(s.similarity * 100)}% 相似）
+                  <strong>「{s.skill_name}」</strong>（{Math.round(s.similarity * 100)}{t('submit.nameSimilarPercent')}）
                   {i < nameFeedback.similar.length - 1 && '、'}
                 </span>
               ))}
-              <span className="block mt-0.5">建议修改名称以避免重复</span>
             </div>
           )}
           {!nameFeedback.loading && nameFeedback.similar.length === 0 && formData.name.trim().length >= 3 && (
-            <p className="mt-1 text-xs text-green-600">未检测到相似技能</p>
+            <p className="mt-1 text-xs text-green-600">{t('submit.nameNoSimilar')}</p>
           )}
         </div>
 

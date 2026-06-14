@@ -115,6 +115,10 @@ const en = {
     fileRequired: 'Please upload a ZIP package containing SKILL.md.',
     publishFailed: 'Publish failed',
     uploadOkButSkillNoVersion: 'Skill metadata saved, but the ZIP upload failed. You can retry uploading, or edit the skill later to add a version.',
+    nameChecking: 'Checking...',
+    nameSimilarFound: 'Similar skills detected: ',
+    nameSimilarPercent: '% similar',
+    nameNoSimilar: 'No similar skills found',
   },
   leaderboard: {
     title: 'Leaderboard',

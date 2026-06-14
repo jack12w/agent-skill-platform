@@ -115,6 +115,10 @@ const zh = {
     fileRequired: '请上传包含 SKILL.md 的 ZIP 包',
     publishFailed: '发布失败',
     uploadOkButSkillNoVersion: '技能信息已保存，但 ZIP 上传失败。可以重试上传，或稍后在编辑页面添加版本。',
+    nameChecking: '检测中...',
+    nameSimilarFound: '检测到相似技能：',
+    nameSimilarPercent: '% 相似',
+    nameNoSimilar: '未检测到相似技能',
   },
   leaderboard: {
     title: '排行榜',

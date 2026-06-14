@@ -222,7 +222,7 @@ export class SkillsService {
     if (similar.length > 0) {
       const similarNames = similar.map(s => `"${s.skill_name}"（${Math.round(s.similarity * 100)}%）`).join('、');
       throw new BadRequestException(
-        `技能名称与已有技能过于相似：${similarNames}。请修改名称后重试。`,
+        `技能名称与已有技能过于相似：${similarNames}`,
       );
     }
 
