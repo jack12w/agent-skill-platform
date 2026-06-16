@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, ILike } from 'typeorm';
 import { Skill } from '../skills/skill.entity';
+import { SkillVersion } from '../skills/skill-version.entity';
 import { User } from '../auth/user.entity';
 import { Team } from '../teams/team.entity';
 import { Comment } from '../skills/comment.entity';
@@ -24,6 +25,7 @@ export class AdminService {
     @InjectRepository(TagGroup) private tagGroupRepo: Repository<TagGroup>,
     @InjectRepository(PageView) private pvRepo: Repository<PageView>,
     @InjectRepository(Feedback) private fbRepo: Repository<Feedback>,
+    @InjectRepository(SkillVersion) private versionRepo: Repository<SkillVersion>,
   ) {}
 
   async getStats() {
@@ -107,14 +109,26 @@ export class AdminService {
 
     switch (action) {
       case 'publish':
-        // Also sync published_version_id to latest_version_id on batch publish
+        // Also sync published_version_id and metadata from the latest version
         for (const id of ids) {
           const skill = await this.skillRepo.findOneBy({ id });
           if (skill) {
-            await this.skillRepo.update(id, {
+            const updateData: any = {
               status: SkillStatus.PUBLISHED,
               published_version_id: skill.latest_version_id,
-            });
+            };
+            // Sync metadata from the newly approved version's manifest
+            if (skill.latest_version_id) {
+              const version = await this.versionRepo.findOneBy({ id: skill.latest_version_id });
+              if (version?.manifest_json) {
+                const meta = version.manifest_json;
+                if (meta.description) updateData.short_summary = meta.description;
+                if (meta.tags && meta.tags.length) {
+                  updateData.tags = [...new Set([...(skill.tags || []), ...meta.tags])];
+                }
+              }
+            }
+            await this.skillRepo.update(id, updateData);
           }
         }
         break;
@@ -342,11 +356,25 @@ export class AdminService {
   async approveSkill(id: string) {
     const skill = await this.skillRepo.findOneBy({ id });
     if (!skill) throw new NotFoundException('Skill not found');
-    // On approval, publish the latest version (makes it visible to non-owners)
-    await this.skillRepo.update(id, {
+
+    const updateData: any = {
       status: SkillStatus.PUBLISHED,
       published_version_id: skill.latest_version_id,
-    });
+    };
+
+    // Sync metadata from the newly approved version's manifest
+    if (skill.latest_version_id) {
+      const version = await this.versionRepo.findOneBy({ id: skill.latest_version_id });
+      if (version?.manifest_json) {
+        const meta = version.manifest_json;
+        if (meta.description) updateData.short_summary = meta.description;
+        if (meta.tags && meta.tags.length) {
+          updateData.tags = [...new Set([...(skill.tags || []), ...meta.tags])];
+        }
+      }
+    }
+
+    await this.skillRepo.update(id, updateData);
     return { ok: true };
   }
 

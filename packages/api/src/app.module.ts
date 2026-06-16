@@ -11,6 +11,7 @@ import { AdminController } from './common/admin.controller';
 import { AdminService } from './common/admin.service';
 import { AdminGuard } from './common/admin.guard';
 import { Skill } from './skills/skill.entity';
+import { SkillVersion } from './skills/skill-version.entity';
 import { User } from './auth/user.entity';
 import { Team } from './teams/team.entity';
 import { Comment } from './skills/comment.entity';
@@ -48,7 +49,7 @@ import { FeedbackController } from './common/feedback.controller';
       retryAttempts: process.env.NODE_ENV === 'production' ? 10 : 2,
       retryDelay: 3000,
     }),
-    TypeOrmModule.forFeature([Skill, User, Team, Comment, Event, AdminLog, TagGroup, PageView, Feedback]),
+    TypeOrmModule.forFeature([Skill, SkillVersion, User, Team, Comment, Event, AdminLog, TagGroup, PageView, Feedback]),
     StorageModule,
     AuthModule,
     SkillsModule,

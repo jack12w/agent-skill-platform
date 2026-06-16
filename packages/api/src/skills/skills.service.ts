@@ -383,18 +383,23 @@ export class SkillsService {
 
     const savedVersion = await this.versionRepository.save(version);
 
+    // For PUBLISHED skills, do NOT update short_summary/tags — those must wait
+    // for admin approval so non-owners still see the old version's metadata.
+    // For PENDING skills (first upload), update metadata so the admin can review it.
+    const metadataUpdate: Partial<Skill> = {};
+    if (skill.status !== SkillStatus.PUBLISHED) {
+      if (meta.description) metadataUpdate.short_summary = meta.description;
+      if (meta.tags && meta.tags.length) {
+        metadataUpdate.tags = [...new Set([...(skill.tags || []), ...meta.tags])];
+      }
+    }
+
     await this.skillRepository.update(skill.id, {
       latest_version_id: savedVersion.id,
       // published_version_id stays unchanged — new version needs admin approval
       // before it becomes the public-facing version.
       // For first-time uploads on PENDING skills, published_version_id remains null.
-      short_summary: meta.description || skill.short_summary,
-      tags: (meta.tags && meta.tags.length
-        ? [...new Set([
-            ...(skill.tags || []),
-            ...meta.tags,
-          ])]
-        : skill.tags),
+      ...metadataUpdate,
       status: skill.status === SkillStatus.PUBLISHED ? SkillStatus.PUBLISHED : SkillStatus.PENDING,
     });
 
@@ -741,7 +746,7 @@ export class SkillsService {
           manifest_json: meta as any, package_url: packageUrl, size: file.buffer.length,
         });
         const savedVersion = await this.versionRepository.save(version);
-        await this.skillRepository.update(saved.id, { latest_version_id: savedVersion.id, published_version_id: savedVersion.id });
+        await this.skillRepository.update(saved.id, { latest_version_id: savedVersion.id });
 
         results.push({ name: meta.name || file.originalname, ok: true, id: saved.id });
       } catch (err: any) {
