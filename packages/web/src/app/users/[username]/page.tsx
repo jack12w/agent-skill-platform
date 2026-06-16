@@ -171,18 +171,25 @@ export default function UserProfile({ params }: { params: { username: string } }
                 {s.short_summary && (
                   <p className="text-sm text-neutral-500 mt-1 line-clamp-2">{s.short_summary}</p>
                 )}
-                {s.tags && s.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-3">
-                    {s.tags.slice(0, 4).map((tag: string) => (
-                      <span key={tag} className={`text-xs px-2 py-0.5 rounded-full ${tag === '精选' ? 'bg-orange-50 text-orange-800 border border-orange-200' : 'bg-neutral-100 text-neutral-600'}`}>
-                        {tag}
-                      </span>
-                    ))}
-                    {s.tags.length > 4 && (
-                      <span className="text-xs text-neutral-400">+{s.tags.length - 4}</span>
-                    )}
-                  </div>
-                )}
+                {s.tags && s.tags.length > 0 && (() => {
+                  const tags = s.tags || [];
+                  const featured = tags.filter((t: string) => t === '精选');
+                  const others = tags.filter((t: string) => t !== '精选');
+                  const display = [...featured, ...others].slice(0, 4);
+                  const hidden = tags.length - display.length;
+                  return (
+                    <div className="flex flex-wrap gap-1.5 mt-3">
+                      {display.map((tag: string) => (
+                        <span key={tag} className={`text-xs px-2 py-0.5 rounded-full ${tag === '精选' ? 'bg-orange-50 text-orange-800 border border-orange-200' : 'bg-neutral-100 text-neutral-600'}`}>
+                          {tag}
+                        </span>
+                      ))}
+                      {hidden > 0 && (
+                        <span className="text-xs text-neutral-400">+{hidden}</span>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-neutral-100 text-xs text-neutral-400">
                   <div className="flex items-center gap-3">
                   <span className="flex items-center gap-1">
