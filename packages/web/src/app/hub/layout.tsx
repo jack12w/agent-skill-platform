@@ -57,17 +57,17 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
       <style>{`body { overflow: hidden; } footer { display: none !important; }`}</style>
       <div className="flex h-dvh overflow-hidden" data-hub="">
       {/* Sidebar */}
-      <aside className="w-56 bg-white border-r border-neutral-200 shrink-0 hidden md:flex md:flex-col h-full relative">
-        <div className="px-5 py-5 border-b border-neutral-100 shrink-0">
+      <aside className="w-52 bg-white border-r border-neutral-200 shrink-0 hidden md:flex md:flex-col h-full relative">
+        <div className="px-4 py-4 border-b border-neutral-100 shrink-0">
           <h2 className="text-sm font-semibold text-neutral-900">SkillDepot</h2>
           <p className="text-xs text-neutral-500 mt-0.5">{t('admin.title')}</p>
         </div>
-        <nav className="py-2 overflow-y-auto flex-1">
+        <nav className="py-1 overflow-y-auto flex-1">
           {MENU.map(item => (
             <Link
               key={item.key}
               href={item.key === 'stats' ? '/hub' : `/hub/${item.key}`}
-              className={`flex items-center gap-3 px-5 py-2.5 text-sm transition-colors ${
+              className={`flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
                 activeKey === item.key
                   ? 'bg-brand-50 text-brand-700 font-medium border-r-2 border-brand-600'
                   : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
@@ -80,7 +80,7 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
-        <div className="shrink-0 p-4 border-t border-neutral-100">
+        <div className="shrink-0 p-3 border-t border-neutral-100">
           <Link href="/" className="flex items-center gap-2 text-xs text-neutral-500 hover:text-neutral-700 transition-colors">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
