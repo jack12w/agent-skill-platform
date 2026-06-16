@@ -33,6 +33,13 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
 
   useEffect(() => { load(); }, [params.id]);
 
+  // 页面获得焦点时刷新数据（从技能编辑页返回后）
+  useEffect(() => {
+    const handleFocus = () => { load(); };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [params.id]);
+
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 text-center text-neutral-500">

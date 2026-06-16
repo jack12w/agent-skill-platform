@@ -36,6 +36,13 @@ export default function Dashboard() {
     setLoading(false);
   }, []);
 
+  // 页面获得焦点时刷新数据（用户从编辑页等子页面返回时）
+  useEffect(() => {
+    const handleFocus = () => { reloadSkills(); };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
   const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault(); const name = newName.trim(); if (!name) return;
     const token = localStorage.getItem('token'); if (!token) return;
@@ -100,7 +107,7 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 mb-12">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 mb-12 bg-transparent">
         <label className="relative cursor-pointer group shrink-0">
           <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" disabled={uploadingAvatar} />
           {user.avatar_url ? (
