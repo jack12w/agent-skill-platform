@@ -162,7 +162,7 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
             visibleDragbar={false}
           />
         </div>
-        <Field label={t('edit.tags')}><input type="text" value={form.tags} onChange={onChange('tags')} placeholder="ai, nlp" className="w-full px-3 py-2 border rounded-lg" />
+        <Field label={t('edit.tags')}><input type="text" value={form.tags} onChange={e => setForm(f => ({...f, tags: e.target.value.replace(/，/g, ', ')}))} placeholder="ai, nlp" className="w-full px-3 py-2 border rounded-lg" />
           {/* ── 预设标签 ── */}
           <div className="mt-3 space-y-2">
             <span className="text-xs text-neutral-400">{t('tags.presetTags')}</span>

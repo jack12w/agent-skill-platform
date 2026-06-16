@@ -337,7 +337,7 @@ export default function SubmitSkill() {
           <label className="block text-sm font-medium text-neutral-700 mb-1">
             {t('submit.tags')} {file && formData.tags && <span className="text-green-500 text-xs">（已从 SKILL.md 自动填充）</span>}
           </label>
-          <input type="text" className="w-full p-3 border rounded-lg" placeholder="SEO, Marketing" value={formData.tags} onChange={e => setFormData({...formData, tags: e.target.value})} />
+          <input type="text" className="w-full p-3 border rounded-lg" placeholder="SEO, Marketing" value={formData.tags} onChange={e => setFormData({...formData, tags: e.target.value.replace(/，/g, ', ')})} />
           {/* ── 预设标签 ── */}
           <div className="mt-3 space-y-2">
             <span className="text-xs text-neutral-400">{t('tags.presetTags')}</span>
