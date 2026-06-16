@@ -225,7 +225,16 @@ export default function SubmitSkill() {
         const uploadRes = await fetch(`/api/skills/${skill.id}/versions`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: uploadData });
         if (!uploadRes.ok) { const body = await uploadRes.json().catch(() => ({})); throw new Error(body.message || `HTTP ${uploadRes.status}`); }
         router.push(`/skills/${skill.slug || skill.id}`);
-      } catch (uploadErr: any) { alert(t('submit.uploadOkButSkillNoVersion') + '\n\n' + (uploadErr.message || String(uploadErr))); }
+      } catch (uploadErr: any) {
+        // 回滚：删除已创建但无版本的技能，保证整体失败不留残留数据
+        try {
+          await fetch(`/api/skills/${skill.id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+        } catch {}
+        throw uploadErr;
+      }
     } catch (err: any) { alert(t('submit.publishFailed') + ': ' + (err?.message ?? String(err))); }
     finally { setLoading(false); }
   };

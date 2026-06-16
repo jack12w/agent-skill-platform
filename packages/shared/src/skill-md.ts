@@ -93,7 +93,7 @@ function parseSimpleYaml(yaml: string): Record<string, any> {
     const valuePart = kv[2].trimEnd();
 
     if (valuePart === '') {
-      // Likely a block-list header
+      // Only `tags` (and other array fields) support block-list
       currentKey = key;
       currentList = [];
       out[key] = currentList;
@@ -115,6 +115,13 @@ function parseSimpleYaml(yaml: string): Record<string, any> {
     out[key] = coerce(valuePart);
     currentKey = null;
     currentList = null;
+  }
+
+  // Post-process: non-tags arrays → joined string (e.g. description with block-list)
+  for (const [key, val] of Object.entries(out)) {
+    if (key !== 'tags' && Array.isArray(val)) {
+      out[key] = val.join('\n');
+    }
   }
 
   return out;
