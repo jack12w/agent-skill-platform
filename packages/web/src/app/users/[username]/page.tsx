@@ -101,7 +101,7 @@ export default function UserProfile({ params }: { params: { username: string } }
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
       {/* Profile header */}
-      <div className="mb-10 glass">
+      <div className="mb-10">
         <div className="flex items-start gap-4 sm:gap-6">
           {/* Avatar */}
           <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-brand-400 to-accent-500 flex items-center justify-center text-white text-2xl sm:text-3xl font-bold shrink-0 overflow-hidden">
