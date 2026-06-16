@@ -337,7 +337,7 @@ export class SkillsService {
       meta = parseSkillMd(skillMdContent);
     } catch (e: any) {
       if (e instanceof BadRequestException) throw e;
-      throw new BadRequestException('Invalid SKILL.md format');
+      throw new BadRequestException(`SKILL.md 解析失败：${e?.message || e}`);
     }
 
     // Enforce monotonic versioning: a given version number can only be uploaded once
@@ -369,7 +369,11 @@ export class SkillsService {
       latest_version_id: savedVersion.id,
       short_summary: meta.description || skill.short_summary,
       tags: (meta.tags && meta.tags.length
-        ? [...new Set([...meta.tags, ...(skill.tags?.includes('精选') ? ['精选'] : [])])]
+        ? [...new Set([
+            ...(skill.tags?.includes('社区') ? ['社区'] : []),
+            ...meta.tags,
+            ...(skill.tags?.includes('精选') ? ['精选'] : []),
+          ])]
         : skill.tags),
       status: SkillStatus.PENDING,
     });
@@ -655,7 +659,7 @@ export class SkillsService {
           if (candidates.length === 0) throw new Error('SKILL.md not found');
           candidates.sort((a: any, b: any) => a.entryName.split('/').length - b.entryName.split('/').length);
           meta = parseSkillMd(candidates[0].getData().toString('utf8'));
-        } catch { throw new Error('Invalid SKILL.md'); }
+        } catch (e: any) { throw new Error('SKILL.md 解析失败: ' + (e.message || String(e))); }
 
         // Check for similar name
         const similar = await this.checkSimilarName(meta.name);

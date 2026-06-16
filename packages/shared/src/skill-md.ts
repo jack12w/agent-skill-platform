@@ -20,7 +20,12 @@ import { z } from 'zod';
  */
 export const SkillMetaSchema = z.object({
   name: z.string().min(1),
-  version: z.string().regex(/^\d+\.\d+\.\d+$/, 'version must be semver like 1.2.3'),
+  version: z.string().transform((v) => {
+    const cleaned = v.trim().replace(/^[vV]/, '');
+    const m = cleaned.match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?$/);
+    if (!m) throw new Error(`版本号格式不正确 "${v}"，应为类似 1.2.3 或 1.0 的格式`);
+    return `${m[1]}.${m[2] || '0'}.${m[3] || '0'}`;
+  }),
   description: z.string().optional(),
   tags: z.array(z.string()).default([]),
   license: z.string().optional(),
@@ -84,7 +89,8 @@ function parseSimpleYaml(yaml: string): Record<string, any> {
     const kv = rawLine.match(/^([A-Za-z0-9_\-]+)\s*:\s*(.*)$/);
     if (!kv) continue;
     const key = kv[1];
-    const valuePart = kv[2];
+    // Trim to handle "tags: " (trailing whitespace) → block-list header
+    const valuePart = kv[2].trimEnd();
 
     if (valuePart === '') {
       // Likely a block-list header

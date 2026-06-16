@@ -93,6 +93,16 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
       const res = await fetch(`/api/skills/${skill.id}/versions`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
       if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.message || `HTTP ${res.status}`); }
       const vRes = await fetch(`/api/skills/${skill.id}/versions`); if (vRes.ok) setVersions(await vRes.json());
+      // 刷新技能数据（版本上传可能更新了标签等信息）
+      const sRes2 = await fetch(`/api/skills/${skill.id}`);
+      if (sRes2.ok) {
+        const s2 = await sRes2.json();
+        setSkill(s2);
+        setForm(prev => ({
+          ...prev,
+          tags: (s2.tags ?? []).filter((t: string) => t !== '社区').join(', '),
+        }));
+      }
       if (fileRef.current) fileRef.current.value = ''; setVersionNotes(''); alert(t('edit.newVersionUploaded'));
     } catch (err: any) { alert(t('edit.uploadFailed') + ': ' + err.message); }
     finally { setUploading(false); }
