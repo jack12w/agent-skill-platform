@@ -9,6 +9,9 @@ import { RateLimitGuard } from './common/rate-limit.guard';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // ── Trust proxy（Docker/Nginx 反向代理后需信任 X-Forwarded-For） ──
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
   // ── 安全头（Helmet） ──────────────────────
   app.use(helmet());
 
