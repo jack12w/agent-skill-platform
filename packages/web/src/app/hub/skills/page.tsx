@@ -96,7 +96,7 @@ export default function HubSkillsPage() {
     s === 'published' ? 'bg-green-100 text-green-700' : 'bg-neutral-100 text-neutral-500';
 
   return (
-    <div>
+    <div className="max-w-full">
       <h1 className="text-xl font-bold text-neutral-900 mb-1">{t('admin.skills')}</h1>
 
       {/* 工具栏 */}
@@ -123,7 +123,7 @@ export default function HubSkillsPage() {
         <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" /></div>
       ) : (
         <>
-          <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden">
+          <div className="bg-white border border-neutral-200 rounded-xl overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-neutral-100 text-neutral-500 text-xs uppercase">
                 <tr>
@@ -141,7 +141,7 @@ export default function HubSkillsPage() {
                     <td className="px-4 py-3"><input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} /></td>
                     <td className="px-4 py-3">
                       {editingId === s.id ? (
-                        <div className="space-y-2">
+                        <div className="space-y-2 max-w-sm">
                           <input type="text" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} className="w-full px-2 py-1 text-sm border rounded" />
                           <div className="flex items-center gap-2">
                             <input type="text" value={editForm.tags} onChange={e => setEditForm({ ...editForm, tags: e.target.value })} className="flex-1 px-2 py-1 text-sm border rounded" placeholder="tag1, tag2" />
@@ -165,8 +165,21 @@ export default function HubSkillsPage() {
                     <td className="px-4 py-3 text-neutral-600 hidden md:table-cell">{s.owner_user?.name || s.owner_user?.email}</td>
                     <td className="px-4 py-3 hidden lg:table-cell">
                       <div className="flex flex-wrap gap-1">
-                        {(s.tags || []).slice(0, 3).map(t => <span key={t} className={`px-1.5 py-0.5 rounded text-xs ${t === '精选' ? 'bg-orange-50 text-orange-800 border border-orange-200' : 'bg-neutral-100 text-neutral-600'}`}>{t}</span>)}
-                        {(s.tags || []).length > 3 && <span className="text-xs text-neutral-400">+{s.tags.length - 3}</span>}
+                        {(() => {
+                          const allTags = s.tags || [];
+                          const featured = allTags.filter((t: string) => t === '精选');
+                          const others = allTags.filter((t: string) => t !== '精选');
+                          const display = [...featured, ...others].slice(0, 3);
+                          const hidden = allTags.length - display.length;
+                          return (
+                            <>
+                              {display.map((t: string) => (
+                                <span key={t} className={`px-1.5 py-0.5 rounded text-xs ${t === '精选' ? 'bg-orange-50 text-orange-800 border border-orange-200' : 'bg-neutral-100 text-neutral-600'}`}>{t}</span>
+                              ))}
+                              {hidden > 0 && <span className="text-xs text-neutral-400">+{hidden}</span>}
+                            </>
+                          );
+                        })()}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-center"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge(s.status)}`}>{s.status}</span></td>
