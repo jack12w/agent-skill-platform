@@ -55,7 +55,7 @@ async function parseZipForSkillMd(file: File): Promise<{ name: string; descripti
         ? parsed.tags.join(', ')
         : String(parsed.tags).replace(/^\[|\]$/g, '').replace(/['"]/g, '');
       // Split by both Chinese and English commas, trim, and rejoin
-      tags = raw.split(/[，,]\s*/).filter(Boolean).join(', ');
+      tags = raw.replace(/，/g, ',').split(/\s*,\s*/).filter(Boolean).join(', ');
     }
 
     return {
@@ -151,8 +151,9 @@ export default function SubmitSkill() {
         name: result.name || prev.name,
         content_md: result.content_md || prev.content_md,
         tags: (() => {
-          const fromZip = (result.tags || '').split(/[,，]/).map(x => x.trim()).filter(Boolean);
-          const fromPrev = (prev.tags || '').split(/[,，]/).map(x => x.trim()).filter(Boolean);
+          const splitTags = (s: string) => s.replace(/，/g, ',').split(/\s*,\s*/).map(x => x.trim()).filter(Boolean);
+          const fromZip = splitTags(result.tags || '');
+          const fromPrev = splitTags(prev.tags || '');
           return Array.from(new Set([...fromZip, ...fromPrev])).join(', ');
         })(),
         owner_team_id: prev.owner_team_id,
@@ -164,7 +165,8 @@ export default function SubmitSkill() {
   /* 追加标签到输入框（去重） */
   const addTag = (tag: string) => {
     setFormData(prev => {
-      const current = prev.tags.split(/[,，]/).map(x => x.trim()).filter(Boolean);
+      // 先归一化中文逗号，再拆分
+      const current = prev.tags.replace(/，/g, ',').split(/\s*,\s*/).map(x => x.trim()).filter(Boolean);
       if (current.includes(tag)) return prev;
       return { ...prev, tags: [...current, tag].join(', ') };
     });
@@ -220,7 +222,7 @@ export default function SubmitSkill() {
       if (!token) { router.push('/auth'); return; }
       const skillRes = await fetch('/api/skills', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ name: formData.name.trim(), content_md: formData.content_md, tags: ['社区', ...formData.tags.split(/[,，]/).map(x => x.trim()).filter(Boolean).filter(x => !['精选','Featured','featured','FEATURED'].includes(x))], owner_team_id: formData.owner_team_id || null }),
+        body: JSON.stringify({ name: formData.name.trim(), content_md: formData.content_md, tags: ['社区', ...formData.tags.replace(/，/g, ',').split(/\s*,\s*/).map(x => x.trim()).filter(Boolean).filter(x => !['精选','Featured','featured','FEATURED'].includes(x))], owner_team_id: formData.owner_team_id || null }),
       });
       if (!skillRes.ok) { const body = await skillRes.json().catch(() => ({})); throw new Error(body.message || `HTTP ${skillRes.status}`); }
       const skill = await skillRes.json();
@@ -341,7 +343,7 @@ export default function SubmitSkill() {
           <label className="block text-sm font-medium text-neutral-700 mb-1">
             {t('submit.tags')} {file && formData.tags && <span className="text-green-500 text-xs">（已从 SKILL.md 自动填充）</span>}
           </label>
-          <input type="text" className="w-full p-3 border rounded-lg" placeholder="SEO, Marketing" value={formData.tags} onChange={e => setFormData({...formData, tags: e.target.value.replace(/，/g, ', ')})} />
+          <input type="text" className="w-full p-3 border rounded-lg" placeholder="SEO, Marketing" value={formData.tags} onChange={e => setFormData(prev => ({...prev, tags: e.target.value.replace(/，/g, ', ')}))} />
           {/* ── 预设标签 ── */}
           <div className="mt-3 space-y-2">
             <span className="text-xs text-neutral-400">{t('tags.presetTags')}</span>
@@ -354,7 +356,7 @@ export default function SubmitSkill() {
                       key={tag}
                       type="button"
                       onClick={() => addTag(tag)}
-                      disabled={formData.tags.split(/[,，]/).map(x => x.trim()).filter(Boolean).includes(tag)}
+                      disabled={formData.tags.replace(/，/g, ',').split(/\s*,\s*/).map(x => x.trim()).filter(Boolean).includes(tag)}
                       className="shrink-0 px-2 py-0.5 text-xs rounded-full border border-brand-300 text-brand-600 hover:bg-brand-50 disabled:opacity-40 disabled:cursor-default transition"
                     >
                       {tt(tag)}
