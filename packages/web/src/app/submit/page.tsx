@@ -150,7 +150,11 @@ export default function SubmitSkill() {
       setFormData((prev) => ({
         name: result.name || prev.name,
         content_md: result.content_md || prev.content_md,
-        tags: result.tags || prev.tags,
+        tags: (() => {
+          const fromZip = (result.tags || '').split(/[,，]/).map(x => x.trim()).filter(Boolean);
+          const fromPrev = (prev.tags || '').split(/[,，]/).map(x => x.trim()).filter(Boolean);
+          return Array.from(new Set([...fromZip, ...fromPrev])).join(', ');
+        })(),
         owner_team_id: prev.owner_team_id,
       }));
     }
