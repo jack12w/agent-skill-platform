@@ -107,7 +107,16 @@ export class AdminService {
 
     switch (action) {
       case 'publish':
-        await this.skillRepo.update({ id: In(ids) }, { status: SkillStatus.PUBLISHED });
+        // Also sync published_version_id to latest_version_id on batch publish
+        for (const id of ids) {
+          const skill = await this.skillRepo.findOneBy({ id });
+          if (skill) {
+            await this.skillRepo.update(id, {
+              status: SkillStatus.PUBLISHED,
+              published_version_id: skill.latest_version_id,
+            });
+          }
+        }
         break;
       case 'unpublish':
         await this.skillRepo.update({ id: In(ids) }, { status: SkillStatus.ARCHIVED });
@@ -333,7 +342,11 @@ export class AdminService {
   async approveSkill(id: string) {
     const skill = await this.skillRepo.findOneBy({ id });
     if (!skill) throw new NotFoundException('Skill not found');
-    await this.skillRepo.update(id, { status: SkillStatus.PUBLISHED });
+    // On approval, publish the latest version (makes it visible to non-owners)
+    await this.skillRepo.update(id, {
+      status: SkillStatus.PUBLISHED,
+      published_version_id: skill.latest_version_id,
+    });
     return { ok: true };
   }
 

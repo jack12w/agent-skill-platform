@@ -60,6 +60,13 @@ export class Skill {
   @JoinColumn({ name: 'latest_version_id' })
   latest_version: SkillVersion;
 
+  @Column({ nullable: true })
+  published_version_id: string;
+
+  @OneToOne(() => SkillVersion)
+  @JoinColumn({ name: 'published_version_id' })
+  published_version: SkillVersion;
+
   @CreateDateColumn()
   created_at: Date;
 

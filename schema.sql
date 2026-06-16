@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS skills (
     cover_url TEXT,
     status skill_status NOT NULL DEFAULT 'published',
     latest_version_id UUID,
+    published_version_id UUID,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -71,6 +72,7 @@ CREATE TABLE IF NOT EXISTS skill_versions (
 
 -- Update skills table to reference the latest version
 ALTER TABLE skills ADD CONSTRAINT fk_latest_version FOREIGN KEY (latest_version_id) REFERENCES skill_versions(id) ON DELETE SET NULL;
+ALTER TABLE skills ADD CONSTRAINT fk_published_version FOREIGN KEY (published_version_id) REFERENCES skill_versions(id) ON DELETE SET NULL;
 
 -- 6. Events table (Raw behavior logs)
 CREATE TYPE event_type AS ENUM ('skill_publish', 'download', 'like', 'view');

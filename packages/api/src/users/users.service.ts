@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { User } from '../auth/user.entity';
 import { Skill } from '../skills/skill.entity';
 import { SkillStats } from '../skills/skill-stats.entity';
+import { SkillStatus } from '@platform/shared';
 
 @Injectable()
 export class UsersService {
@@ -25,7 +26,7 @@ export class UsersService {
 
     // Count user's published skills
     const skillCount = await this.skillRepository.count({
-      where: { owner_user_id: user.id },
+      where: { owner_user_id: user.id, status: SkillStatus.PUBLISHED },
     });
 
     // Aggregate stats
@@ -35,6 +36,7 @@ export class UsersService {
       .select('COALESCE(SUM(stats.likes_total), 0)', 'total_likes')
       .addSelect('COALESCE(SUM(stats.downloads_total), 0)', 'total_downloads')
       .where('skill.owner_user_id = :userId', { userId: user.id })
+      .andWhere('skill.status = :status', { status: SkillStatus.PUBLISHED })
       .getRawOne();
 
     return {
@@ -56,7 +58,7 @@ export class UsersService {
     if (!user) throw new NotFoundException('User not found');
 
     const [skills, total] = await this.skillRepository.findAndCount({
-      where: { owner_user_id: user.id },
+      where: { owner_user_id: user.id, status: SkillStatus.PUBLISHED },
       relations: ['stats', 'owner_user', 'latest_version'],
       order: { created_at: 'DESC' },
       skip: (page - 1) * size,

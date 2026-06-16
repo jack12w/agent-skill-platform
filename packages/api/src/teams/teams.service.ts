@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { Team } from './team.entity';
 import { TeamMember } from './team-member.entity';
 import { Skill } from '../skills/skill.entity';
-import { MemberRole } from '@platform/shared';
+import { MemberRole, SkillStatus } from '@platform/shared';
 
 @Injectable()
 export class TeamsService {
@@ -60,7 +60,7 @@ export class TeamsService {
     });
 
     const skills = await this.skillRepository.find({
-      where: { owner_team_id: teamId },
+      where: { owner_team_id: teamId, status: SkillStatus.PUBLISHED },
       relations: ['stats', 'latest_version'],
       order: { created_at: 'DESC' },
     });

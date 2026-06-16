@@ -57,7 +57,7 @@ export class SkillsService {
         .leftJoin('skill.stats', 'stats')
         .leftJoin('skill.owner_user', 'owner_user')
         .leftJoin('events', 'e', `skill.id = e.skill_id AND e.created_at >= ${intervalExpr}`)
-        .leftJoin('skill_versions', 'lv', 'skill.latest_version_id = lv.id')
+        .leftJoin('skill_versions', 'lv', 'skill.published_version_id = lv.id')
         // Entity columns → resolved from TypeORM metadata (no typos)
         .select([
           'skill.id', 'skill.name', 'skill.slug', 'skill.short_summary', 'skill.content_md',
@@ -155,7 +155,7 @@ export class SkillsService {
 
     const skills = await this.skillRepository.find({
       where,
-      relations: ['owner_user', 'stats', 'latest_version'],
+      relations: ['owner_user', 'stats', 'latest_version', 'published_version'],
       select: {
         owner_user: { id: true, name: true, avatar_url: true },
       },
@@ -166,6 +166,10 @@ export class SkillsService {
 
     const compute = (likes: number, downloads: number) => 5 + likes * 0.3 + downloads * 0.3;
     for (const s of skills) {
+      // For non-owners (public list), show published_version as latest_version
+      if (s.published_version) {
+        (s as any).latest_version = s.published_version;
+      }
       if (s.stats) {
         s.stats.total_score = compute(Number(s.stats.likes_total) || 0, Number(s.stats.downloads_total) || 0);
         s.stats.weekly_score = compute(Number(s.stats.likes_7d) || 0, Number(s.stats.downloads_7d) || 0);
@@ -257,7 +261,7 @@ export class SkillsService {
   }
 
   async updateSkill(idOrSlug: string, data: Partial<Skill>, userId: string) {
-    const skill = await this.findOne(idOrSlug);
+    const skill = await this.findOne(idOrSlug, undefined, true);
     if (skill.owner_user_id !== userId) {
       throw new ForbiddenException('Only the owner can edit this skill');
     }
@@ -302,19 +306,33 @@ export class SkillsService {
     }
 
     await this.skillRepository.update({ id: skill.id }, patch);
-    return this.findOne(skill.id);
+    return this.findOne(skill.id, undefined, true);
   }
 
-  async listVersions(skillId: string) {
-    const skill = await this.findOne(skillId);
-    return this.versionRepository.find({
+  async listVersions(skillId: string, userId?: string) {
+    const skill = await this.findOne(skillId, undefined, true);
+    const allVersions = await this.versionRepository.find({
       where: { skill_id: skill.id },
       order: { created_at: 'DESC' },
     });
+
+    // Non-owners should not see versions newer than the published version
+    if (skill.published_version_id) {
+      const isOwner = userId && (skill.owner_user_id === userId);
+      if (!isOwner) {
+        const pubIdx = allVersions.findIndex(v => v.id === skill.published_version_id);
+        if (pubIdx >= 0) {
+          // Only return the published version and older versions
+          return allVersions.slice(pubIdx);
+        }
+      }
+    }
+
+    return allVersions;
   }
 
   async createVersion(skillId: string, fileBuffer: Buffer, userId: string, notes?: string) {
-    const skill = await this.findOne(skillId);
+    const skill = await this.findOne(skillId, undefined, true);
     if (skill.owner_user_id !== userId) throw new ForbiddenException('Not authorized');
 
     // Locate SKILL.md inside the zip — accept it anywhere, prefer the shallowest path.
@@ -367,15 +385,17 @@ export class SkillsService {
 
     await this.skillRepository.update(skill.id, {
       latest_version_id: savedVersion.id,
+      // published_version_id stays unchanged — new version needs admin approval
+      // before it becomes the public-facing version.
+      // For first-time uploads on PENDING skills, published_version_id remains null.
       short_summary: meta.description || skill.short_summary,
       tags: (meta.tags && meta.tags.length
         ? [...new Set([
-            ...(skill.tags?.includes('社区') ? ['社区'] : []),
+            ...(skill.tags || []),
             ...meta.tags,
-            ...(skill.tags?.includes('精选') ? ['精选'] : []),
           ])]
         : skill.tags),
-      status: SkillStatus.PENDING,
+      status: skill.status === SkillStatus.PUBLISHED ? SkillStatus.PUBLISHED : SkillStatus.PENDING,
     });
 
     await this.recordEvent(skill.id, EventType.SKILL_PUBLISH, userId);
@@ -386,19 +406,27 @@ export class SkillsService {
    * Resolve a downloadable URL for a skill. If `versionId` is omitted,
    * returns the latest version's URL. Throws if the skill has no version yet.
    */
-  async getDownloadUrl(skillId: string, versionId?: string) {
-    const skill = await this.findOne(skillId);
+  async getDownloadUrl(skillId: string, versionId?: string, userId?: string) {
+    const skill = await this.findOne(skillId, undefined, true);
 
+    const isOwner = userId && skill.owner_user_id === userId;
     let version: SkillVersion | null = null;
     if (versionId) {
       version = await this.versionRepository.findOne({
         where: { id: versionId, skill_id: skill.id },
       });
       if (!version) throw new NotFoundException('Version not found');
-    } else if (skill.latest_version_id) {
-      version = await this.versionRepository.findOne({
-        where: { id: skill.latest_version_id },
-      });
+    } else {
+      // Owner sees latest_version_id (including pending new versions);
+      // non-owner sees published_version_id (only admin-approved versions).
+      const liveVersionId = isOwner
+        ? skill.latest_version_id
+        : (skill.published_version_id || skill.latest_version_id);
+      if (liveVersionId) {
+        version = await this.versionRepository.findOne({
+          where: { id: liveVersionId },
+        });
+      }
     }
 
     if (!version) {
@@ -417,9 +445,9 @@ export class SkillsService {
    * Proxy-download: fetch the zip from OSS server-side (no CORS) and return
    * the buffer + a human-readable filename for the Content-Disposition header.
    */
-  async streamDownload(skillId: string, versionId?: string) {
-    const result = await this.getDownloadUrl(skillId, versionId);
-    const skill = await this.findOne(skillId);
+  async streamDownload(skillId: string, versionId?: string, userId?: string) {
+    const result = await this.getDownloadUrl(skillId, versionId, userId);
+    const skill = await this.findOne(skillId, undefined, true);
     const raw = `${skill.name || 'skill'}-v${result.version}.zip`;
     // Sanitize ASCII fallback (for old browsers), keep UTF-8 name in filename*= param
     const ascii = skill.name
@@ -435,7 +463,7 @@ export class SkillsService {
   }
 
   async deleteVersion(skillId: string, versionId: string, userId: string) {
-    const skill = await this.findOne(skillId);
+    const skill = await this.findOne(skillId, undefined, true);
     if (skill.owner_user_id !== userId) throw new ForbiddenException('Not authorized');
 
     const version = await this.versionRepository.findOne({ where: { id: versionId, skill_id: skill.id } });
@@ -453,7 +481,7 @@ export class SkillsService {
   }
 
   async deleteSkill(skillId: string, userId: string) {
-    const skill = await this.findOne(skillId);
+    const skill = await this.findOne(skillId, undefined, true);
     if (skill.owner_user_id !== userId) {
       throw new ForbiddenException('Only the skill owner can delete this skill');
     }
@@ -481,7 +509,7 @@ export class SkillsService {
     return { ok: true };
   }
 
-  async findOne(idOrSlug: string) {
+  async findOne(idOrSlug: string, userId?: string, skipStatusCheck = false) {
     // UUID format check (id), otherwise treat as slug
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug);
     const where = isUuid ? { id: idOrSlug } : { slug: idOrSlug };
@@ -494,6 +522,14 @@ export class SkillsService {
       },
     });
     if (!skill) throw new NotFoundException();
+
+    // Non-owners cannot view non-published skills (skip for internal service calls)
+    if (!skipStatusCheck) {
+      const isOwner = userId && (skill.owner_user_id === userId);
+      if (!isOwner && skill.status !== SkillStatus.PUBLISHED) {
+        throw new NotFoundException();
+      }
+    }
 
     // Strip base64 avatar (legacy data)
     if (skill.owner_user) {
@@ -508,6 +544,23 @@ export class SkillsService {
       const downloads7d = Number(skill.stats.downloads_7d) || 0;
       skill.stats.total_score = 5 + likes * 0.3 + downloads * 0.3;
       skill.stats.weekly_score = 5 + likes7d * 0.3 + downloads7d * 0.3;
+    }
+
+    // Non-owners should see the published version, not a pending new version.
+    // Swap latest_version_id / latest_version with published_version_id / published_version
+    // so the frontend displays the approved version info.
+    if (!skipStatusCheck && skill.published_version_id) {
+      const isOwner = userId && (skill.owner_user_id === userId);
+      if (!isOwner) {
+        skill.latest_version_id = skill.published_version_id;
+        // Load the published version for the frontend display
+        const pubVersion = await this.versionRepository.findOne({
+          where: { id: skill.published_version_id },
+        });
+        if (pubVersion) {
+          (skill as any).latest_version = pubVersion;
+        }
+      }
     }
 
     return skill;
@@ -688,7 +741,7 @@ export class SkillsService {
           manifest_json: meta as any, package_url: packageUrl, size: file.buffer.length,
         });
         const savedVersion = await this.versionRepository.save(version);
-        await this.skillRepository.update(saved.id, { latest_version_id: savedVersion.id });
+        await this.skillRepository.update(saved.id, { latest_version_id: savedVersion.id, published_version_id: savedVersion.id });
 
         results.push({ name: meta.name || file.originalname, ok: true, id: saved.id });
       } catch (err: any) {

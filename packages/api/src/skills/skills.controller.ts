@@ -66,8 +66,16 @@ export class SkillsController {
   }
 
   @Get(':id/versions')
-  versions(@Param('id') id: string) {
-    return this.skillsService.listVersions(id);
+  versions(@Param('id') id: string, @Request() req: any) {
+    let userId: string | undefined;
+    const token = req.headers.authorization?.split(' ')[1];
+    if (token) {
+      try {
+        const payload = this.jwtService.decode(token) as { sub: string } | null;
+        userId = payload?.sub || undefined;
+      } catch { /* ignore */ }
+    }
+    return this.skillsService.listVersions(id, userId);
   }
 
   @UseGuards(AuthGuard)
@@ -103,8 +111,16 @@ export class SkillsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.skillsService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req: any) {
+    let userId: string | undefined;
+    const token = req.headers.authorization?.split(' ')[1];
+    if (token) {
+      try {
+        const payload = this.jwtService.decode(token) as { sub: string } | null;
+        userId = payload?.sub || undefined;
+      } catch { /* ignore */ }
+    }
+    return this.skillsService.findOne(id, userId);
   }
 
   @Post(':id/like')
@@ -117,7 +133,7 @@ export class SkillsController {
   @Get(':id/download/file')
   async downloadFile(@Param('id') id: string, @Request() req: any, @Res() res: Response) {
     await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub);
-    const { buffer, filename, raw } = await this.skillsService.streamDownload(id);
+    const { buffer, filename, raw } = await this.skillsService.streamDownload(id, undefined, req.user.sub);
     res.set({
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(raw)}`,
@@ -145,8 +161,7 @@ export class SkillsController {
   @UseGuards(AuthGuard)
   @Get(':id/download')
   async download(@Param('id') id: string, @Request() req: any) {
-    // Resolve the real package URL of the latest version, then record the event.
-    const result = await this.skillsService.getDownloadUrl(id);
+    const result = await this.skillsService.getDownloadUrl(id, undefined, req.user.sub);
     await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub);
     return result;
   }
@@ -158,7 +173,7 @@ export class SkillsController {
     @Param('versionId') versionId: string,
     @Request() req: any,
   ) {
-    const result = await this.skillsService.getDownloadUrl(id, versionId);
+    const result = await this.skillsService.getDownloadUrl(id, versionId, req.user.sub);
     await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub);
     return result;
   }
