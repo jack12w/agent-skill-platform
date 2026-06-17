@@ -388,7 +388,10 @@ export class AdminService {
         const meta = version.manifest_json;
         if (meta.description) updateData.short_summary = meta.description;
         if (meta.tags && meta.tags.length) {
-          updateData.tags = [...new Set([...(skill.tags || []), ...meta.tags])];
+          const normalized = meta.tags.flatMap((t: string) => t.split(/[，,]+/)).map((t: string) => t.trim()).filter(Boolean);
+          if (normalized.length > 0) {
+            updateData.tags = [...new Set([...(skill.tags || []), ...normalized])];
+          }
         }
       }
     }

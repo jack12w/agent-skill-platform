@@ -235,23 +235,7 @@ export class SkillsService {
     const slug = id;
 
     // 从 Markdown 自动提取 short_summary（SEO/GEO 用）
-    let contentMd = data.content_md || null;
-    // 检测 content_md 是否纯标签列表（SKILL.md body 写了标签而非描述）
-    if (contentMd && Array.isArray(data.tags) && data.tags.length > 0) {
-      const tagSet = new Set(data.tags.map((t: string) => t.trim().toLowerCase()));
-      const words = contentMd
-        .replace(/[#*`>\[\]()!_~|]/g, '')
-        .split(/[\n,，、\s]+/)
-        .map(w => w.trim().toLowerCase())
-        .filter(Boolean);
-      if (words.length > 0) {
-        const matchCount = words.filter(w => tagSet.has(w)).length;
-        if (matchCount / words.length >= 0.8) {
-          contentMd = null; // 纯标签 body，清空避免详情页展示无意义文字
-        }
-      }
-    }
-
+    const contentMd = data.content_md || null;
     let shortSummary = data.short_summary || null;
     if (!shortSummary && contentMd) {
       // 去除 Markdown 标记后取前 160 字
@@ -266,7 +250,7 @@ export class SkillsService {
       summary: data.summary || contentMd || null,
       short_summary: shortSummary,
       content_md: contentMd,
-      tags: Array.isArray(data.tags) ? data.tags : [],
+      tags: (Array.isArray(data.tags) ? data.tags : []).flatMap((t: string) => t.split(/[，,]+/)).map((t: string) => t.trim()).filter(Boolean),
       cover_url: data.cover_url || null,
       owner_user_id: userId,
       owner_team_id: teamId,
@@ -402,16 +386,14 @@ export class SkillsService {
 
     // For PUBLISHED skills, do NOT update short_summary/tags — those must wait
     // for admin approval so non-owners still see the old version's metadata.
-    // For PENDING skills (first upload), sync manifest.description to short_summary
-    // and only merge tags if the manifest introduces new ones not already in skill.tags.
+    // For PENDING skills (first upload), update metadata so the admin can review it.
     const metadataUpdate: Partial<Skill> = {};
     if (skill.status !== SkillStatus.PUBLISHED) {
       if (meta.description) metadataUpdate.short_summary = meta.description;
       if (meta.tags && meta.tags.length) {
-        const existingSet = new Set(skill.tags || []);
-        const newTags = meta.tags.filter((t: string) => !existingSet.has(t));
-        if (newTags.length > 0) {
-          metadataUpdate.tags = [...(skill.tags || []), ...newTags];
+        const normalized = meta.tags.flatMap((t: string) => t.split(/[，,]+/)).map((t: string) => t.trim()).filter(Boolean);
+        if (normalized.length > 0) {
+          metadataUpdate.tags = [...new Set([...(skill.tags || []), ...normalized])];
         }
       }
     }
