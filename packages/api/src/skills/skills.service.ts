@@ -254,6 +254,7 @@ export class SkillsService {
       cover_url: data.cover_url || null,
       owner_user_id: userId,
       owner_team_id: teamId,
+      status: SkillStatus.PENDING,
     });
     const savedSkill = await this.skillRepository.save(skill);
     await this.statsRepository.save({ skill_id: savedSkill.id });
@@ -734,6 +735,7 @@ export class SkillsService {
           short_summary: meta.description?.slice(0, 160) || null,
           tags: [...(meta.tags || []), ...(tags || [])],
           owner_user_id: userId,
+          status: SkillStatus.PENDING,
         });
         const saved = await this.skillRepository.save(skill);
         await this.statsRepository.save({ skill_id: saved.id });

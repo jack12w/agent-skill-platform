@@ -340,17 +340,36 @@ export class AdminService {
   // ── 审核管理 ──────────────────────────────
   async listReviews(query: { page?: number; size?: number }) {
     const { page = 1, size = 20 } = query;
-    const [items, total] = await this.skillRepo.findAndCount({
-      where: { status: SkillStatus.PENDING },
-      relations: ['owner_user'],
-      select: {
-        id: true, name: true, slug: true, short_summary: true, tags: true, status: true, created_at: true, updated_at: true,
-        owner_user: { id: true, name: true, email: true },
-      },
-      order: { created_at: 'DESC' },
-      take: size, skip: (page - 1) * size,
-    });
-    return { items, total, page, size };
+    // Include two types of reviews:
+    //   1. New skills with status = PENDING
+    //   2. Published skills with a new version awaiting approval
+    //      (latest_version_id != published_version_id)
+    const qb = this.skillRepo.createQueryBuilder('skill')
+      .leftJoinAndSelect('skill.owner_user', 'owner_user')
+      .select([
+        'skill.id', 'skill.name', 'skill.slug', 'skill.short_summary',
+        'skill.tags', 'skill.status', 'skill.created_at', 'skill.updated_at',
+        'skill.latest_version_id', 'skill.published_version_id',
+      ])
+      .addSelect(['owner_user.id', 'owner_user.name', 'owner_user.email'])
+      .where('skill.status = :pendingStatus', { pendingStatus: SkillStatus.PENDING })
+      .orWhere(
+        'skill.status = :publishedStatus AND skill.latest_version_id IS DISTINCT FROM skill.published_version_id',
+        { publishedStatus: SkillStatus.PUBLISHED },
+      )
+      .orderBy('skill.updated_at', 'DESC')
+      .take(size)
+      .skip((page - 1) * size);
+
+    const [items, total] = await qb.getManyAndCount();
+
+    // Tag each item with its review type for the frontend
+    const enriched = items.map((skill) => ({
+      ...skill,
+      reviewType: skill.status === SkillStatus.PENDING ? 'new_submission' : 'version_update',
+    }));
+
+    return { items: enriched, total, page, size };
   }
 
   async approveSkill(id: string) {
@@ -379,9 +398,23 @@ export class AdminService {
   }
 
   async rejectSkill(id: string) {
-    const skill = await this.skillRepo.findOneBy({ id });
+    const skill = await this.skillRepo.findOne({
+      where: { id },
+      select: ['id', 'status', 'latest_version_id', 'published_version_id'],
+    });
     if (!skill) throw new NotFoundException('Skill not found');
-    await this.skillRepo.update(id, { status: SkillStatus.ARCHIVED });
+
+    if (skill.status === SkillStatus.PUBLISHED) {
+      // Rejecting a version update on an already-published skill:
+      // keep the skill PUBLISHED but revert latest_version_id
+      // to published_version_id so the unreviewed version is hidden.
+      await this.skillRepo.update(id, {
+        latest_version_id: skill.published_version_id,
+      });
+    } else {
+      // Rejecting a brand-new skill submission: archive it.
+      await this.skillRepo.update(id, { status: SkillStatus.ARCHIVED });
+    }
     return { ok: true };
   }
 
