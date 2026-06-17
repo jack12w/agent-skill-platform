@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import useTranslation from '../../hooks/useTranslation';
 
 export default function Dashboard() {
+  const router = useRouter();
   const { t } = useTranslation();
   const [user, setUser] = useState<any>(null);
   const [teams, setTeams] = useState<any[]>([]);
@@ -19,6 +21,7 @@ export default function Dashboard() {
   const [profileName, setProfileName] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const loadTeams = async (token: string) => {
     const res = await fetch('/api/teams/my', { headers: { Authorization: `Bearer ${token}` } });
@@ -42,6 +45,13 @@ export default function Dashboard() {
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, []);
+
+  // 首次登录展示引导弹窗
+  useEffect(() => {
+    if (user && !localStorage.getItem('skilldepot_onboarding_seen')) {
+      setShowOnboarding(true);
+    }
+  }, [user]);
 
   const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault(); const name = newName.trim(); if (!name) return;
@@ -101,6 +111,11 @@ export default function Dashboard() {
       window.dispatchEvent(new Event('user-updated'));
     } catch (e: any) { alert(e.message || '头像上传失败'); }
     finally { setUploadingAvatar(false); }
+  };
+
+  const dismissOnboarding = () => {
+    localStorage.setItem('skilldepot_onboarding_seen', '1');
+    setShowOnboarding(false);
   };
 
   if (!user) return <div className="p-24 text-center">Please <Link href="/auth" className="text-brand-600">login</Link> to view your dashboard.</div>;
@@ -189,6 +204,47 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+      {showOnboarding && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-in fade-in zoom-in">
+            <div className="bg-gradient-to-r from-brand-600 to-brand-500 p-6 text-white text-center">
+              <div className="text-4xl mb-2">🚀</div>
+              <h2 className="text-xl font-bold">{t('dashboard.onboardingTitle')}</h2>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="flex gap-3">
+                <span className="shrink-0 w-8 h-8 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center text-sm font-bold">1</span>
+                <div>
+                  <p className="font-semibold text-neutral-900 text-sm">{t('dashboard.onboardingStep1')}</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">{t('dashboard.onboardingStep1Desc')}</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <span className="shrink-0 w-8 h-8 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center text-sm font-bold">2</span>
+                <div>
+                  <p className="font-semibold text-neutral-900 text-sm">{t('dashboard.onboardingStep2')}</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">{t('dashboard.onboardingStep2Desc')}</p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <span className="shrink-0 w-8 h-8 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center text-sm font-bold">3</span>
+                <div>
+                  <p className="font-semibold text-neutral-900 text-sm">{t('dashboard.onboardingStep3')}</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">{t('dashboard.onboardingStep3Desc')}</p>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button onClick={dismissOnboarding} className="flex-1 py-2.5 border border-neutral-300 rounded-lg text-sm font-medium text-neutral-600 hover:bg-neutral-50">
+                {t('dashboard.onboardingLater')}
+              </button>
+              <button onClick={() => { dismissOnboarding(); router.push('/submit'); }} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-bold hover:bg-brand-700">
+                {t('dashboard.onboardingStart')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
