@@ -68,14 +68,16 @@ export class SkillsController {
   @Get(':id/versions')
   versions(@Param('id') id: string, @Request() req: any) {
     let userId: string | undefined;
+    let isAdmin = false;
     const token = req.headers.authorization?.split(' ')[1];
     if (token) {
       try {
-        const payload = this.jwtService.decode(token) as { sub: string } | null;
+        const payload = this.jwtService.decode(token) as { sub: string; role?: string } | null;
         userId = payload?.sub || undefined;
+        isAdmin = payload?.role === 'admin';
       } catch { /* ignore */ }
     }
-    return this.skillsService.listVersions(id, userId);
+    return this.skillsService.listVersions(id, userId, isAdmin);
   }
 
   @UseGuards(AuthGuard)
@@ -113,14 +115,16 @@ export class SkillsController {
   @Get(':id')
   findOne(@Param('id') id: string, @Request() req: any) {
     let userId: string | undefined;
+    let isAdmin = false;
     const token = req.headers.authorization?.split(' ')[1];
     if (token) {
       try {
-        const payload = this.jwtService.decode(token) as { sub: string } | null;
+        const payload = this.jwtService.decode(token) as { sub: string; role?: string } | null;
         userId = payload?.sub || undefined;
+        isAdmin = payload?.role === 'admin';
       } catch { /* ignore */ }
     }
-    return this.skillsService.findOne(id, userId);
+    return this.skillsService.findOne(id, userId, false, isAdmin);
   }
 
   @Post(':id/like')
@@ -133,7 +137,8 @@ export class SkillsController {
   @Get(':id/download/file')
   async downloadFile(@Param('id') id: string, @Request() req: any, @Res() res: Response) {
     await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub);
-    const { buffer, filename, raw } = await this.skillsService.streamDownload(id, undefined, req.user.sub);
+    const isAdmin = req.user?.role === 'admin';
+    const { buffer, filename, raw } = await this.skillsService.streamDownload(id, undefined, req.user.sub, isAdmin);
     res.set({
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(raw)}`,
@@ -150,7 +155,8 @@ export class SkillsController {
     @Res() res: Response,
   ) {
     await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub);
-    const { buffer, filename, raw } = await this.skillsService.streamDownload(id, versionId);
+    const isAdmin = req.user?.role === 'admin';
+    const { buffer, filename, raw } = await this.skillsService.streamDownload(id, versionId, undefined, isAdmin);
     res.set({
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(raw)}`,

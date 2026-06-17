@@ -10,6 +10,7 @@ export default function HubReviewsPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [downloading, setDownloading] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     const token = getToken(); if (!token) return;
@@ -25,6 +26,37 @@ export default function HubReviewsPage() {
     const token = getToken(); if (!token) return;
     await fetch(`/api/admin/reviews/${id}/${action}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
     fetchData();
+  };
+
+  const handleDownload = async (skillId: string) => {
+    const token = getToken(); if (!token) return;
+    setDownloading(skillId);
+    try {
+      const res = await fetch(`/api/skills/${skillId}/download/file`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition');
+      let filename = 'skill.zip';
+      if (disposition) {
+        const utf8Match = disposition.match(/filename\*=UTF-8''(.+)/);
+        if (utf8Match) filename = decodeURIComponent(utf8Match[1]);
+        else {
+          const match = disposition.match(/filename="(.+)"/);
+          if (match) filename = match[1];
+        }
+      }
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      alert('下载失败: ' + (e.message || '未知错误'));
+    } finally {
+      setDownloading(null);
+    }
   };
 
   if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" /></div>;
@@ -71,6 +103,8 @@ export default function HubReviewsPage() {
                 <td className="px-4 py-3 text-neutral-400 text-xs hidden sm:table-cell whitespace-nowrap">{new Date(s.updated_at || s.created_at).toLocaleDateString()}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex gap-2 justify-end">
+                    <button onClick={() => handleDownload(s.id)} disabled={downloading === s.id} className="px-2 py-1.5 text-xs border border-neutral-300 text-neutral-600 rounded-lg hover:bg-neutral-50 disabled:opacity-50">{downloading === s.id ? '...' : t('admin.downloadPackage')}</button>
+                    <a href={`/skills/${s.slug}`} target="_blank" className="px-2 py-1.5 text-xs border border-brand-300 text-brand-600 rounded-lg hover:bg-brand-50">{t('admin.viewDetail')}</a>
                     <button onClick={() => review(s.id, 'approve')} className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700">{t('admin.approve')}</button>
                     <button onClick={() => { const msg = s.reviewType === 'version_update' ? t('admin.rejectVersionConfirm') : t('admin.rejectConfirm'); if (confirm(msg)) review(s.id, 'reject'); }} className="px-3 py-1.5 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600">{t('admin.reject')}</button>
                   </div>

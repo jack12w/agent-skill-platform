@@ -230,7 +230,7 @@ export default function SubmitSkill() {
         const uploadData = new FormData(); uploadData.append('file', file);
         const uploadRes = await fetch(`/api/skills/${skill.id}/versions`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: uploadData });
         if (!uploadRes.ok) { const body = await uploadRes.json().catch(() => ({})); throw new Error(body.message || `HTTP ${uploadRes.status}`); }
-        router.push(`/skills/${skill.slug || skill.id}`);
+        router.push('/dashboard');
       } catch (uploadErr: any) {
         // 回滚：删除已创建但无版本的技能，保证整体失败不留残留数据
         try {

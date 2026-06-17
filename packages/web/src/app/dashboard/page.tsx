@@ -143,7 +143,17 @@ export default function Dashboard() {
           <div className="space-y-4">
             {skills.map(skill => (
               <div key={skill.id} className="p-4 border rounded-xl flex justify-between items-center">
-                <div><h3 className="font-bold">{skill.name}</h3><p className="text-sm text-neutral-500 line-clamp-2">{skill.short_summary}</p></div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold">{skill.name}</h3>
+                    {skill.status === 'pending' && (
+                      <span className="shrink-0 px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded-full">{t('dashboard.statusPending')}</span>
+                    )}
+                    {skill.status === 'archived' && (
+                      <span className="shrink-0 px-2 py-0.5 text-xs font-medium bg-neutral-100 text-neutral-500 border border-neutral-200 rounded-full">已归档</span>
+                    )}
+                  </div>
+                  <p className="text-sm text-neutral-500 line-clamp-2">{skill.short_summary}</p></div>
                 <div className="flex items-center gap-3 min-w-[68px]">
                   <Link href={`/skills/${skill.slug || skill.id}`} className="text-brand-600 text-sm font-medium">{t('dashboard.manage')}</Link>
                   <button onClick={() => handleDeleteSkill(skill.id, skill.name)} disabled={deleting === skill.id} className="text-danger-500 text-sm font-medium hover:text-danger-700 disabled:opacity-40">{deleting === skill.id ? t('dashboard.deleting') : t('dashboard.delete')}</button>

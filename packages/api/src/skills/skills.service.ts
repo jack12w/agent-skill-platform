@@ -310,17 +310,17 @@ export class SkillsService {
     return this.findOne(skill.id, undefined, true);
   }
 
-  async listVersions(skillId: string, userId?: string) {
+  async listVersions(skillId: string, userId?: string, isAdmin = false) {
     const skill = await this.findOne(skillId, undefined, true);
     const allVersions = await this.versionRepository.find({
       where: { skill_id: skill.id },
       order: { created_at: 'DESC' },
     });
 
-    // Non-owners should not see versions newer than the published version
+    // Non-owners (and non-admins) should not see versions newer than the published version
     if (skill.published_version_id) {
       const isOwner = userId && (skill.owner_user_id === userId);
-      if (!isOwner) {
+      if (!isOwner && !isAdmin) {
         const pubIdx = allVersions.findIndex(v => v.id === skill.published_version_id);
         if (pubIdx >= 0) {
           // Only return the published version and older versions
@@ -412,10 +412,11 @@ export class SkillsService {
    * Resolve a downloadable URL for a skill. If `versionId` is omitted,
    * returns the latest version's URL. Throws if the skill has no version yet.
    */
-  async getDownloadUrl(skillId: string, versionId?: string, userId?: string) {
+  async getDownloadUrl(skillId: string, versionId?: string, userId?: string, isAdmin = false) {
     const skill = await this.findOne(skillId, undefined, true);
 
     const isOwner = userId && skill.owner_user_id === userId;
+    const canSeeLatest = isOwner || isAdmin;
     let version: SkillVersion | null = null;
     if (versionId) {
       version = await this.versionRepository.findOne({
@@ -423,9 +424,9 @@ export class SkillsService {
       });
       if (!version) throw new NotFoundException('Version not found');
     } else {
-      // Owner sees latest_version_id (including pending new versions);
+      // Owner / admin sees latest_version_id (including pending new versions);
       // non-owner sees published_version_id (only admin-approved versions).
-      const liveVersionId = isOwner
+      const liveVersionId = canSeeLatest
         ? skill.latest_version_id
         : (skill.published_version_id || skill.latest_version_id);
       if (liveVersionId) {
@@ -451,8 +452,8 @@ export class SkillsService {
    * Proxy-download: fetch the zip from OSS server-side (no CORS) and return
    * the buffer + a human-readable filename for the Content-Disposition header.
    */
-  async streamDownload(skillId: string, versionId?: string, userId?: string) {
-    const result = await this.getDownloadUrl(skillId, versionId, userId);
+  async streamDownload(skillId: string, versionId?: string, userId?: string, isAdmin = false) {
+    const result = await this.getDownloadUrl(skillId, versionId, userId, isAdmin);
     const skill = await this.findOne(skillId, undefined, true);
     const raw = `${skill.name || 'skill'}-v${result.version}.zip`;
     // Sanitize ASCII fallback (for old browsers), keep UTF-8 name in filename*= param
@@ -515,7 +516,7 @@ export class SkillsService {
     return { ok: true };
   }
 
-  async findOne(idOrSlug: string, userId?: string, skipStatusCheck = false) {
+  async findOne(idOrSlug: string, userId?: string, skipStatusCheck = false, isAdmin = false) {
     // UUID format check (id), otherwise treat as slug
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSlug);
     const where = isUuid ? { id: idOrSlug } : { slug: idOrSlug };
@@ -529,10 +530,10 @@ export class SkillsService {
     });
     if (!skill) throw new NotFoundException();
 
-    // Non-owners cannot view non-published skills (skip for internal service calls)
+    // Non-owners (and non-admins) cannot view non-published skills (skip for internal service calls)
     if (!skipStatusCheck) {
       const isOwner = userId && (skill.owner_user_id === userId);
-      if (!isOwner && skill.status !== SkillStatus.PUBLISHED) {
+      if (!isOwner && !isAdmin && skill.status !== SkillStatus.PUBLISHED) {
         throw new NotFoundException();
       }
     }
@@ -552,10 +553,10 @@ export class SkillsService {
       skill.stats.weekly_score = 5 + likes7d * 0.3 + downloads7d * 0.3;
     }
 
-    // Non-owners should see the published version, not a pending new version.
+    // Non-owners (and non-admins) should see the published version, not a pending new version.
     // Swap latest_version_id / latest_version with published_version_id / published_version
     // so the frontend displays the approved version info.
-    if (!skipStatusCheck && skill.published_version_id) {
+    if (!skipStatusCheck && !isAdmin && skill.published_version_id) {
       const isOwner = userId && (skill.owner_user_id === userId);
       if (!isOwner) {
         skill.latest_version_id = skill.published_version_id;
