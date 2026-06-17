@@ -16,6 +16,13 @@ function decodeUserId(): string | null {
   } catch { return null; }
 }
 
+function getAuthHeaders(): Record<string, string> {
+  try {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch { return {}; }
+}
+
 export default function SkillDetail({ params }: { params: { slug: string } }) {
   const router = useRouter();
   const { t } = useTranslation();
@@ -28,12 +35,12 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   const [commentRefresh, setCommentRefresh] = useState(0);
 
   useEffect(() => { setCurrentUserId(decodeUserId()); }, []);
-  const loadVersions = async (skillId: string) => { const res = await fetch(`/api/skills/${skillId}/versions`); if (res.ok) setVersions(await res.json()); };
-  const reload = async () => { const res = await fetch(`/api/skills/${params.slug}`); if (res.ok) { const data = await res.json(); setSkill(data); await loadVersions(data.id); } };
+  const loadVersions = async (skillId: string) => { const res = await fetch(`/api/skills/${skillId}/versions`, { headers: getAuthHeaders() }); if (res.ok) setVersions(await res.json()); };
+  const reload = async () => { const res = await fetch(`/api/skills/${params.slug}`, { headers: getAuthHeaders() }); if (res.ok) { const data = await res.json(); setSkill(data); await loadVersions(data.id); } };
 
   useEffect(() => {
     (async () => {
-      try { const res = await fetch(`/api/skills/${params.slug}`); if (!res.ok) throw new Error(`HTTP ${res.status}`); const data = await res.json(); setSkill(data); await loadVersions(data.id); }
+      try { const res = await fetch(`/api/skills/${params.slug}`, { headers: getAuthHeaders() }); if (!res.ok) throw new Error(`HTTP ${res.status}`); const data = await res.json(); setSkill(data); await loadVersions(data.id); }
       catch (e: any) { setError(e.message || 'Failed to load skill'); }
       finally { setLoading(false); }
     })();
