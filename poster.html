@@ -7,8 +7,8 @@
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    display: flex; justify-content: center; align-items: center;
-    min-height: 100vh; background: #e5e7eb;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    min-height: 100vh; background: #e5e7eb; gap: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   }
   .poster {
@@ -113,6 +113,15 @@
     font-size: 11px; color: #475569;
     line-height: 1.6;
   }
+  #download-btn {
+    display: block; margin: 24px auto;
+    padding: 12px 32px;
+    background: #6366f1; color: #fff;
+    border: none; border-radius: 12px;
+    font-size: 16px; font-weight: 700;
+    cursor: pointer;
+  }
+  #download-btn:hover { background: #4f46e5; }
 </style>
 </head>
 <body>
@@ -151,5 +160,29 @@
     </div>
   </div>
 </div>
+
+<button id="download-btn" onclick="capture()">📥 下载海报图片</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.3.3/html2canvas.min.js"></script>
+<script>
+function capture() {
+  const btn = document.getElementById('download-btn');
+  btn.style.display = 'none';
+  html2canvas(document.querySelector('.poster'), {
+    scale: 2,
+    backgroundColor: null,
+    useCORS: true,
+  }).then(canvas => {
+    btn.style.display = 'block';
+    const link = document.createElement('a');
+    link.download = 'SkillDepot海报.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }).catch(() => {
+    btn.style.display = 'block';
+    alert('截图失败，请尝试手动截图');
+  });
+}
+</script>
 </body>
 </html>
