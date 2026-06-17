@@ -33,6 +33,7 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   const [acting, setActing] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [commentRefresh, setCommentRefresh] = useState(0);
+  const [suggestedSkills, setSuggestedSkills] = useState<any[]>([]);
 
   useEffect(() => { setCurrentUserId(decodeUserId()); }, []);
   const loadVersions = async (skillId: string) => { const res = await fetch(`/api/skills/${skillId}/versions`, { headers: getAuthHeaders() }); if (res.ok) setVersions(await res.json()); };
@@ -45,6 +46,15 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
       finally { setLoading(false); }
     })();
   }, [params.slug]);
+
+  // 技能不存在时拉取推荐列表
+  useEffect(() => {
+    if (!error) return;
+    fetch('/api/skills?sort=weekly&size=4')
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setSuggestedSkills(Array.isArray(data) ? data : data?.items || []))
+      .catch(() => {});
+  }, [error]);
 
   const handleLike = async () => {
     if (!skill) return;
@@ -102,7 +112,31 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   };
 
   if (loading) return <div className="max-w-5xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center text-neutral-500">{t('skills.loading')}</div>;
-  if (error || !skill) return (<div className="max-w-5xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center"><h1 className="text-2xl font-bold mb-2">{t('detail.skillNotFound')}</h1><p className="text-neutral-500">{error}</p></div>);
+  if (error || !skill) return (
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center">
+      <div className="text-6xl mb-4">😕</div>
+      <h1 className="text-2xl font-bold mb-2">{t('detail.skillNotFound')}</h1>
+      <p className="text-neutral-500 mb-10">{t('detail.skillLostHint')}</p>
+      {suggestedSkills.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold mb-4">{t('detail.skillRecommend')}</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl mx-auto">
+            {suggestedSkills.map((s: any) => (
+              <a key={s.id} href={`/skills/${s.slug || s.id}`} className="p-4 border rounded-xl text-left hover:border-brand-300 hover:shadow-sm transition block">
+                <h3 className="font-semibold text-sm text-neutral-900 truncate">{s.name}</h3>
+                <p className="text-xs text-neutral-400 mt-1 line-clamp-2">{s.short_summary || s.summary}</p>
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {(s.tags || []).slice(0, 3).map((tag: string) => (
+                    <span key={tag} className="px-1.5 py-0.5 text-[10px] rounded bg-brand-50 text-brand-600">{tag}</span>
+                  ))}
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   const tags: string[] = skill.tags ?? [];
   const ownerName = skill.owner_user?.name || 'Anonymous';

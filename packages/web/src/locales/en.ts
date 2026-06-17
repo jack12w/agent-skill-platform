@@ -66,6 +66,8 @@ const en = {
     likeFailed: 'Like failed',
     downloadFailed: 'Download failed',
     skillNotFound: 'Skill not found',
+    skillLostHint: 'This skill may have been deleted or is not yet published. Check out these trending skills.',
+    skillRecommend: 'Recommended Skills',
     reviewBanner: 'This skill is under review and not yet public',
   },
   edit: {

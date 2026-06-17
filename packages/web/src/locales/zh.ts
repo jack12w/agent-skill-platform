@@ -65,7 +65,9 @@ const zh = {
     loginExpired: '登录已过期，请重新登录',
     likeFailed: '点赞失败',
     downloadFailed: '下载失败',
-    skillNotFound: '技能未找到',
+    skillNotFound: '技能走丢了',
+    skillLostHint: '这个技能可能已被删除或尚未发布，看看这些热门技能吧',
+    skillRecommend: '推荐技能',
     reviewBanner: '此技能正在审核中，暂未公开',
   },
   edit: {
