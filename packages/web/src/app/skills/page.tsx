@@ -126,6 +126,20 @@ function SkillSquareInner() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+      {/* ── Hero 引导区 ── */}
+      <div className="mb-8 p-6 sm:p-10 bg-gradient-to-r from-brand-50 via-white to-amber-50 border border-brand-100 rounded-2xl text-center">
+        <h2 className="text-xl sm:text-2xl font-bold text-neutral-900 mb-2">{t('skills.heroTitle')}</h2>
+        <p className="text-sm sm:text-base text-neutral-500 mb-5 max-w-xl mx-auto">{t('skills.heroDesc')}</p>
+        <div className="flex justify-center gap-3">
+          <Link href="/submit" className="px-6 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-bold hover:bg-brand-700 transition">
+            {t('skills.heroSubmit')}
+          </Link>
+          <button onClick={() => { document.getElementById('skills-list')?.scrollIntoView({ behavior: 'smooth' }); }} className="px-6 py-2.5 border border-brand-300 text-brand-600 rounded-lg text-sm font-medium hover:bg-brand-50 transition">
+            {t('skills.heroExplore')}
+          </button>
+        </div>
+      </div>
+
       {/* ── 标题 + 排序 ── */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-4xl font-bold">{t('skills.square')}</h1>

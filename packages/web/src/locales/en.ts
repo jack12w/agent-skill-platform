@@ -42,6 +42,10 @@ const en = {
     noSkills: 'No skills published yet.',
     addNew: '+ Add New Skill',
     score: 'pts',
+    heroTitle: 'Share Your AI Skills With The World',
+    heroDesc: 'Create, upload, and showcase your AI skill packages to help others solve real problems',
+    heroSubmit: 'Submit Skill',
+    heroExplore: 'Explore Skills',
   },
   detail: {
     edit: 'Edit',

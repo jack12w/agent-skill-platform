@@ -42,6 +42,10 @@ const zh = {
     noSkills: '暂无技能发布。',
     addNew: '+ 提交新技能',
     score: '分',
+    heroTitle: '把你的 AI 技能分享给全世界',
+    heroDesc: '创建、上传、展示你的 AI 技能包，帮助更多人解决实际问题',
+    heroSubmit: '提交技能',
+    heroExplore: '探索技能',
   },
   detail: {
     edit: '编辑',
