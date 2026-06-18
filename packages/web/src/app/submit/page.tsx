@@ -222,7 +222,7 @@ export default function SubmitSkill() {
       if (!token) { router.push('/auth'); return; }
       const skillRes = await fetch('/api/skills', {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ name: formData.name.trim(), content_md: formData.content_md, tags: ['社区', ...formData.tags.replace(/，/g, ',').split(/\s*,\s*/).map(x => x.trim()).filter(Boolean).filter(x => !['精选','Featured','featured','FEATURED'].includes(x))], owner_team_id: formData.owner_team_id || null }),
+        body: JSON.stringify({ name: formData.name.trim(), content_md: formData.content_md, tags: ['社区', 'SkillDepot', ...formData.tags.replace(/，/g, ',').split(/\s*,\s*/).map(x => x.trim()).filter(Boolean).filter(x => !['精选','Featured','featured','FEATURED'].includes(x))], owner_team_id: formData.owner_team_id || null }),
       });
       if (!skillRes.ok) { const body = await skillRes.json().catch(() => ({})); throw new Error(body.message || `HTTP ${skillRes.status}`); }
       const skill = await skillRes.json();

@@ -45,7 +45,7 @@ export class SkillsController {
   @UseInterceptors(FilesInterceptor('files', 50, { limits: { fileSize: 300 * 1024 } }))
   batchUpload(@UploadedFiles() files: any[], @Request() req: any, @Body('tags') tags?: string) {
     if (!files || files.length === 0) throw new BadRequestException('At least one file is required');
-    const tagList = tags ? tags.split(/[,，]/).map((t: string) => t.trim()).filter(Boolean) : [];
+    const tagList = ['社区', 'SkillDepot', ...(tags ? tags.split(/[,，]/).map((t: string) => t.trim()).filter(Boolean) : [])];
     return this.skillsService.batchUpload(
       files.map(f => ({ buffer: f.buffer, originalname: f.originalname })),
       req.user.sub,
