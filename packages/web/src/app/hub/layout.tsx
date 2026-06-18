@@ -46,8 +46,8 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
     setLoaded(true);
   }, [router]);
 
-  if (!loaded) return null;
-  if (!authorized) return null;
+  if (!loaded) return <style>{`body { overflow: hidden; } footer { display: none !important; }`}</style>;
+  if (!authorized) return <style>{`body { overflow: hidden; } footer { display: none !important; }`}</style>;
 
   const activeKey = pathname === '/hub' ? 'stats' : pathname.split('/hub/')[1]?.split('/')[0] || 'stats';
 
