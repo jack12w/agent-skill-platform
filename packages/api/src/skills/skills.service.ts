@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, ILike, In, ArrayContains, ArrayOverlap } from 'typeorm';
+import { Repository, Like, ILike, In, Raw } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { Skill } from './skill.entity';
 import { SkillVersion } from './skill-version.entity';
@@ -92,8 +92,8 @@ export class SkillsService {
         .offset((page - 1) * size);
 
       if (q) qb.andWhere('(skill.name ILIKE :q OR skill.short_summary ILIKE :q)', { q: `%${q}%` });
-      if (tagList.length > 0) qb.andWhere('skill.tags && ARRAY[:...tagList]', { tagList });
-      else if (tag) qb.andWhere(':tag = ANY(skill.tags)', { tag });
+      if (tagList.length > 0) qb.andWhere('EXISTS (SELECT 1 FROM UNNEST(skill.tags) st JOIN UNNEST(ARRAY[:...tagList]) qt ON LOWER(st) = LOWER(qt))', { tagList });
+      else if (tag) qb.andWhere('EXISTS (SELECT 1 FROM UNNEST(skill.tags) t WHERE LOWER(t) = LOWER(:tag))', { tag });
       if (owner_id) qb.andWhere('skill.owner_user_id = :owner_id', { owner_id });
 
       const rows: any[] = await qb.getRawMany();
@@ -139,9 +139,9 @@ export class SkillsService {
     // Default: sort by created_at (newest first)
     const baseWhere: any = {};
     if (tagList.length > 0) {
-      baseWhere.tags = ArrayOverlap(tagList);
+      baseWhere.tags = Raw(tags => `EXISTS (SELECT 1 FROM UNNEST(${tags}) st JOIN UNNEST(ARRAY[:...tagList]) qt ON LOWER(st) = LOWER(qt))`, { tagList });
     } else if (tag) {
-      baseWhere.tags = ArrayContains([tag]);
+      baseWhere.tags = Raw(tags => `EXISTS (SELECT 1 FROM UNNEST(${tags}) t WHERE LOWER(t) = LOWER(:tag))`, { tag });
     }
     if (owner !== 'me') baseWhere.status = SkillStatus.PUBLISHED;
     if (owner_id) baseWhere.owner_user_id = owner_id;
