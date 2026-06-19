@@ -37,7 +37,10 @@ export function OrganizationSchema() {
     name: 'SkillDepot',
     url: BASE_URL,
     logo: `${BASE_URL}/logo.svg`,
-    sameAs: [] as string[],
+    description: 'AI Agent Skills Marketplace — discover, share, and download AI-powered skills for cross-border ecommerce (Alibaba International Station, Amazon, Shopify, WordPress, independent stores) and developer workflows.',
+    sameAs: [
+      'https://github.com/jack12w/agent-skill-platform',
+    ] as string[],
   };
 
   return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }} />;

@@ -4,9 +4,9 @@ export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
       {
-        userAgent: '*',
-        allow: ['/skills', '/leaderboard', '/teams/'],
-        disallow: ['/auth', '/dashboard', '/submit', '/*/edit', '/api/'],
+      userAgent: '*',
+      allow: ['/', '/skills', '/leaderboard', '/teams/', '/users/'],
+      disallow: ['/auth', '/dashboard', '/submit', '/*/edit', '/api/'],
       },
       {
         userAgent: 'GPTBot',

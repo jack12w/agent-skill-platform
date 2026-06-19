@@ -26,6 +26,19 @@ export const metadata: Metadata = {
     'skill sharing',
     'AI automation',
     'SkillDepot',
+    'cross-border ecommerce',
+    'Alibaba International Station',
+    '阿里巴巴国际站',
+    '跨境电商',
+    '独立站',
+    'Amazon seller tools',
+    'Shopify automation',
+    'WordPress ecommerce',
+    'AI listing optimization',
+    'AI customer service',
+    'ecommerce AI agent',
+    'cross-border trade automation',
+    'AIDC',
   ],
   authors: [{ name: 'SkillDepot' }],
   creator: 'SkillDepot',
@@ -80,9 +93,10 @@ export const metadata: Metadata = {
     apple: '/favicon.svg',
   },
   verification: {
-    // 预留搜索引擎验证
-    // google: 'your-google-verification-code',
-    // bing: 'your-bing-verification-code',
+    // 搜索引擎验证码 — 注册后在此填入
+    // google: 'your-google-site-verification-code',
+    // yandex: 'your-yandex-verification',
+    // bing 在 robots.ts 的 sitemap 已声明，无需额外 meta
   },
 };
 
