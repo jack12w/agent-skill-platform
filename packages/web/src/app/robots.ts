@@ -6,7 +6,7 @@ export default function robots(): MetadataRoute.Robots {
       {
       userAgent: '*',
       allow: ['/', '/skills', '/leaderboard', '/teams/', '/users/'],
-      disallow: ['/auth', '/dashboard', '/submit', '/*/edit', '/api/'],
+      disallow: ['/auth', '/hub', '/dashboard', '/submit', '/*/edit', '/api/'],
       },
       {
         userAgent: 'GPTBot',
@@ -19,7 +19,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: 'Google-Extended',
         allow: ['/skills', '/leaderboard', '/'],
-        disallow: ['/auth', '/dashboard', '/submit', '/*/edit', '/api/'],
+        disallow: ['/auth', '/hub', '/dashboard', '/submit', '/*/edit', '/api/'],
       },
       {
         userAgent: 'CCBot',
@@ -28,7 +28,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: 'anthropic-ai',
         allow: ['/skills', '/leaderboard', '/'],
-        disallow: ['/auth', '/dashboard', '/submit', '/*/edit', '/api/'],
+        disallow: ['/auth', '/hub', '/dashboard', '/submit', '/*/edit', '/api/'],
       },
       {
         userAgent: 'cohere-ai',
@@ -37,7 +37,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: 'PerplexityBot',
         allow: ['/skills', '/leaderboard', '/'],
-        disallow: ['/auth', '/dashboard', '/submit', '/*/edit', '/api/'],
+        disallow: ['/auth', '/hub', '/dashboard', '/submit', '/*/edit', '/api/'],
       },
     ],
     sitemap: `${process.env.NEXT_PUBLIC_BASE_URL}/sitemap.xml`,
