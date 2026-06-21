@@ -32,6 +32,12 @@ const zh = {
     name: '用户名',
     loginFailed: '登录失败',
     registerFailed: '注册失败',
+    forgotPassword: '忘记密码？',
+    forgotTab: '重置密码',
+    newPassword: '新密码',
+    resetPassword: '重置密码',
+    resetSuccess: '密码重置成功，请使用新密码登录',
+    backToLogin: '返回登录',
   },
   skills: {
     square: '技能广场',

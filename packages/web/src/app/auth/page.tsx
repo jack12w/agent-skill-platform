@@ -7,7 +7,7 @@ import useTranslation from '../../hooks/useTranslation';
 export default function AuthPage() {
   const router = useRouter();
   const { t } = useTranslation();
-  const [tab, setTab] = useState<'login' | 'register'>('login');
+  const [tab, setTab] = useState<'login' | 'register' | 'forgot'>('login');
   const [form, setForm] = useState({ email: '', password: '', name: '', code: '' });
   const [loading, setLoading] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
@@ -39,6 +39,28 @@ export default function AuthPage() {
       }
     } catch { alert('发送失败'); }
     finally { setSendingCode(false); }
+  };
+
+  // 重置密码
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.code) { alert('请输入验证码'); return; }
+    if (!form.password) { alert('请输入新密码'); return; }
+    setLoading(true);
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: form.email, code: form.code, newPassword: form.password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
+      alert(t('auth.resetSuccess'));
+      setTab('login');
+      setForm({ email: '', password: '', name: '', code: '' });
+    } catch (err: any) {
+      alert('重置失败: ' + (err.message || String(err)));
+    } finally { setLoading(false); }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -101,8 +123,9 @@ export default function AuthPage() {
       <div className="flex mb-6 p-1 bg-neutral-100 rounded-lg">
         <button onClick={() => setTab('login')} className={`flex-1 py-2 rounded-md ${tab === 'login' ? 'bg-white shadow-sm' : ''}`}>{t('auth.login')}</button>
         <button onClick={() => setTab('register')} className={`flex-1 py-2 rounded-md ${tab === 'register' ? 'bg-white shadow-sm' : ''}`}>{t('auth.register')}</button>
+        <button onClick={() => setTab('forgot')} className={`flex-1 py-2 rounded-md text-sm ${tab === 'forgot' ? 'bg-white shadow-sm' : ''}`}>{t('auth.forgotTab')}</button>
       </div>
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={tab === 'forgot' ? handleResetPassword : handleSubmit} className="space-y-4">
         {tab === 'register' && (
           <div><label className="block text-sm font-medium text-neutral-700 mb-1">{t('auth.name')}</label>
             <input type="text" required className="w-full px-3 py-2 border rounded-lg" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
@@ -111,9 +134,25 @@ export default function AuthPage() {
         <div><label className="block text-sm font-medium text-neutral-700 mb-1">{t('auth.email')}</label>
           <input type="email" required className="w-full px-3 py-2 border rounded-lg" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
         </div>
-        <div><label className="block text-sm font-medium text-neutral-700 mb-1">{t('auth.password')}</label>
-          <input type="password" required className="w-full px-3 py-2 border rounded-lg" value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
-        </div>
+        {(tab === 'login' || tab === 'register') && (
+          <div><label className="block text-sm font-medium text-neutral-700 mb-1">{t('auth.password')}</label>
+            <input type="password" required className="w-full px-3 py-2 border rounded-lg" value={form.password} onChange={e => setForm({...form, password: e.target.value})} />
+          </div>
+        )}
+        {tab === 'forgot' && (
+          <>
+            <div className="flex gap-2">
+              <input type="text" required maxLength={6} placeholder="验证码" className="flex-1 px-3 py-2 border rounded-lg" value={form.code} onChange={e => setForm({...form, code: e.target.value})} />
+              <button type="button" onClick={handleSendCode} disabled={sendingCode || countdown > 0 || !form.email}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                {sendingCode ? '...' : countdown > 0 ? `${countdown}s` : '获取验证码'}
+              </button>
+            </div>
+            <div><label className="block text-sm font-medium text-neutral-700 mb-1">{t('auth.newPassword')}</label>
+              <input type="password" required className="w-full px-3 py-2 border rounded-lg" value={form.password} onChange={e => setForm({...form, password: e.target.value})} placeholder="请输入新密码" />
+            </div>
+          </>
+        )}
         {tab === 'register' && (
           <div className="flex gap-2">
             <input type="text" required maxLength={6} placeholder="验证码" className="flex-1 px-3 py-2 border rounded-lg" value={form.code} onChange={e => setForm({...form, code: e.target.value})} />
@@ -124,7 +163,7 @@ export default function AuthPage() {
           </div>
         )}
         <button type="submit" disabled={loading} className="w-full py-3 bg-brand-600 text-white rounded-lg font-bold hover:bg-brand-700 disabled:bg-neutral-400">
-          {loading ? '...' : tab === 'login' ? t('auth.login') : t('auth.register')}
+          {loading ? '...' : tab === 'forgot' ? t('auth.resetPassword') : tab === 'login' ? t('auth.login') : t('auth.register')}
         </button>
       </form>
 
@@ -153,9 +192,15 @@ export default function AuthPage() {
 
       <p className="text-center text-sm text-neutral-500 mt-4">
         {tab === 'login' ? (
-          <button onClick={() => setTab('register')} className="text-brand-600">{t('auth.noAccount')}</button>
-        ) : (
+          <span>
+            <button onClick={() => setTab('register')} className="text-brand-600">{t('auth.noAccount')}</button>
+            <span className="mx-2 text-neutral-300">|</span>
+            <button onClick={() => setTab('forgot')} className="text-brand-600">{t('auth.forgotPassword')}</button>
+          </span>
+        ) : tab === 'register' ? (
           <button onClick={() => setTab('login')} className="text-brand-600">{t('auth.hasAccount')}</button>
+        ) : (
+          <button onClick={() => { setTab('login'); setForm({ email: '', password: '', name: '', code: '' }); }} className="text-brand-600">{t('auth.backToLogin')}</button>
         )}
       </p>
     </div>

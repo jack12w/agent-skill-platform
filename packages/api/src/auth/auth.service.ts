@@ -128,6 +128,18 @@ export class AuthService {
     await this.codeRepository.save(record);
   }
 
+  // ── 忘记密码 ───────────────────────────
+  async resetPassword(email: string, code: string, newPassword: string) {
+    if (!code) throw new BadRequestException('验证码不能为空');
+    await this.verifyCode(email, code);
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (!user) throw new NotFoundException('该邮箱未注册');
+    const salt = await bcrypt.genSalt();
+    user.password_hash = await bcrypt.hash(newPassword, salt);
+    await this.userRepository.save(user);
+    return { message: '密码已重置，请使用新密码登录' };
+  }
+
   // ── 微信登录 ─────────────────────────────
   async getWechatAuthUrl() {
     const appId = process.env.WECHAT_APPID || 'wxb2537aa7600236a7';

@@ -32,6 +32,12 @@ const en = {
     name: 'Name',
     loginFailed: 'Login failed',
     registerFailed: 'Registration failed',
+    forgotPassword: 'Forgot password?',
+    forgotTab: 'Reset Password',
+    newPassword: 'New Password',
+    resetPassword: 'Reset Password',
+    resetSuccess: 'Password reset successfully. Please login with your new password.',
+    backToLogin: 'Back to Login',
   },
   skills: {
     square: 'Skill Square',

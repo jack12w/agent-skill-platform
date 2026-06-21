@@ -41,6 +41,12 @@ export class AuthController {
     return this.authService.sendVerificationCode(body.email);
   }
 
+  // ── 忘记密码 ───────────────────────────
+  @Post('reset-password')
+  resetPassword(@Body() body: { email: string; code: string; newPassword: string }) {
+    return this.authService.resetPassword(body.email, body.code, body.newPassword);
+  }
+
   // ── 微信登录 ─────────────────────────────
   @Get('wechat/url')
   getWechatUrl() {
