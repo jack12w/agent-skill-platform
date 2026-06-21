@@ -23,3 +23,15 @@ debug.log
 # project docs (local only)
 TECHNICAL.md
 development-manual.md
+# 推广文案 & 海报（本地不推送）
+ProductHunt-MakerComment.md
+掘金文章-SkillDepot全栈实践.md
+少数派教程-用AI优化国际站Listing.md
+推广文案合集.md
+推广执行清单.md
+知乎4个问题回答.md
+知乎文章-阿里国际站AI提效.md
+poster.html
+qrcode.png
+# google 站点验证（服务器本地文件）
+packages/web/public/google*.html
