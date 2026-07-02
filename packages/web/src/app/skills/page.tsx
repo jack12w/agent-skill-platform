@@ -44,7 +44,12 @@ function SkillSquareInner() {
       let url = `/api/skills?sort=${sort}&page=${pageNum}&size=20`;
       if (query) url += `&query=${encodeURIComponent(query)}`;
       if (activeTags.size > 0) url += `&tags=${encodeURIComponent(activeTagsStr)}`;
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: typeof window !== 'undefined' && localStorage.getItem('token')
+          ? { Authorization: `Bearer ${localStorage.getItem('token')}` }
+          : {},
+      });
       const data = await res.json();
       const list = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : Array.isArray(data?.data) ? data.data : [];
       if (append) setSkills(prev => [...prev, ...list]);

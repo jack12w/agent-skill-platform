@@ -14,7 +14,11 @@ export default function Home() {
     const fetchData = async () => {
       try {
         const [skillsRes, lbRes] = await Promise.all([
-          fetch('/api/skills?sort=total&size=10'),
+          fetch('/api/skills?sort=total&size=10', {
+            headers: typeof window !== 'undefined' && localStorage.getItem('token')
+              ? { Authorization: `Bearer ${localStorage.getItem('token')}` }
+              : {},
+          }),
           fetch('/api/leaderboard?type=personal&period=all'),
         ]);
         if (skillsRes.ok) {
