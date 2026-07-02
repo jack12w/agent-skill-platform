@@ -603,7 +603,6 @@ export class SkillsService {
       .where('e.type = :type', { type: 'download' })
       .andWhere('e.user_id = :userId', { userId })
       .andWhere('e.skill_id IN (:...skillIds)', { skillIds })
-      .andWhere('e.payload_json IS NOT NULL')
       .orderBy('e.skill_id')
       .addOrderBy('e.created_at', 'DESC')
       .getRawMany();
