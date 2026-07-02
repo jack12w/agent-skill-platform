@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { User } from '../auth/user.entity';
 import { Skill } from '../skills/skill.entity';
 import { SkillStats } from '../skills/skill-stats.entity';
+import { SkillsService } from '../skills/skills.service';
 import { SkillStatus } from '@platform/shared';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class UsersService {
     private userRepository: Repository<User>,
     @InjectRepository(Skill)
     private skillRepository: Repository<Skill>,
+    private skillsService: SkillsService,
   ) {}
 
   async findOne(username: string) {
@@ -47,8 +49,8 @@ export class UsersService {
     };
   }
 
-  async findUserSkills(username: string, query: { page?: number; size?: number }) {
-    const { page = 1, size = 20 } = query;
+  async findUserSkills(username: string, query: { page?: number; size?: number; currentUserId?: string }) {
+    const { page = 1, size = 20, currentUserId } = query;
 
     const user = await this.userRepository.findOne({
       where: { name: username },
@@ -59,7 +61,7 @@ export class UsersService {
 
     const [skills, total] = await this.skillRepository.findAndCount({
       where: { owner_user_id: user.id, status: SkillStatus.PUBLISHED },
-      relations: ['stats', 'owner_user', 'latest_version'],
+      relations: ['stats', 'owner_user', 'latest_version', 'published_version'],
       order: { created_at: 'DESC' },
       skip: (page - 1) * size,
       take: size,
@@ -74,12 +76,19 @@ export class UsersService {
       tags: skill.tags,
       created_at: skill.created_at,
       updated_at: skill.updated_at,
+      published_version_id: skill.published_version_id,
+      owner_user_id: skill.owner_user_id,
       latest_version: skill.latest_version ? { version: skill.latest_version.version } : null,
       likes_total: skill.stats?.likes_total ?? 0,
       downloads_total: skill.stats?.downloads_total ?? 0,
       total_score: skill.stats?.total_score ?? 5,
       weekly_score: skill.stats?.weekly_score ?? 5,
     }));
+
+    // Attach has_update info if current user is logged in
+    if (currentUserId) {
+      await this.skillsService.attachUpdateInfo(items, currentUserId);
+    }
 
     return {
       items,

@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Team } from './team.entity';
 import { TeamMember } from './team-member.entity';
 import { Skill } from '../skills/skill.entity';
+import { SkillsService } from '../skills/skills.service';
 import { MemberRole, SkillStatus } from '@platform/shared';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class TeamsService {
     private memberRepository: Repository<TeamMember>,
     @InjectRepository(Skill)
     private skillRepository: Repository<Skill>,
+    private skillsService: SkillsService,
   ) {}
 
   async createTeam(name: string, description: string, ownerId: string) {
@@ -61,7 +63,7 @@ export class TeamsService {
 
     const skills = await this.skillRepository.find({
       where: { owner_team_id: teamId, status: SkillStatus.PUBLISHED },
-      relations: ['stats', 'latest_version'],
+      relations: ['stats', 'latest_version', 'published_version'],
       order: { created_at: 'DESC' },
     });
 
@@ -82,10 +84,31 @@ export class TeamsService {
           },
         }));
 
+    // Build skill items with published_version_id
+    const skillItems = skills.map((s) => ({
+      id: s.id,
+      name: s.name,
+      slug: s.slug,
+      short_summary: s.short_summary,
+      cover_url: s.cover_url,
+      tags: s.tags,
+      created_at: s.created_at,
+      updated_at: s.updated_at,
+      published_version_id: s.published_version_id,
+      owner_user_id: s.owner_user_id,
+      latest_version: s.latest_version ? { version: s.latest_version.version } : null,
+      stats: s.stats,
+    }));
+
+    // Attach has_update info if current user is logged in
+    if (userId) {
+      await this.skillsService.attachUpdateInfo(skillItems, userId);
+    }
+
     return {
       ...team,
       members: safeMembers,
-      skills,
+      skills: skillItems,
       is_owner: !!userId && team.owner_user_id === userId,
       my_role: myMembership?.role ?? null,
     };
