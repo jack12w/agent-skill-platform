@@ -24,10 +24,14 @@ export default function UserProfile({ params }: { params: { username: string } }
   const hasMore = skills.length < total && total > 0;
 
   const load = useCallback(async (pageNum: number = 1, append: boolean = false) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
     try {
       const [userRes, skillsRes] = await Promise.all([
         fetch(`/api/users/${encodeURIComponent(username)}`),
-        fetch(`/api/users/${encodeURIComponent(username)}/skills?page=${pageNum}&size=20`),
+        fetch(`/api/users/${encodeURIComponent(username)}/skills?page=${pageNum}&size=20`, { headers }),
       ]);
 
       if (!userRes.ok) {

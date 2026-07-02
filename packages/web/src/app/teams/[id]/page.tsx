@@ -13,7 +13,7 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
   const [isOwner, setIsOwner] = useState(false);
 
   const load = async () => {
-    const token = localStorage.getItem('token');
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     try {
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
