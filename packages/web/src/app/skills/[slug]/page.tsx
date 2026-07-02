@@ -51,7 +51,10 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   // 技能不存在时拉取推荐列表
   useEffect(() => {
     if (!error) return;
-    fetch('/api/skills?sort=weekly&size=4')
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    fetch('/api/skills?sort=weekly&size=4', { headers })
       .then(r => r.ok ? r.json() : [])
       .then(data => setSuggestedSkills(Array.isArray(data) ? data : data?.items || []))
       .catch(() => {});
