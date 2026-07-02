@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import useTranslation from '../../hooks/useTranslation';
 import { fetchTagGroups } from '../../lib/tag-groups';
+import SkillUpdateBadge from '../components/SkillUpdateBadge';
 
 /* ── 预设标签分组 ── */
 const FALLBACK_TAG_GROUPS: Record<string, string[]> = {
@@ -197,7 +198,10 @@ function SkillSquareInner() {
           )}
           {skills.map(skill => (
             <Link key={skill.id} href={`/skills/${skill.slug || skill.id}`} className="group p-6 border rounded-2xl hover:border-brand-500 transition-all hover:shadow-lg flex flex-col glass">
-              <h3 className="text-xl font-bold mb-2 group-hover:text-brand-600">{skill.name}</h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xl font-bold group-hover:text-brand-600">{skill.name}</h3>
+                <SkillUpdateBadge hasUpdate={!!skill.has_update} />
+              </div>
               <p className="text-neutral-600 text-sm mb-3 line-clamp-2">{skill.short_summary || skill.summary}</p>
               <div className="text-xs text-neutral-400 mb-4">
                 {skill.latest_version ? `v${skill.latest_version.version}` : '—'}

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import useTranslation from '../hooks/useTranslation';
+import SkillUpdateBadge from './components/SkillUpdateBadge';
 
 export default function Home() {
   const { t } = useTranslation();
@@ -49,7 +50,7 @@ export default function Home() {
               <Link key={skill.id} href={`/skills/${skill.slug || skill.id}`} className="block p-4 border rounded-lg hover:border-brand-300 hover:bg-brand-50/30 transition min-h-[5rem]">
                 <div className="flex justify-between items-center">
                   <div>
-                    <h3 className="font-bold">{skill.name}</h3>
+                    <h3 className="font-bold inline-flex items-center">{skill.name}<SkillUpdateBadge hasUpdate={!!skill.has_update} /></h3>
                     <p className="text-sm text-neutral-500 truncate max-w-[160px] sm:max-w-[320px]">{skill.short_summary || skill.summary}</p>
                   </div>
                   <div className="text-right shrink-0 ml-4">

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import MDEditor from '@uiw/react-md-editor';
 import useTranslation from '../../../hooks/useTranslation';
 import CommentSection from '../../components/CommentSection';
+import SkillUpdateBadge from '../../components/SkillUpdateBadge';
 
 function decodeUserId(): string | null {
   try {
@@ -123,7 +124,10 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl mx-auto">
             {suggestedSkills.map((s: any) => (
               <a key={s.id} href={`/skills/${s.slug || s.id}`} className="p-4 border rounded-xl text-left hover:border-brand-300 hover:shadow-sm transition block">
-                <h3 className="font-semibold text-sm text-neutral-900 truncate">{s.name}</h3>
+                <div className="flex items-center justify-between gap-1">
+                  <h3 className="font-semibold text-sm text-neutral-900 truncate">{s.name}</h3>
+                  <SkillUpdateBadge hasUpdate={!!s.has_update} />
+                </div>
                 <p className="text-xs text-neutral-400 mt-1 line-clamp-2">{s.short_summary || s.summary}</p>
                 <div className="flex flex-wrap gap-1 mt-2">
                   {(s.tags || []).slice(0, 3).map((tag: string) => (

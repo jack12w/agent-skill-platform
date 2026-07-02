@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import useTranslation from '../../../hooks/useTranslation';
+import SkillUpdateBadge from '../../components/SkillUpdateBadge';
 
 export default function TeamShowcase({ params }: { params: { id: string } }) {
   const { t } = useTranslation();
@@ -145,7 +146,7 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
                 href={`/skills/${s.slug || s.id}`}
                 className="block p-5 border rounded-xl hover:border-brand-300 hover:shadow-sm hover:bg-brand-50/30 transition group glass"
               >
-                <h3 className="font-bold text-neutral-900 group-hover:text-brand-600 transition-colors">{s.name}</h3>
+                <h3 className="font-bold text-neutral-900 group-hover:text-brand-600 transition-colors inline-flex items-center">{s.name}<SkillUpdateBadge hasUpdate={!!s.has_update} /></h3>
                 {s.short_summary && (
                   <p className="text-sm text-neutral-500 mt-1 line-clamp-2">{s.short_summary}</p>
                 )}

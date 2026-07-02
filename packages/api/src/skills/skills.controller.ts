@@ -15,18 +15,29 @@ export class SkillsController {
 
   @Get()
   findAll(@Query() query: any, @Request() req: any) {
+    let userId: string | undefined;
     if (query.owner === 'me') {
       const token = req.headers.authorization?.split(' ')[1];
       if (!token) throw new BadRequestException('Unauthorized');
       try {
         const payload = this.jwtService.decode(token) as { sub: string } | null;
         query.owner_id = payload?.sub;
+        userId = payload?.sub;
         if (!query.owner_id) throw new BadRequestException('Invalid token');
       } catch {
         throw new BadRequestException('Invalid token');
       }
+    } else {
+      // Extract userId for authenticated users to check update status
+      const token = req.headers.authorization?.split(' ')[1];
+      if (token) {
+        try {
+          const payload = this.jwtService.decode(token) as { sub: string } | null;
+          userId = payload?.sub || undefined;
+        } catch { /* ignore */ }
+      }
     }
-    return this.skillsService.findAll(query);
+    return this.skillsService.findAll(query, userId);
   }
 
   @UseGuards(AuthGuard)
@@ -136,8 +147,9 @@ export class SkillsController {
   @UseGuards(AuthGuard)
   @Get(':id/download/file')
   async downloadFile(@Param('id') id: string, @Request() req: any, @Res() res: Response) {
-    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub);
     const isAdmin = req.user?.role === 'admin';
+    const dlInfo = await this.skillsService.getDownloadUrl(id, undefined, req.user.sub, isAdmin);
+    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub, undefined, { version_id: dlInfo.version_id, version: dlInfo.version });
     const { buffer, filename, raw } = await this.skillsService.streamDownload(id, undefined, req.user.sub, isAdmin);
     res.set({
       'Content-Type': 'application/zip',
@@ -154,9 +166,10 @@ export class SkillsController {
     @Request() req: any,
     @Res() res: Response,
   ) {
-    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub);
     const isAdmin = req.user?.role === 'admin';
-    const { buffer, filename, raw } = await this.skillsService.streamDownload(id, versionId, undefined, isAdmin);
+    const dlInfo = await this.skillsService.getDownloadUrl(id, versionId, req.user.sub, isAdmin);
+    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub, undefined, { version_id: dlInfo.version_id, version: dlInfo.version });
+    const { buffer, filename, raw } = await this.skillsService.streamDownload(id, versionId, req.user.sub, isAdmin);
     res.set({
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(raw)}`,
@@ -168,7 +181,7 @@ export class SkillsController {
   @Get(':id/download')
   async download(@Param('id') id: string, @Request() req: any) {
     const result = await this.skillsService.getDownloadUrl(id, undefined, req.user.sub);
-    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub);
+    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub, undefined, { version_id: result.version_id, version: result.version });
     return result;
   }
 
@@ -180,7 +193,7 @@ export class SkillsController {
     @Request() req: any,
   ) {
     const result = await this.skillsService.getDownloadUrl(id, versionId, req.user.sub);
-    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub);
+    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub, undefined, { version_id: result.version_id, version: result.version });
     return result;
   }
 

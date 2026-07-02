@@ -37,7 +37,7 @@ export class SkillsService {
     private ossService: OssService,
   ) {}
 
-  async findAll(query: { query?: string; tag?: string; tags?: string; sort?: string; page?: number; size?: number; owner?: string; owner_id?: string }) {
+  async findAll(query: { query?: string; tag?: string; tags?: string; sort?: string; page?: number; size?: number; owner?: string; owner_id?: string }, userId?: string) {
     const { query: q, tag, tags: tagsStr, sort, page = 1, size = 20, owner, owner_id } = query;
     const tagList = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
 
@@ -62,7 +62,7 @@ export class SkillsService {
         .select([
           'skill.id', 'skill.name', 'skill.slug', 'skill.short_summary', 'skill.content_md',
           'skill.cover_url', 'skill.tags', 'skill.status', 'skill.owner_user_id', 'skill.owner_team_id',
-          'skill.created_at', 'skill.updated_at',
+          'skill.created_at', 'skill.updated_at', 'skill.published_version_id',
         ])
         // Related entity columns
         .addSelect('stats.likes_total', 'likes_total')
@@ -87,6 +87,7 @@ export class SkillsService {
         .addGroupBy('stats.skill_id')
         .addGroupBy('owner_user.id')
         .addGroupBy('lv.version')
+        .addGroupBy('skill.published_version_id')
         .orderBy('_score', 'DESC')
         .limit(size)
         .offset((page - 1) * size);
@@ -100,7 +101,7 @@ export class SkillsService {
 
       // getRawMany() returns keys prefixed with entity alias (e.g. skill_id, skill_name).
       // Map them to the shape expected by the frontend.
-      return rows.map((row: any) => ({
+      const skills = rows.map((row: any) => ({
         id: row.skill_id,
         name: row.skill_name,
         slug: row.skill_slug,
@@ -111,6 +112,7 @@ export class SkillsService {
         status: row.skill_status,
         owner_user_id: row.skill_owner_user_id,
         owner_team_id: row.skill_owner_team_id,
+        published_version_id: row.skill_published_version_id || null,
         created_at: row.skill_created_at,
         updated_at: row.skill_updated_at,
         latest_version: row.latest_version ? { version: row.latest_version } : null,
@@ -134,6 +136,8 @@ export class SkillsService {
           avatar_url: sanitizeAvatarUrl(row.owner_avatar_url),
         },
       }));
+      await this.attachUpdateInfo(skills, userId);
+      return skills;
     }
 
     // Default: sort by created_at (newest first)
@@ -180,6 +184,7 @@ export class SkillsService {
       }
     }
 
+    await this.attachUpdateInfo(skills, userId);
     return skills;
   }
 
@@ -573,10 +578,70 @@ export class SkillsService {
       }
     }
 
+    if (userId) {
+      await this.attachUpdateInfo([skill], userId);
+    }
     return skill;
   }
 
-  async recordEvent(skillId: string, type: EventType, userId?: string, ipHash?: string) {
+  /**
+   * Attach has_update and user_downloaded_version to each skill result
+   * by querying the user's latest download for each skill and comparing
+   * with the current published version.
+   */
+  public async attachUpdateInfo(skills: any[], userId: string) {
+    if (!skills.length || !userId) return;
+
+    const skillIds = skills.map(s => s.id);
+
+    // Batch-query the latest download event per skill for this user
+    const downloads: any[] = await this.eventRepository
+      .createQueryBuilder('e')
+      .select('DISTINCT ON (e.skill_id) e.skill_id', 'skill_id')
+      .addSelect("e.payload_json->>'version_id'", 'downloaded_version_id')
+      .addSelect("e.payload_json->>'version'", 'downloaded_version')
+      .where('e.type = :type', { type: 'download' })
+      .andWhere('e.user_id = :userId', { userId })
+      .andWhere('e.skill_id IN (:...skillIds)', { skillIds })
+      .andWhere('e.payload_json IS NOT NULL')
+      .orderBy('e.skill_id')
+      .addOrderBy('e.created_at', 'DESC')
+      .getRawMany();
+
+    const downloadMap = new Map(downloads.map((d: any) => [d.skill_id, d]));
+
+    for (const skill of skills) {
+      const dl = downloadMap.get(skill.id);
+      if (!dl || !dl.downloaded_version_id) {
+        skill.has_update = false;
+        skill.user_downloaded_version = null;
+        continue;
+      }
+
+      // Don't show update badge for skills the user owns
+      if (skill.owner_user_id === userId) {
+        skill.has_update = false;
+        skill.user_downloaded_version = null;
+        continue;
+      }
+
+      // Get the live published version (normalize from both code paths)
+      const liveVersionId = skill.published_version_id
+        || (skill.published_version && skill.published_version.id)
+        || null;
+
+      if (!liveVersionId) {
+        skill.has_update = false;
+        skill.user_downloaded_version = dl.downloaded_version || null;
+        continue;
+      }
+
+      skill.has_update = dl.downloaded_version_id !== liveVersionId;
+      skill.user_downloaded_version = dl.downloaded_version || null;
+    }
+  }
+
+  async recordEvent(skillId: string, type: EventType, userId?: string, ipHash?: string, payloadJson?: Record<string, any>) {
     // For LIKE: ensure per-user uniqueness (toggle would be cleaner, but for now we just dedupe)
     if (type === EventType.LIKE && userId) {
       const existing = await this.eventRepository.findOne({
@@ -593,6 +658,7 @@ export class SkillsService {
       type,
       user_id: userId,
       ip_hash: ipHash,
+      payload_json: payloadJson || null,
     });
     const saved = await this.eventRepository.save(event);
 
