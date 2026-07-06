@@ -20,6 +20,8 @@ export default function Dashboard() {
   const [editingName, setEditingName] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
+  const [editingBio, setEditingBio] = useState(false);
+  const [profileBio, setProfileBio] = useState('');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
@@ -81,18 +83,27 @@ export default function Dashboard() {
     const token = localStorage.getItem('token'); if (!token) return;
     setSavingProfile(true);
     try {
+      const body: Record<string, string> = {};
+      if (editingName) body.name = profileName.trim();
+      if (editingBio) body.bio = profileBio;
       const res = await fetch('/api/auth/me', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ name: profileName.trim() }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error('Failed');
       const updated = await res.json();
       setUser(updated);
       localStorage.setItem('user', JSON.stringify(updated));
       window.dispatchEvent(new Event('user-updated'));
-      setEditingName(false);
+      if (editingName) setEditingName(false);
+      if (editingBio) setEditingBio(false);
     } catch { alert('保存失败'); }
     finally { setSavingProfile(false); }
+  };
+
+  const handleStartEditBio = () => {
+    setProfileBio(user?.bio || '');
+    setEditingBio(true);
   };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -150,6 +161,39 @@ export default function Dashboard() {
             </div>
           )}
           <p className="text-neutral-500 text-sm mt-0.5">{user.email}</p>
+          {/* Bio 编辑区 */}
+          <div className="mt-3">
+            {editingBio ? (
+              <div className="space-y-2">
+                <textarea
+                  value={profileBio}
+                  onChange={e => setProfileBio(e.target.value.slice(0, 40))}
+                  placeholder="用一句话介绍自己…"
+                  maxLength={40}
+                  rows={2}
+                  className="w-full px-3 py-2 border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-neutral-400">{profileBio.length}/40</span>
+                  <div className="flex gap-2">
+                    <button onClick={handleSaveProfile} disabled={savingProfile} className="px-3 py-1 bg-brand-600 text-white text-sm rounded hover:bg-brand-700 disabled:opacity-50">
+                      {savingProfile ? '...' : '保存'}
+                    </button>
+                    <button onClick={() => { setEditingBio(false); setProfileBio(''); }} className="px-3 py-1 border text-sm rounded hover:bg-neutral-100">取消</button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2">
+                <p className="text-sm text-neutral-600 flex-1 min-w-0 whitespace-pre-wrap break-words">
+                  {user.bio || <span className="text-neutral-400">添加个人简介…</span>}
+                </p>
+                <button onClick={handleStartEditBio} className="shrink-0 text-neutral-400 hover:text-brand-500 mt-0.5">
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
       <div className="grid md:grid-cols-3 gap-12">
