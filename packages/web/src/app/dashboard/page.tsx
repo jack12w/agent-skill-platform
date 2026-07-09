@@ -74,6 +74,20 @@ export default function Dashboard() {
     }
   }, [user]);
 
+  // 简介/标签弹窗：打开时锁定 body 滚动，ESC 关闭
+  useEffect(() => {
+    const open = editingBio || editingTags;
+    document.body.style.overflow = open ? 'hidden' : '';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setEditingBio(false); setEditingTags(false); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [editingBio, editingTags]);
+
   const handleCreateTeam = async (e: React.FormEvent) => {
     e.preventDefault(); const name = newName.trim(); if (!name) return;
     const token = localStorage.getItem('token'); if (!token) return;
@@ -224,100 +238,36 @@ export default function Dashboard() {
             </div>
           )}
           <p className="text-neutral-500 text-sm mt-0.5">{user.email}</p>
-          {/* Bio 编辑区 */}
+          {/* Bio 展示区（点击铅笔打开弹窗编辑） */}
           <div className="mt-3">
-            {editingBio ? (
-              <div className="space-y-2">
-                <textarea
-                  value={profileBio}
-                  onChange={e => setProfileBio(e.target.value.slice(0, 40))}
-                  placeholder="用一句话介绍自己…"
-                  maxLength={40}
-                  rows={2}
-                  className="w-full px-3 py-2 border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-neutral-400">{profileBio.length}/40</span>
-                  <div className="flex gap-2">
-                    <button onClick={handleSaveProfile} disabled={savingProfile} className="px-3 py-1 bg-brand-600 text-white text-sm rounded hover:bg-brand-700 disabled:opacity-50">
-                      {savingProfile ? '...' : '保存'}
-                    </button>
-                    <button onClick={() => { setEditingBio(false); setProfileBio(''); }} className="px-3 py-1 border text-sm rounded hover:bg-neutral-100">取消</button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-start gap-2">
-                <p className="text-sm text-neutral-600 whitespace-pre-wrap break-words w-fit max-w-full">
-                  {user.bio || <span className="text-neutral-400">添加个人简介…</span>}
-                </p>
-                <button onClick={handleStartEditBio} className="shrink-0 text-neutral-400 hover:text-brand-500 mt-0.5">
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                </button>
-              </div>
-            )}
+            <div className="flex items-start gap-2">
+              <p className="text-sm text-neutral-600 whitespace-pre-wrap break-words w-fit max-w-full">
+                {user.bio || <span className="text-neutral-400">添加个人简介…</span>}
+              </p>
+              <button onClick={handleStartEditBio} className="shrink-0 text-neutral-400 hover:text-brand-500 mt-0.5">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+            </div>
           </div>
 
-          {/* 我的标签 编辑区 */}
+          {/* 我的标签 展示区（点击铅笔打开弹窗编辑） */}
           <div className="mt-3">
-            {editingTags ? (
-              <div className="space-y-3">
-                {tagGroupsLoading ? (
-                  <p className="text-xs text-neutral-400">加载标签中…</p>
-                ) : (
-                  Object.keys(TAG_GROUP_LABELS).map((key) => {
-                    const list = tagGroups[key] ?? [];
-                    if (list.length === 0) return null;
-                    return (
-                      <div key={key}>
-                        <p className="text-xs font-medium text-neutral-500 mb-1.5">{TAG_GROUP_LABELS[key]}</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {list.map((tag) => {
-                            const active = selectedTags.includes(tag);
-                            return (
-                              <button
-                                key={tag}
-                                type="button"
-                                onClick={() => toggleTag(tag)}
-                                className={`text-xs px-2.5 py-1 rounded-full border transition ${active ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-neutral-600 border-neutral-300 hover:border-brand-300'}`}
-                              >
-                                {tag}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-xs text-neutral-400">已选 {selectedTags.length} 个</span>
-                  <div className="flex gap-2">
-                    <button onClick={handleSaveTags} disabled={savingTags} className="px-3 py-1 bg-brand-600 text-white text-sm rounded hover:bg-brand-700 disabled:opacity-50">
-                      {savingTags ? '...' : '保存'}
-                    </button>
-                    <button onClick={() => { setEditingTags(false); setSelectedTags([]); }} className="px-3 py-1 border text-sm rounded hover:bg-neutral-100">取消</button>
+            <div className="flex items-start gap-2">
+              <div className="w-fit max-w-full">
+                {user?.tags && user.tags.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {user.tags.map((tag: string) => (
+                      <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 border border-brand-200">{tag}</span>
+                    ))}
                   </div>
-                </div>
+                ) : (
+                  <p className="text-sm text-neutral-400">添加我的标签…</p>
+                )}
               </div>
-            ) : (
-              <div className="flex items-start gap-2">
-                <div className="w-fit max-w-full">
-                  {user?.tags && user.tags.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {user.tags.map((tag: string) => (
-                        <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 border border-brand-200">{tag}</span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-neutral-400">添加我的标签…</p>
-                  )}
-                </div>
-                <button onClick={handleStartEditTags} className="shrink-0 text-neutral-400 hover:text-brand-500 mt-0.5">
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                </button>
-              </div>
-            )}
+              <button onClick={handleStartEditTags} className="shrink-0 text-neutral-400 hover:text-brand-500 mt-0.5">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -410,6 +360,79 @@ export default function Dashboard() {
               <button onClick={() => { dismissOnboarding(); router.push('/submit'); }} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-bold hover:bg-brand-700">
                 {t('dashboard.onboardingStart')}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 简介编辑弹窗（居中） */}
+      {editingBio && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEditingBio(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <h3 className="text-lg font-bold mb-4 text-neutral-900">编辑个人简介</h3>
+              <textarea
+                value={profileBio}
+                onChange={e => setProfileBio(e.target.value.slice(0, 40))}
+                placeholder="用一句话介绍自己…"
+                maxLength={40}
+                rows={3}
+                autoFocus
+                className="w-full px-3 py-2 border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand-500"
+              />
+              <div className="flex items-center justify-between mt-2">
+                <span className="text-xs text-neutral-400">{profileBio.length}/40</span>
+              </div>
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button onClick={() => { setEditingBio(false); setProfileBio(''); }} className="flex-1 py-2.5 border border-neutral-300 rounded-lg text-sm font-medium text-neutral-600 hover:bg-neutral-50">取消</button>
+              <button onClick={handleSaveProfile} disabled={savingProfile} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-bold hover:bg-brand-700 disabled:opacity-50">{savingProfile ? '...' : '保存'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 标签编辑弹窗（居中） */}
+      {editingTags && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => { setEditingTags(false); setSelectedTags([]); }}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <h3 className="text-lg font-bold mb-4 text-neutral-900">编辑我的标签</h3>
+              {tagGroupsLoading ? (
+                <p className="text-sm text-neutral-400">加载标签中…</p>
+              ) : (
+                <div className="space-y-3">
+                  {Object.keys(TAG_GROUP_LABELS).map((key) => {
+                    const list = tagGroups[key] ?? [];
+                    if (list.length === 0) return null;
+                    return (
+                      <div key={key}>
+                        <p className="text-xs font-medium text-neutral-500 mb-1.5">{TAG_GROUP_LABELS[key]}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {list.map((tag) => {
+                            const active = selectedTags.includes(tag);
+                            return (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => toggleTag(tag)}
+                                className={`text-xs px-2.5 py-1 rounded-full border transition ${active ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-neutral-600 border-neutral-300 hover:border-brand-300'}`}
+                              >
+                                {tag}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="text-xs text-neutral-400 mt-3">已选 {selectedTags.length} 个</p>
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button onClick={() => { setEditingTags(false); setSelectedTags([]); }} className="flex-1 py-2.5 border border-neutral-300 rounded-lg text-sm font-medium text-neutral-600 hover:bg-neutral-50">取消</button>
+              <button onClick={handleSaveTags} disabled={savingTags} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-bold hover:bg-brand-700 disabled:opacity-50">{savingTags ? '...' : '保存'}</button>
             </div>
           </div>
         </div>
