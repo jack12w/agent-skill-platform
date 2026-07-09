@@ -21,7 +21,7 @@ export class UsersService {
     // Find user by name (username is the name field)
     const user = await this.userRepository.findOne({
       where: { name: username },
-      select: ['id', 'name', 'avatar_url', 'bio', 'created_at'],
+      select: ['id', 'name', 'avatar_url', 'bio', 'tags', 'created_at'],
     });
 
     if (!user) throw new NotFoundException('User not found');

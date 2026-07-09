@@ -11,6 +11,7 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isOwner, setIsOwner] = useState(false);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
 
   const load = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -32,7 +33,7 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
     }
   };
 
-  useEffect(() => { load(); }, [params.id]);
+  useEffect(() => { setActiveTag(null); load(); }, [params.id]);
 
   // 页面获得焦点时刷新数据（从技能编辑页返回后）
   useEffect(() => {
@@ -65,6 +66,9 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
 
   const skills = team.skills ?? [];
   const members = team.members ?? [];
+  const displayedSkills = activeTag
+    ? skills.filter((s: any) => (s.tags ?? []).includes(activeTag))
+    : skills;
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
@@ -130,17 +134,37 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
 
       {/* Skills section */}
       <section>
-        <h2 className="text-xl font-bold mb-4 text-neutral-900">{t('team.teamSkills')} ({skills.length})</h2>
-        {skills.length === 0 ? (
+        {/* Tag TAB filter */}
+        {team.tags && team.tags.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <button
+              onClick={() => setActiveTag(null)}
+              className={`text-xs px-3 py-1.5 rounded-full border transition ${activeTag === null ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-neutral-600 border-neutral-300 hover:border-brand-300'}`}
+            >
+              全部
+            </button>
+            {team.tags.map((tag: string) => (
+              <button
+                key={tag}
+                onClick={() => setActiveTag(tag)}
+                className={`text-xs px-3 py-1.5 rounded-full border transition ${activeTag === tag ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-neutral-600 border-neutral-300 hover:border-brand-300'}`}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
+        <h2 className="text-xl font-bold mb-4 text-neutral-900">{t('team.teamSkills')} ({activeTag ? displayedSkills.length : skills.length})</h2>
+        {displayedSkills.length === 0 ? (
           <div className="p-8 border border-dashed rounded-xl text-center text-neutral-400">
             <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
             </svg>
-            <p>{t('team.noSkills')}</p>
+            <p>{activeTag ? '该标签下暂无技能' : t('team.noSkills')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {skills.map((s: any) => (
+            {displayedSkills.map((s: any) => (
               <Link
                 key={s.id}
                 href={`/skills/${s.slug || s.id}`}

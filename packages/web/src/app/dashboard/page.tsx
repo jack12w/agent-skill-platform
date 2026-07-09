@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import useTranslation from '../../hooks/useTranslation';
+import { fetchTagGroups } from '../../lib/tag-groups';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -22,6 +23,11 @@ export default function Dashboard() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [editingBio, setEditingBio] = useState(false);
   const [profileBio, setProfileBio] = useState('');
+  const [editingTags, setEditingTags] = useState(false);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [tagGroups, setTagGroups] = useState<Record<string, string[]>>({});
+  const [tagGroupsLoading, setTagGroupsLoading] = useState(false);
+  const [savingTags, setSavingTags] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
@@ -104,6 +110,47 @@ export default function Dashboard() {
   const handleStartEditBio = () => {
     setProfileBio(user?.bio || '');
     setEditingBio(true);
+  };
+
+  // 标签分组中文名（仅展示 scene/role/category，过滤系统自动打的 source 组）
+  const TAG_GROUP_LABELS: Record<string, string> = { scene: '场景', role: '角色', category: '分类' };
+
+  const handleStartEditTags = async () => {
+    setTagGroupsLoading(true);
+    try {
+      const groups = await fetchTagGroups();
+      setTagGroups(groups);
+    } catch {
+      setTagGroups({});
+    } finally {
+      setTagGroupsLoading(false);
+    }
+    setSelectedTags(user?.tags ?? []);
+    setEditingTags(true);
+  };
+
+  const toggleTag = (tag: string) => {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  };
+
+  const handleSaveTags = async () => {
+    const token = localStorage.getItem('token'); if (!token) return;
+    setSavingTags(true);
+    try {
+      const res = await fetch('/api/auth/me', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ tags: selectedTags }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      const updated = await res.json();
+      setUser(updated);
+      localStorage.setItem('user', JSON.stringify(updated));
+      window.dispatchEvent(new Event('user-updated'));
+      setEditingTags(false);
+    } catch { alert('保存失败'); }
+    finally { setSavingTags(false); }
   };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -189,6 +236,68 @@ export default function Dashboard() {
                   {user.bio || <span className="text-neutral-400">添加个人简介…</span>}
                 </p>
                 <button onClick={handleStartEditBio} className="shrink-0 text-neutral-400 hover:text-brand-500 mt-0.5">
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 我的标签 编辑区 */}
+          <div className="mt-3">
+            {editingTags ? (
+              <div className="space-y-3">
+                {tagGroupsLoading ? (
+                  <p className="text-xs text-neutral-400">加载标签中…</p>
+                ) : (
+                  Object.keys(TAG_GROUP_LABELS).map((key) => {
+                    const list = tagGroups[key] ?? [];
+                    if (list.length === 0) return null;
+                    return (
+                      <div key={key}>
+                        <p className="text-xs font-medium text-neutral-500 mb-1.5">{TAG_GROUP_LABELS[key]}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {list.map((tag) => {
+                            const active = selectedTags.includes(tag);
+                            return (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => toggleTag(tag)}
+                                className={`text-xs px-2.5 py-1 rounded-full border transition ${active ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-neutral-600 border-neutral-300 hover:border-brand-300'}`}
+                              >
+                                {tag}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-xs text-neutral-400">已选 {selectedTags.length} 个</span>
+                  <div className="flex gap-2">
+                    <button onClick={handleSaveTags} disabled={savingTags} className="px-3 py-1 bg-brand-600 text-white text-sm rounded hover:bg-brand-700 disabled:opacity-50">
+                      {savingTags ? '...' : '保存'}
+                    </button>
+                    <button onClick={() => { setEditingTags(false); setSelectedTags([]); }} className="px-3 py-1 border text-sm rounded hover:bg-neutral-100">取消</button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  {user?.tags && user.tags.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {user.tags.map((tag: string) => (
+                        <span key={tag} className="text-xs px-2 py-0.5 rounded-full bg-brand-50 text-brand-700 border border-brand-200">{tag}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-neutral-400">添加我的标签…</p>
+                  )}
+                </div>
+                <button onClick={handleStartEditTags} className="shrink-0 text-neutral-400 hover:text-brand-500 mt-0.5">
                   <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
               </div>

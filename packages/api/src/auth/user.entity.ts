@@ -23,6 +23,9 @@ export class User {
   @Column({ nullable: true })
   bio: string;
 
+  @Column('text', { array: true, nullable: true })
+  tags: string[];
+
   @Column({ nullable: true, select: false })
   wechat_openid: string;
 

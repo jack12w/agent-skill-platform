@@ -62,14 +62,15 @@ export class AuthService {
     throw new UnauthorizedException();
   }
 
-  async updateProfile(userId: string, data: { name?: string; avatar_url?: string; bio?: string }) {
+  async updateProfile(userId: string, data: { name?: string; avatar_url?: string; bio?: string; tags?: string[] }) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
     if (data.name !== undefined) user.name = data.name;
     if (data.avatar_url !== undefined) user.avatar_url = data.avatar_url;
     if (data.bio !== undefined) user.bio = data.bio;
+    if (data.tags !== undefined) user.tags = data.tags;
     await this.userRepository.save(user);
-    return { id: user.id, email: user.email, name: user.name, avatar_url: user.avatar_url, bio: user.bio };
+    return { id: user.id, email: user.email, name: user.name, avatar_url: user.avatar_url, bio: user.bio, tags: user.tags };
   }
 
   async updateAvatar(userId: string, fileBuffer: Buffer, mimetype: string) {

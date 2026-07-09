@@ -114,7 +114,7 @@ export class TeamsService {
     };
   }
 
-  async updateTeam(teamId: string, data: { name?: string; description?: string }, userId: string) {
+  async updateTeam(teamId: string, data: { name?: string; description?: string; tags?: string[] }, userId: string) {
     const team = await this.teamRepository.findOne({ where: { id: teamId } });
     if (!team) throw new NotFoundException('Team not found');
     if (team.owner_user_id !== userId) {
@@ -124,6 +124,7 @@ export class TeamsService {
     const patch: Partial<Team> = {};
     if (typeof data.name === 'string' && data.name.trim()) patch.name = data.name.trim();
     if (typeof data.description === 'string') patch.description = data.description.trim() || null;
+    if (Array.isArray(data.tags)) patch.tags = data.tags;
 
     if (Object.keys(patch).length === 0) {
       throw new BadRequestException('No editable fields provided');

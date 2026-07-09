@@ -19,6 +19,7 @@ export default function UserProfile({ params }: { params: { username: string } }
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const hasMore = skills.length < total && total > 0;
@@ -63,7 +64,7 @@ export default function UserProfile({ params }: { params: { username: string } }
   }, [loadingMore, hasMore, page, load]);
 
   // Initial load
-  useEffect(() => { setLoading(true); load(); }, [load]);
+  useEffect(() => { setLoading(true); setActiveTag(null); load(); }, [load]);
 
   // IntersectionObserver for infinite scroll
   useEffect(() => {
@@ -102,6 +103,10 @@ export default function UserProfile({ params }: { params: { username: string } }
   }
 
   if (!user) return null;
+
+  const displayedSkills = activeTag
+    ? skills.filter((s: any) => (s.tags ?? []).includes(activeTag))
+    : skills;
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
@@ -150,21 +155,42 @@ export default function UserProfile({ params }: { params: { username: string } }
         </div>
       </div>
 
+      {/* Tag TAB filter */}
+      {user.tags && user.tags.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-6">
+          <button
+            onClick={() => setActiveTag(null)}
+            className={`text-xs px-3 py-1.5 rounded-full border transition ${activeTag === null ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-neutral-600 border-neutral-300 hover:border-brand-300'}`}
+          >
+            全部
+          </button>
+          {user.tags.map((tag: string) => (
+            <button
+              key={tag}
+              onClick={() => setActiveTag(tag)}
+              className={`text-xs px-3 py-1.5 rounded-full border transition ${activeTag === tag ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-neutral-600 border-neutral-300 hover:border-brand-300'}`}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Skills section */}
       <section>
         <h2 className="text-xl font-bold mb-4 text-neutral-900">
-          {t('dashboard.mySkills')} ({total})
+          {t('dashboard.mySkills')} ({activeTag ? displayedSkills.length : total})
         </h2>
-        {skills.length === 0 ? (
+        {displayedSkills.length === 0 ? (
           <div className="p-8 border border-dashed rounded-xl text-center text-neutral-400">
             <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
             </svg>
-            <p>{t('dashboard.noSkills')}</p>
+            <p>{activeTag ? '该标签下暂无技能' : t('dashboard.noSkills')}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {skills.map((s: any) => (
+            {displayedSkills.map((s: any) => (
               <Link
                 key={s.id}
                 href={`/skills/${s.slug || s.id}`}

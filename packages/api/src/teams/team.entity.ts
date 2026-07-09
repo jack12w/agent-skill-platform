@@ -12,6 +12,9 @@ export class Team {
   @Column({ nullable: true })
   description: string;
 
+  @Column('text', { array: true, nullable: true })
+  tags: string[];
+
   @Column()
   owner_user_id: string;
 

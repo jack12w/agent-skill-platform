@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     name TEXT NOT NULL,
     avatar_url TEXT,
     bio TEXT,
+    tags TEXT[],
     wechat_openid TEXT,
     wechat_unionid TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -19,6 +20,7 @@ CREATE TABLE IF NOT EXISTS teams (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     description TEXT,
+    tags TEXT[],
     owner_user_id UUID NOT NULL REFERENCES users(id),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
