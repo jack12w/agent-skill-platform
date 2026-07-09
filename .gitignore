@@ -9,6 +9,9 @@ dist/
 *.tsbuildinfo
 *.bak
 .DS_Store
+# local preview artifacts
+badge-preview.html
+badge-color-preview.html
 coverage/
 .workbuddy/
 .codebuddy/

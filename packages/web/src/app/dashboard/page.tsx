@@ -248,7 +248,7 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="flex items-start gap-2">
-                <p className="text-sm text-neutral-600 flex-1 min-w-0 whitespace-pre-wrap break-words">
+                <p className="text-sm text-neutral-600 whitespace-pre-wrap break-words w-fit max-w-full">
                   {user.bio || <span className="text-neutral-400">添加个人简介…</span>}
                 </p>
                 <button onClick={handleStartEditBio} className="shrink-0 text-neutral-400 hover:text-brand-500 mt-0.5">
@@ -302,7 +302,7 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="flex items-start gap-2">
-                <div className="flex-1 min-w-0">
+                <div className="w-fit max-w-full">
                   {user?.tags && user.tags.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
                       {user.tags.map((tag: string) => (
