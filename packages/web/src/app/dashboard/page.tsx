@@ -43,7 +43,20 @@ export default function Dashboard() {
   useEffect(() => {
     const userData = localStorage.getItem('user'); const token = localStorage.getItem('token');
     if (userData && userData !== 'undefined') { try { setUser(JSON.parse(userData)); } catch {} }
-    if (token) { loadTeams(token); reloadSkills(); }
+    if (token) {
+      loadTeams(token); reloadSkills();
+      // 拉取最新个人资料，避免 localStorage 与服务器不一致（如换头像后 bio/tags 丢失）
+      fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data) {
+            const fresh = { ...(userData ? JSON.parse(userData) : {}), ...data };
+            setUser(fresh);
+            localStorage.setItem('user', JSON.stringify(fresh));
+          }
+        })
+        .catch(() => {});
+    }
     setLoading(false);
   }, []);
 
@@ -164,8 +177,11 @@ export default function Dashboard() {
       });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.message || 'Failed'); }
       const updated = await res.json();
-      setUser(updated);
-      localStorage.setItem('user', JSON.stringify(updated));
+      setUser((prev: any) => {
+        const merged = { ...prev, ...updated };
+        localStorage.setItem('user', JSON.stringify(merged));
+        return merged;
+      });
       window.dispatchEvent(new Event('user-updated'));
     } catch (e: any) { alert(e.message || '头像上传失败'); }
     finally { setUploadingAvatar(false); }

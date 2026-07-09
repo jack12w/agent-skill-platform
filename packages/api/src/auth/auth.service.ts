@@ -73,6 +73,21 @@ export class AuthService {
     return { id: user.id, email: user.email, name: user.name, avatar_url: user.avatar_url, bio: user.bio, tags: user.tags };
   }
 
+  // 返回当前登录用户的完整资料（含 bio / tags），供前端挂载时同步 localStorage
+  async getMe(userId: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      avatar_url: user.avatar_url,
+      bio: user.bio,
+      tags: user.tags,
+      role: user.role,
+    };
+  }
+
   async updateAvatar(userId: string, fileBuffer: Buffer, mimetype: string) {
     const ext = mimetype === 'image/png' ? 'png' : mimetype === 'image/jpeg' ? 'jpg' : 'png';
     const objectKey = `avatars/${userId}.${ext}`;

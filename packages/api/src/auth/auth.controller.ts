@@ -25,6 +25,12 @@ export class AuthController {
   }
 
   @UseGuards(AuthGuard)
+  @Get('me')
+  getMe(@Request() req: any) {
+    return this.authService.getMe(req.user.sub);
+  }
+
+  @UseGuards(AuthGuard)
   @Post('me/avatar')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
   async uploadAvatar(@Request() req: any, @UploadedFile() file?: Express.Multer.File) {
