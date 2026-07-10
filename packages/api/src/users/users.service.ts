@@ -43,8 +43,8 @@ export class UsersService {
         .leftJoin(
           'team_members',
           'tm',
-          'tm.team_id = skill.owner_team_id AND tm.user_id = :viewerId',
-          { viewerId: currentUserId || '' },
+      'tm.team_id = skill.owner_team_id AND tm.user_id = :viewerId',
+      { viewerId: currentUserId || null },
         )
         .where('skill.owner_user_id = :userId', { userId: user.id })
         .andWhere('skill.status = :status', { status: SkillStatus.PUBLISHED });
@@ -90,7 +90,7 @@ export class UsersService {
         'team_members',
         'tm',
         'tm.team_id = skill.owner_team_id AND tm.user_id = :viewerId',
-        { viewerId: currentUserId || '' },
+        { viewerId: currentUserId || null },
       )
       .where('skill.owner_user_id = :ownerId', { ownerId: user.id })
       .andWhere('skill.status = :status', { status: SkillStatus.PUBLISHED })
