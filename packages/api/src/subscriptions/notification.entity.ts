@@ -28,6 +28,10 @@ export class Notification {
   @Column({ nullable: true })
   link: string;
 
+  /** 扩展载荷：订阅通知存储 skills 列表等结构化数据 */
+  @Column({ type: 'jsonb', nullable: true })
+  payload: Record<string, any>;
+
   @Column({ default: false })
   read: boolean;
 

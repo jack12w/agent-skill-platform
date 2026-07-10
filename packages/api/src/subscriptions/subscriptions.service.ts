@@ -144,17 +144,19 @@ export class SubscriptionsService {
         if (team && team.owner_user_id === subscriberId) continue;
       }
 
-      // 站内通知 link：单条技能 → 技能详情页；多条 → 主页
-      const inAppLink = allEvents.length === 1
-        ? `/skills/${allEvents[0].skillSlug}`
-        : homePath;
-      // 邮件用主页（取消订阅入口）
-      const absLink = base ? `${base}${homePath}` : homePath;
-
-      const skillLines = allEvents.map((e) => `• ${e.skillName}`).join('\n');
       const count = allEvents.length;
-      const title = `你订阅的 ${targetName} 有 ${count} 个新内容`;
-      const body = `${targetName} 发布了 ${count} 个新内容：\n${skillLines}`;
+      const title = `${targetName} 发布了新内容`;
+      const skillLines = allEvents.map((e) => `• ${e.skillName}（${e.subtype === 'new_version' ? '新版本' : '新技能'}）`).join('\n');
+      const body = `为你推送了 ${count} 个新内容：\n${skillLines}`;
+
+      // 结构化技能列表（站内通知用）
+      const skills = allEvents.map((e) => ({
+        id: e.skillId,
+        name: e.skillName,
+        slug: e.skillSlug || e.skillId,
+        subtype: e.subtype,
+        link: `/skills/${e.skillSlug || e.skillId}`,
+      }));
 
       // 站内通知（1 条）
       await this.notiRepo.save({
@@ -163,7 +165,8 @@ export class SubscriptionsService {
         subtype: allEvents.map((e) => e.subtype).join(','),
         title,
         body,
-        link: inAppLink,
+        link: homePath,
+        payload: { targetName, targetType: first.targetType, targetId: first.targetId, homePath, skills },
         read: false,
       });
 
@@ -172,7 +175,7 @@ export class SubscriptionsService {
         const sent = await this.emailService.sendMail({
           to: subUser.email,
           subject: title,
-          html: this.buildEmailHtml(targetName, allEvents, absLink),
+          html: this.buildEmailHtml(targetName, allEvents, homePath, base),
         });
         console.log(`[subscriptions] 邮件发送给 ${subUser.email}: ${sent ? '成功' : '失败'}`);
       }
@@ -193,17 +196,36 @@ export class SubscriptionsService {
     return { name, path: `/teams/${targetId}` };
   }
 
-  private buildEmailHtml(targetName: string, events: SubscriptionEvent[], link: string): string {
+  private buildEmailHtml(
+    targetName: string,
+    events: SubscriptionEvent[],
+    homePath: string,
+    base: string,
+  ): string {
+    const absoluteSkillUrl = (slug: string, id: string) => `${base}${slug ? `/skills/${slug}` : `/skills/${id}`}`;
     const skillList = events
-      .map((e) => `<li>${this.escapeHtml(e.skillName)}（${e.subtype === 'new_version' ? '新版本' : '新技能'}）</li>`)
+      .map((e) => {
+        const skillUrl = absoluteSkillUrl(e.skillSlug, e.skillId);
+        const tag = e.subtype === 'new_version' ? '新版本' : '新技能';
+        const tagColor = e.subtype === 'new_version' ? '#3b82f6' : '#22c55e';
+        return `
+          <li style="margin-bottom:12px;line-height:1.6;">
+            <a href="${skillUrl}" style="color:#7C3AED;text-decoration:none;font-weight:500;">${this.escapeHtml(e.skillName)}</a>
+            <span style="display:inline-block;margin-left:6px;padding:2px 8px;background:${tagColor}15;color:${tagColor};font-size:12px;border-radius:999px;">${tag}</span>
+            <a href="${skillUrl}" style="display:inline-block;margin-left:8px;padding:4px 12px;background:#7C3AED;color:#fff;text-decoration:none;border-radius:6px;font-size:12px;">查看</a>
+          </li>`;
+      })
       .join('');
+
+    const homeUrl = base ? `${base}${homePath}` : homePath;
     return `
       <div style="font-family:-apple-system,Segoe UI,Roboto,'PingFang SC',sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#1f2937;">
-        <h2 style="margin:0 0 12px;font-size:18px;">你订阅的 ${this.escapeHtml(targetName)} 有更新</h2>
-        <p style="margin:0 0 16px;color:#4b5563;line-height:1.6;">以下新内容已发布：</p>
-        <ul style="margin:0 0 20px;padding-left:20px;color:#374151;line-height:1.8;">${skillList}</ul>
-        <a href="${link}" style="display:inline-block;background:#7C3AED;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:14px;">查看 / 取消订阅</a>
-        <p style="margin:20px 0 0;color:#9ca3af;font-size:12px;">如果你不想再收到该主体的更新，可点击上方按钮进入主页取消订阅。</p>
+        <h2 style="margin:0 0 8px;font-size:20px;font-weight:600;">${this.escapeHtml(targetName)} 发布了新内容</h2>
+        <p style="margin:0 0 16px;color:#4b5563;line-height:1.6;">为你推送了 ${events.length} 个新内容：</p>
+        <ul style="margin:0 0 20px;padding-left:0;list-style:none;color:#374151;">${skillList}</ul>
+        <p style="margin:20px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">
+          你收到此邮件是因为订阅了「${this.escapeHtml(targetName)}」。可在其<a href="${homeUrl}" style="color:#7C3AED;text-decoration:none;">主页</a>随时取消订阅。
+        </p>
       </div>
     `;
   }

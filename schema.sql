@@ -219,6 +219,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     title TEXT NOT NULL,
     body TEXT NOT NULL,
     link TEXT,
+    payload JSONB,
     read BOOLEAN DEFAULT false,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
