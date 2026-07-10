@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, ILike, In, Raw } from 'typeorm';
+import { Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { Skill } from './skill.entity';
 import { SkillVersion } from './skill-version.entity';
@@ -19,6 +19,22 @@ function sanitizeAvatarUrl(url: string | null | undefined): string | null {
   if (url.startsWith('data:')) return null;   // base64 → strip
   return url;
 }
+
+/**
+ * 团队「对外展示」可见性条件（公共列表用）：
+ * 技能满足以下任一条件才对当前访客可见：
+ *   - 不属于任何团队（个人技能）
+ *   - 所属团队已对外展示（is_public = true）
+ *   - 当前访客是该团队成员（含 owner）
+ * :viewer 传当前用户 id（未登录传 null，则第三个 OR 不命中）。
+ */
+const TEAM_VISIBLE_SQL = `
+  (
+    skill.owner_team_id IS NULL
+    OR EXISTS (SELECT 1 FROM teams t WHERE t.id = skill.owner_team_id AND t.is_public = true)
+    OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id = skill.owner_team_id AND tm.user_id = :viewer)
+  )
+`;
 
 @Injectable()
 export class SkillsService {
@@ -100,6 +116,11 @@ export class SkillsService {
       else if (tag) qb.andWhere('EXISTS (SELECT 1 FROM UNNEST(skill.tags) t WHERE LOWER(t) = LOWER(:tag))', { tag });
       if (owner_id) qb.andWhere('skill.owner_user_id = :owner_id', { owner_id });
 
+      // 团队可见性：公开榜单隐藏私有团队技能（本人仪表盘 owner==='me' 除外）
+      if (owner !== 'me') {
+        qb.andWhere(TEAM_VISIBLE_SQL, { viewer: userId ?? null });
+      }
+
       const rows: any[] = await qb.getRawMany();
 
       // getRawMany() returns keys prefixed with entity alias (e.g. skill_id, skill_name).
@@ -144,32 +165,32 @@ export class SkillsService {
     }
 
     // Default: sort by created_at (newest first)
-    const baseWhere: any = {};
+    const qb = this.skillRepository
+      .createQueryBuilder('skill')
+      .leftJoinAndSelect('skill.stats', 'stats')
+      .leftJoinAndSelect('skill.latest_version', 'latest_version')
+      .leftJoinAndSelect('skill.published_version', 'published_version')
+      .leftJoin('skill.owner_user', 'owner_user')
+      .addSelect(['owner_user.id', 'owner_user.name', 'owner_user.avatar_url'])
+      .orderBy('skill.created_at', 'DESC')
+      .take(size)
+      .skip((page - 1) * size);
+
+    if (owner !== 'me') qb.andWhere('skill.status = :status', { status: SkillStatus.PUBLISHED });
+    if (owner_id) qb.andWhere('skill.owner_user_id = :owner_id', { owner_id });
     if (tagList.length > 0) {
-      baseWhere.tags = Raw(tags => `EXISTS (SELECT 1 FROM UNNEST(${tags}) st JOIN UNNEST(ARRAY[:...tagList]) qt ON LOWER(st) = LOWER(qt))`, { tagList });
+      qb.andWhere('EXISTS (SELECT 1 FROM UNNEST(skill.tags) st JOIN UNNEST(ARRAY[:...tagList]) qt ON LOWER(st) = LOWER(qt))', { tagList });
     } else if (tag) {
-      baseWhere.tags = Raw(tags => `EXISTS (SELECT 1 FROM UNNEST(${tags}) t WHERE LOWER(t) = LOWER(:tag))`, { tag });
+      qb.andWhere('EXISTS (SELECT 1 FROM UNNEST(skill.tags) t WHERE LOWER(t) = LOWER(:tag))', { tag });
     }
-    if (owner !== 'me') baseWhere.status = SkillStatus.PUBLISHED;
-    if (owner_id) baseWhere.owner_user_id = owner_id;
+    if (q) qb.andWhere('(skill.name ILIKE :q OR skill.short_summary ILIKE :q)', { q: `%${q}%` });
 
-    const where = q
-      ? [
-          { ...baseWhere, name: ILike(`%${q}%`) },
-          { ...baseWhere, short_summary: ILike(`%${q}%`) },
-        ]
-      : baseWhere;
+    // 团队可见性：公开列表隐藏私有团队技能（本人仪表盘 owner==='me' 除外）
+    if (owner !== 'me') {
+      qb.andWhere(TEAM_VISIBLE_SQL, { viewer: userId ?? null });
+    }
 
-    const skills = await this.skillRepository.find({
-      where,
-      relations: ['owner_user', 'stats', 'latest_version', 'published_version'],
-      select: {
-        owner_user: { id: true, name: true, avatar_url: true },
-      },
-      order: { created_at: 'DESC' as const },
-      take: size,
-      skip: (page - 1) * size,
-    });
+    const skills = await qb.getMany();
 
     const compute = (likes: number, downloads: number) => 5 + likes * 0.3 + downloads * 0.3;
     for (const s of skills) {

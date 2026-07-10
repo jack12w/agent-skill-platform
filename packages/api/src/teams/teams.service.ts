@@ -63,7 +63,7 @@ export class TeamsService {
 
     const skills = await this.skillRepository.find({
       where: { owner_team_id: teamId, status: SkillStatus.PUBLISHED },
-      relations: ['stats', 'latest_version', 'published_version'],
+      relations: ['stats', 'latest_version', 'published_version', 'owner_user'],
       order: { created_at: 'DESC' },
     });
 
@@ -101,6 +101,9 @@ export class TeamsService {
       updated_at: s.updated_at,
       published_version_id: s.published_version_id,
       owner_user_id: s.owner_user_id,
+      owner_user: s.owner_user
+        ? { id: s.owner_user.id, name: s.owner_user.name, avatar_url: s.owner_user.avatar_url }
+        : null,
       latest_version: s.latest_version ? { version: s.latest_version.version } : null,
       stats: s.stats,
     }));

@@ -31,18 +31,36 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   const [versions, setVersions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [forbidden, setForbidden] = useState(false);
   const [acting, setActing] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [commentRefresh, setCommentRefresh] = useState(0);
   const [suggestedSkills, setSuggestedSkills] = useState<any[]>([]);
 
   useEffect(() => { setCurrentUserId(decodeUserId()); }, []);
+
+  // 非团队成员访问私有团队技能：提示后自动跳转到技能广场
+  useEffect(() => {
+    if (forbidden) {
+      const timer = setTimeout(() => router.push('/skills'), 1800);
+      return () => clearTimeout(timer);
+    }
+  }, [forbidden, router]);
   const loadVersions = async (skillId: string) => { const res = await fetch(`/api/skills/${skillId}/versions`, { headers: getAuthHeaders() }); if (res.ok) setVersions(await res.json()); };
   const reload = async () => { const res = await fetch(`/api/skills/${params.slug}`, { headers: getAuthHeaders() }); if (res.ok) { const data = await res.json(); setSkill(data); await loadVersions(data.id); } };
 
   useEffect(() => {
     (async () => {
-      try { const res = await fetch(`/api/skills/${params.slug}`, { headers: getAuthHeaders() }); if (!res.ok) throw new Error(`HTTP ${res.status}`); const data = await res.json(); setSkill(data); await loadVersions(data.id); }
+      try {
+        const res = await fetch(`/api/skills/${params.slug}`, { headers: getAuthHeaders() });
+        if (!res.ok) {
+          if (res.status === 403) { setForbidden(true); setLoading(false); return; }
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        setSkill(data);
+        await loadVersions(data.id);
+      }
       catch (e: any) { setError(e.message || 'Failed to load skill'); }
       finally { setLoading(false); }
     })();
@@ -116,6 +134,16 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   };
 
   if (loading) return <div className="max-w-5xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center text-neutral-500">{t('skills.loading')}</div>;
+  if (forbidden) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center">
+        <div className="text-5xl mb-4">🔒</div>
+        <h1 className="text-2xl font-bold mb-2">非团队成员无法访问</h1>
+        <p className="text-neutral-500 mb-6">该技能所属团队未对外展示，仅团队成员可见。正在跳转到技能广场…</p>
+        <Link href="/skills" className="inline-block px-6 py-3 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700">前往技能广场</Link>
+      </div>
+    );
+  }
   if (error || !skill) return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center">
       <div className="text-6xl mb-4">😕</div>

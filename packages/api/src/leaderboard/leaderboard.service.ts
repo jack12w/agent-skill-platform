@@ -25,6 +25,13 @@ export class LeaderboardService {
     const isWeekly = period === LeaderboardPeriod.WEEKLY;
     const isTeam = type === LeaderboardType.TEAM;
 
+    // 团队「对外展示」可见性：
+    // - 团队榜：仅统计已对外展示的团队（私有团队不进公共榜单）
+    // - 个人榜：排除挂在私有团队下的技能贡献（私有团队技能不公开）
+    const teamFilter = isTeam
+      ? "AND s.owner_team_id IN (SELECT id FROM teams WHERE is_public = true)"
+      : "AND (s.owner_team_id IS NULL OR s.owner_team_id IN (SELECT id FROM teams WHERE is_public = true))";
+
     // Build raw SQL — typeorm QueryBuilder is awkward across two grouping dimensions
     const subjectIdCol = isTeam ? 's.owner_team_id' : 's.owner_user_id';
     const subjectTable = isTeam ? 'teams' : 'users';
@@ -63,7 +70,7 @@ export class LeaderboardService {
         FROM skills s
         LEFT JOIN event_agg ea     ON ea.skill_id = s.id
         LEFT JOIN ${subjectTable} subj ON subj.id = ${subjectIdCol}
-        WHERE ${subjectIdCol} IS NOT NULL AND s.status = 'published'
+        WHERE ${subjectIdCol} IS NOT NULL AND s.status = 'published' ${teamFilter}
         GROUP BY ${subjectIdCol}, subj.name
         ORDER BY score DESC
         LIMIT 50
@@ -84,7 +91,7 @@ export class LeaderboardService {
         FROM skills s
         LEFT JOIN skill_stats st   ON st.skill_id = s.id
         LEFT JOIN ${subjectTable} subj ON subj.id = ${subjectIdCol}
-        WHERE ${subjectIdCol} IS NOT NULL AND s.status = 'published'
+        WHERE ${subjectIdCol} IS NOT NULL AND s.status = 'published' ${teamFilter}
         GROUP BY ${subjectIdCol}, subj.name
         ORDER BY score DESC
         LIMIT 50

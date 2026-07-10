@@ -1,15 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import useTranslation from '../../../hooks/useTranslation';
 import SkillUpdateBadge from '../../components/SkillUpdateBadge';
 
 export default function TeamShowcase({ params }: { params: { id: string } }) {
   const { t } = useTranslation();
+  const router = useRouter();
   const [team, setTeam] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [forbidden, setForbidden] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
 
@@ -28,6 +31,11 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
       if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch(`/api/teams/${params.id}`, { headers });
       if (!res.ok) {
+        if (res.status === 403) {
+          setForbidden(true);
+          setLoading(false);
+          return;
+        }
         const body = await res.json().catch(() => ({}));
         throw new Error(body.message || `HTTP ${res.status}`);
       }
@@ -64,6 +72,14 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
 
   useEffect(() => { setActiveTag(null); load(); }, [params.id]);
 
+  // 非团队成员访问私有团队：提示后自动跳转到技能广场
+  useEffect(() => {
+    if (forbidden) {
+      const timer = setTimeout(() => router.push('/skills'), 1800);
+      return () => clearTimeout(timer);
+    }
+  }, [forbidden, router]);
+
   // 页面获得焦点时刷新数据（从技能编辑页返回后）
   useEffect(() => {
     const handleFocus = () => { load(); };
@@ -96,6 +112,17 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
     return (
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 text-center text-neutral-500">
         {t('skills.loading')}
+      </div>
+    );
+  }
+
+  if (forbidden) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center">
+        <div className="text-5xl mb-4">🔒</div>
+        <h1 className="text-2xl font-bold mb-2">非团队成员无法访问</h1>
+        <p className="text-neutral-500 mb-6">该团队未对外展示，仅团队成员可见。正在跳转到技能广场…</p>
+        <Link href="/skills" className="inline-block px-6 py-3 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700">前往技能广场</Link>
       </div>
     );
   }
@@ -282,7 +309,15 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
                   );
                 })()}
                 <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-neutral-100 text-xs text-neutral-400">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {s.owner_user?.name && (
+                      <span className="flex items-center gap-1 min-w-0">
+                        <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                        </svg>
+                        <span className="max-w-[80px] truncate" title={s.owner_user.name}>{s.owner_user.name}</span>
+                      </span>
+                    )}
                   <span className="flex items-center gap-1">
                     <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="#F43F5E">
                       <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
