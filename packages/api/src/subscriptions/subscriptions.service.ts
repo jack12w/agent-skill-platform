@@ -218,6 +218,7 @@ export class SubscriptionsService {
       .join('');
 
     const homeUrl = base ? `${base}${homePath}` : homePath;
+    const host = this.getHost(base);
     return `
       <div style="font-family:-apple-system,Segoe UI,Roboto,'PingFang SC',sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#1f2937;">
         <h2 style="margin:0 0 8px;font-size:20px;font-weight:600;">${this.escapeHtml(targetName)} 发布了新内容</h2>
@@ -226,8 +227,21 @@ export class SubscriptionsService {
         <p style="margin:20px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">
           你收到此邮件是因为订阅了「${this.escapeHtml(targetName)}」。可在其<a href="${homeUrl}" style="color:#7C3AED;text-decoration:none;">主页</a>随时取消订阅。
         </p>
+        <hr style="border:none;border-top:1px solid #f1f1f4;margin:20px 0 12px;" />
+        <p style="margin:0;color:#c4c4cc;font-size:11px;text-align:center;line-height:1.5;">
+          © SkillDepot · <a href="${base || 'https://' + host}" style="color:#c4c4cc;text-decoration:none;">${host}</a>
+        </p>
       </div>
     `;
+  }
+
+  private getHost(base?: string): string {
+    if (!base) return 'skills.rehomi.com';
+    try {
+      return new URL(base).host || 'skills.rehomi.com';
+    } catch {
+      return 'skills.rehomi.com';
+    }
   }
 
   private escapeHtml(s: string): string {
