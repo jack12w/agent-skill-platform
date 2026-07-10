@@ -17,7 +17,7 @@ export class UsersService {
     private skillsService: SkillsService,
   ) {}
 
-  async findOne(username: string) {
+  async findOne(username: string, currentUserId?: string) {
     // Find user by name (username is the name field)
     const user = await this.userRepository.findOne({
       where: { name: username },
@@ -26,19 +26,37 @@ export class UsersService {
 
     if (!user) throw new NotFoundException('User not found');
 
-    // Count user's published skills
-    const skillCount = await this.skillRepository.count({
-      where: { owner_user_id: user.id, status: SkillStatus.PUBLISHED },
-    });
+    const isSelf = !!currentUserId && currentUserId === user.id;
 
-    // Aggregate stats
-    const statsAgg = await this.skillRepository
-      .createQueryBuilder('skill')
+    // 团队可见性条件：技能未挂团队 / 团队已公开 / 访客是该团队成员  → 可见
+    const visibleCond = (qb: any) => {
+      if (isSelf) return qb; // 本人看自己主页，全部可见
+      return qb.andWhere(
+        '(skill.owner_team_id IS NULL OR t.is_public = true OR tm.user_id IS NOT NULL)',
+      );
+    };
+
+    const baseQb = () =>
+      this.skillRepository
+        .createQueryBuilder('skill')
+        .leftJoin('teams', 't', 'skill.owner_team_id = t.id')
+        .leftJoin(
+          'team_members',
+          'tm',
+          'tm.team_id = skill.owner_team_id AND tm.user_id = :viewerId',
+          { viewerId: currentUserId || '' },
+        )
+        .where('skill.owner_user_id = :userId', { userId: user.id })
+        .andWhere('skill.status = :status', { status: SkillStatus.PUBLISHED });
+
+    // Count user's published skills (对访客按团队可见性过滤)
+    const skillCount = await visibleCond(baseQb()).getCount();
+
+    // Aggregate stats (同上过滤，保证与列表/数量一致)
+    const statsAgg = await visibleCond(baseQb())
       .leftJoin('skill.stats', 'stats')
       .select('COALESCE(SUM(stats.likes_total), 0)', 'total_likes')
       .addSelect('COALESCE(SUM(stats.downloads_total), 0)', 'total_downloads')
-      .where('skill.owner_user_id = :userId', { userId: user.id })
-      .andWhere('skill.status = :status', { status: SkillStatus.PUBLISHED })
       .getRawOne();
 
     return {
@@ -59,13 +77,35 @@ export class UsersService {
 
     if (!user) throw new NotFoundException('User not found');
 
-    const [skills, total] = await this.skillRepository.findAndCount({
-      where: { owner_user_id: user.id, status: SkillStatus.PUBLISHED },
-      relations: ['stats', 'owner_user', 'latest_version', 'published_version'],
-      order: { created_at: 'DESC' },
-      skip: (page - 1) * size,
-      take: size,
-    });
+    const isSelf = !!currentUserId && currentUserId === user.id;
+
+    const qb = this.skillRepository
+      .createQueryBuilder('skill')
+      .leftJoinAndSelect('skill.stats', 'stats')
+      .leftJoinAndSelect('skill.owner_user', 'owner_user')
+      .leftJoinAndSelect('skill.latest_version', 'latest_version')
+      .leftJoinAndSelect('skill.published_version', 'published_version')
+      .leftJoin('teams', 't', 'skill.owner_team_id = t.id')
+      .leftJoin(
+        'team_members',
+        'tm',
+        'tm.team_id = skill.owner_team_id AND tm.user_id = :viewerId',
+        { viewerId: currentUserId || '' },
+      )
+      .where('skill.owner_user_id = :ownerId', { ownerId: user.id })
+      .andWhere('skill.status = :status', { status: SkillStatus.PUBLISHED })
+      .orderBy('skill.created_at', 'DESC')
+      .skip((page - 1) * size)
+      .take(size);
+
+    // 非本人访问时，按团队「对外展示」开关过滤：私有团队技能仅成员可见
+    if (!isSelf) {
+      qb.andWhere(
+        '(skill.owner_team_id IS NULL OR t.is_public = true OR tm.user_id IS NOT NULL)',
+      );
+    }
+
+    const [skills, total] = await qb.getManyAndCount();
 
     const items = skills.map((skill) => ({
       id: skill.id,

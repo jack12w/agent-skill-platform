@@ -6,9 +6,10 @@ import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 export class UsersController {
   constructor(private usersService: UsersService) {}
 
+  @UseGuards(OptionalAuthGuard)
   @Get(':username')
-  findOne(@Param('username') username: string) {
-    return this.usersService.findOne(username);
+  findOne(@Param('username') username: string, @Request() req?: any) {
+    return this.usersService.findOne(username, req?.user?.sub);
   }
 
   @UseGuards(OptionalAuthGuard)
