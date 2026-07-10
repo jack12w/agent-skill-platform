@@ -14,9 +14,15 @@ export interface SendMailOptions {
 @Injectable()
 export class EmailService {
   async sendMail({ to, subject, text, html }: SendMailOptions): Promise<boolean> {
-    if (!to) return false;
+    if (!to) {
+      console.log('[SMTP] 收件人为空，跳过发送');
+      return false;
+    }
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      console.warn('[SMTP] SMTP_USER 或 SMTP_PASS 未配置，无法发送邮件');
+      return false;
+    }
     try {
-      // 延迟 require，避免在无 nodemailer 环境下启动报错
       const nodemailer = require('nodemailer');
       const transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST || 'smtp.qq.com',
@@ -27,13 +33,14 @@ export class EmailService {
           pass: process.env.SMTP_PASS,
         },
       });
-      await transporter.sendMail({
-        from: `"SkillDepot" <${process.env.SMTP_USER || 'noreply@example.com'}>`,
+      const info = await transporter.sendMail({
+        from: `"SkillDepot" <${process.env.SMTP_USER}>`,
         to,
         subject,
         text,
         html,
       });
+      console.log(`[SMTP] 邮件发送成功: ${to}, messageId=${info.messageId}`);
       return true;
     } catch (e: any) {
       console.error('[SMTP] 邮件发送失败:', e?.message || e);

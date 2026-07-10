@@ -10,6 +10,8 @@ import { EmailService } from '../common/email.service';
 export interface SubscriptionEvent {
   targetType: SubscriptionTargetType;
   targetId: string;
+  skillId: string;
+  skillSlug: string;
   skillName: string;
   subtype: 'new_skill' | 'new_version';
 }
@@ -122,16 +124,19 @@ export class SubscriptionsService {
     const userMap = new Map(users.map((u) => [u.id, u]));
 
     // 4) 逐个订阅者发送（每订阅者最多 1 邮件 + 1 站内通知）
+    console.log(`[subscriptions] 开始聚合通知：${events.length} 个事件，${perSubscriber.size} 位订阅者`);
     for (const [subscriberId, groups] of perSubscriber) {
       const subUser = userMap.get(subscriberId);
-      if (!subUser?.email) continue;
+      if (!subUser?.email) {
+        console.log(`[subscriptions] 订阅者 ${subscriberId} 无邮箱，跳过邮件`);
+      }
 
       // 跳过「订阅了自己」的噪音（仅 user 目标有意义）
       const first = groups[0];
 
       const allEvents = groups.flatMap((g) => g.events);
-      // 获取目标名称与跳转路径（取第一个目标主页）
-      const { name: targetName, path } = await this.getTargetInfo(first.targetType, first.targetId);
+      // 获取目标名称与主页路径
+      const { name: targetName, path: homePath } = await this.getTargetInfo(first.targetType, first.targetId);
 
       // 跳过团队 owner 自己收到自己的团队通知
       if (first.targetType === 'team') {
@@ -139,8 +144,12 @@ export class SubscriptionsService {
         if (team && team.owner_user_id === subscriberId) continue;
       }
 
-      // 站内通知用相对路径（前端 router.push 客户端跳转）；邮件用绝对地址
-      const absLink = base ? `${base}${path}` : path;
+      // 站内通知 link：单条技能 → 技能详情页；多条 → 主页
+      const inAppLink = allEvents.length === 1
+        ? `/skills/${allEvents[0].skillSlug}`
+        : homePath;
+      // 邮件用主页（取消订阅入口）
+      const absLink = base ? `${base}${homePath}` : homePath;
 
       const skillLines = allEvents.map((e) => `• ${e.skillName}`).join('\n');
       const count = allEvents.length;
@@ -154,16 +163,19 @@ export class SubscriptionsService {
         subtype: allEvents.map((e) => e.subtype).join(','),
         title,
         body,
-        link: path,
+        link: inAppLink,
         read: false,
       });
 
       // 邮件（1 封）
-      await this.emailService.sendMail({
-        to: subUser.email,
-        subject: title,
-        html: this.buildEmailHtml(targetName, allEvents, absLink),
-      });
+      if (subUser?.email) {
+        const sent = await this.emailService.sendMail({
+          to: subUser.email,
+          subject: title,
+          html: this.buildEmailHtml(targetName, allEvents, absLink),
+        });
+        console.log(`[subscriptions] 邮件发送给 ${subUser.email}: ${sent ? '成功' : '失败'}`);
+      }
     }
   }
 

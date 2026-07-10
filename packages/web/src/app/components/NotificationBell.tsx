@@ -139,7 +139,7 @@ export default function NotificationBell() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-4 py-2.5 text-sm font-medium text-neutral-700 border-b sticky top-0 bg-white rounded-t-xl z-10 flex items-center justify-between">
-              <span>评论通知{unreadCount > 0 && <span className="ml-1 text-danger-500">({unreadCount})</span>}</span>
+              <span>评论通知{unread.length > 0 && <span className="ml-1 text-danger-500">({unread.length})</span>}</span>
             </div>
 
             {/* Unread first, then read */}

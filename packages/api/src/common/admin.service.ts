@@ -140,6 +140,8 @@ export class AdminService {
               publishEvents.push({
                 targetType: target.targetType,
                 targetId: target.targetId,
+                skillId: skill.id,
+                skillSlug: skill.slug,
                 skillName: skill.name,
                 subtype: skill.status === SkillStatus.PUBLISHED ? 'new_version' : 'new_skill',
               });
@@ -436,6 +438,8 @@ export class AdminService {
         await this.subService.notifySubscribers([{
           targetType: target.targetType,
           targetId: target.targetId,
+          skillId: skill.id,
+          skillSlug: skill.slug,
           skillName: skill.name,
           subtype: skill.status === SkillStatus.PUBLISHED ? 'new_version' : 'new_skill',
         }]);
