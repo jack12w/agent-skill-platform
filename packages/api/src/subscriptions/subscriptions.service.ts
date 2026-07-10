@@ -86,6 +86,12 @@ export class SubscriptionsService {
     return { ok: true };
   }
 
+  /** 彻底清空当前用户所有站内通知 */
+  async clearAll(userId: string) {
+    await this.notiRepo.delete({ user_id: userId });
+    return { ok: true };
+  }
+
   // ── 审核通过触发通知（聚合） ───────────────
   /**
    * 传入一批「审核通过事件」，按 (订阅者, 目标) 聚合：

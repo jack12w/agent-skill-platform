@@ -23,6 +23,20 @@ function markRead(commentId: string) {
   catch { /* noop */ }
 }
 
+function getClearedIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem('cleared_comment_ids');
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+
+function clearCommentIds(ids: string[]) {
+  const set = getClearedIds();
+  ids.forEach((id) => set.add(id));
+  try { localStorage.setItem('cleared_comment_ids', JSON.stringify(Array.from(set))); }
+  catch { /* noop */ }
+}
+
 function extractTargetName(title?: string): string {
   if (!title) return '';
   const oldMatch = title.match(/你订阅的\s+(.+?)\s+有/);
@@ -52,6 +66,7 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [allComments, setAllComments] = useState<any[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(getReadIds());
+  const [clearedIds, setClearedIds] = useState<Set<string>>(getClearedIds());
   const [notiItems, setNotiItems] = useState<any[]>([]);
   const [notiUnread, setNotiUnread] = useState(0);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -124,9 +139,28 @@ export default function NotificationBell() {
     };
   }, [open]);
 
-  // Unread = comments not in readIds + 订阅通知未读
-  const unread = allComments.filter((c) => !readIds.has(c.id));
+  // 可见评论（排除已清空的）
+  const visibleComments = allComments.filter((c) => !clearedIds.has(c.id));
+  // 未读 = 可见且未读 + 订阅通知未读
+  const unread = visibleComments.filter((c) => !readIds.has(c.id));
   const unreadCount = unread.length + notiUnread;
+
+  // 清空评论通知：把当前可见评论 id 记入本地隐藏集合
+  const clearComments = () => {
+    clearCommentIds(visibleComments.map((c) => c.id));
+    setClearedIds(getClearedIds());
+  };
+
+  // 清空订阅通知：调用后端删除当前用户所有站内通知
+  const clearNotifications = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    try {
+      await fetch('/api/notifications', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    } catch { /* ignore */ }
+    setNotiItems([]);
+    setNotiUnread(0);
+  };
 
   const handleClickComment = (commentId: string) => {
     markRead(commentId);
@@ -191,18 +225,21 @@ export default function NotificationBell() {
       {open && (
         <div
           ref={panelRef}
-          className="fixed left-4 right-4 sm:left-auto sm:right-4 sm:w-[340px] top-14 z-[60] bg-white border rounded-xl shadow-xl max-h-[380px] flex flex-col overflow-hidden"
+          className="fixed left-4 right-4 sm:left-auto sm:right-4 sm:w-[340px] top-14 z-[60] bg-white border border-neutral-200 rounded-xl shadow-xl h-[380px] flex flex-col overflow-hidden"
         >
           {/* 评论通知 */}
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden border-b border-neutral-100 last:border-0">
-            <div className="px-4 py-2.5 text-sm font-medium text-neutral-700 border-b bg-white rounded-t-xl z-10 flex items-center justify-between shrink-0">
+          <div className="h-[190px] flex flex-col min-h-0 overflow-hidden border-b border-neutral-200">
+            <div className="px-4 py-2.5 text-sm font-semibold text-neutral-800 bg-neutral-50 border-b border-neutral-200 z-10 flex items-center justify-between shrink-0">
               <span>评论通知{unread.length > 0 && <span className="ml-1 text-danger-500">({unread.length})</span>}</span>
+              {visibleComments.length > 0 && (
+                <button onClick={clearComments} className="text-xs font-normal text-neutral-400 hover:text-danger-500 transition">清空</button>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto">
-              {[...unread, ...allComments.filter((c) => readIds.has(c.id))].length === 0 ? (
+              {visibleComments.length === 0 ? (
                 <div className="px-4 py-8 text-center text-sm text-neutral-400">暂无评论</div>
               ) : (
-                [...unread, ...allComments.filter((c) => readIds.has(c.id))].map((c: any) => {
+                [...unread, ...visibleComments.filter((c) => readIds.has(c.id))].map((c: any) => {
                   const isUnread = !readIds.has(c.id);
                   return (
                     <Link
@@ -236,9 +273,12 @@ export default function NotificationBell() {
           </div>
 
           {/* 订阅通知 */}
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            <div className="px-4 py-2.5 text-sm font-medium text-neutral-700 border-b bg-white z-10 flex items-center justify-between shrink-0">
+          <div className="h-[190px] flex flex-col min-h-0 overflow-hidden">
+            <div className="px-4 py-2.5 text-sm font-semibold text-neutral-800 bg-neutral-50 border-b border-neutral-200 z-10 flex items-center justify-between shrink-0">
               <span>订阅通知{notiUnread > 0 && <span className="ml-1 text-danger-500">({notiUnread})</span>}</span>
+              {notiItems.length > 0 && (
+                <button onClick={clearNotifications} className="text-xs font-normal text-neutral-400 hover:text-danger-500 transition">清空</button>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto">
               {notiItems.length === 0 ? (

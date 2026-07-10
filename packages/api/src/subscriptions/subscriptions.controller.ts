@@ -60,4 +60,10 @@ export class NotificationsController {
   markRead(@Request() req: any, @Body() body: { id?: string }) {
     return this.svc.markRead(req.user.sub, body?.id);
   }
+
+  @UseGuards(AuthGuard)
+  @Delete()
+  clearAll(@Request() req: any) {
+    return this.svc.clearAll(req.user.sub);
+  }
 }
