@@ -221,8 +221,7 @@ export class SubscriptionsService {
     const host = this.getHost(base);
     return `
       <div style="font-family:-apple-system,Segoe UI,Roboto,'PingFang SC',sans-serif;max-width:520px;margin:0 auto;padding:24px;color:#1f2937;">
-        <h2 style="margin:0 0 8px;font-size:20px;font-weight:600;">${this.escapeHtml(targetName)} 发布了新内容</h2>
-        <p style="margin:0 0 16px;color:#4b5563;line-height:1.6;">为你推送了 ${events.length} 个新内容：</p>
+        <h2 style="margin:0 0 16px;font-size:20px;font-weight:600;">${this.escapeHtml(targetName)} 发布了 ${events.length} 个新内容</h2>
         <ul style="margin:0 0 20px;padding-left:0;list-style:none;color:#374151;">${skillList}</ul>
         <p style="margin:20px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">
           你收到此邮件是因为订阅了「${this.escapeHtml(targetName)}」。可在其<a href="${homeUrl}" style="color:#7C3AED;text-decoration:none;">主页</a>随时取消订阅。
