@@ -12,6 +12,8 @@ dist/
 # local preview artifacts
 badge-preview.html
 badge-color-preview.html
+subscribe-ui-preview.html
+*-preview.html
 coverage/
 .workbuddy/
 .codebuddy/
