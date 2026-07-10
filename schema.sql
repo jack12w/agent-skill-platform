@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS teams (
     description TEXT,
     tags TEXT[],
     owner_user_id UUID NOT NULL REFERENCES users(id),
+    is_public BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );

@@ -71,6 +71,11 @@ export class TeamsService {
       ? members.find((m) => m.user_id === userId)
       : null;
 
+    // 「对外展示」开关：关闭时仅团队成员（含 owner）可见
+    if (!team.is_public && !myMembership) {
+      throw new ForbiddenException('该团队未对外展示，仅团队成员可见');
+    }
+
     // Sanitize member data for public access (remove email)
     const safeMembers = userId
       ? members
@@ -125,6 +130,7 @@ export class TeamsService {
     if (typeof data.name === 'string' && data.name.trim()) patch.name = data.name.trim();
     if (typeof data.description === 'string') patch.description = data.description.trim() || null;
     if (Array.isArray(data.tags)) patch.tags = data.tags;
+    if (typeof data.is_public === 'boolean') patch.is_public = data.is_public;
 
     if (Object.keys(patch).length === 0) {
       throw new BadRequestException('No editable fields provided');

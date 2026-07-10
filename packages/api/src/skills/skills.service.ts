@@ -8,6 +8,7 @@ import { Event } from './event.entity';
 import { SkillStats } from './skill-stats.entity';
 import { Comment } from './comment.entity';
 import { TeamMember } from '../teams/team-member.entity';
+import { Team } from '../teams/team.entity';
 import { OssService } from '../storage/oss.service';
 import { EventType, SkillStatus, parseSkillMd } from '@platform/shared';
 import AdmZip from 'adm-zip';
@@ -34,6 +35,8 @@ export class SkillsService {
     private commentRepository: Repository<Comment>,
     @InjectRepository(TeamMember)
     private teamMemberRepository: Repository<TeamMember>,
+    @InjectRepository(Team)
+    private teamRepository: Repository<Team>,
     private ossService: OssService,
   ) {}
 
@@ -420,7 +423,29 @@ export class SkillsService {
    * Resolve a downloadable URL for a skill. If `versionId` is omitted,
    * returns the latest version's URL. Throws if the skill has no version yet.
    */
+  /**
+   * 团队「对外展示」开关校验：若技能归属某未公开团队，仅团队成员（含 owner）可访问/下载。
+   * teamId 为空（个人技能）或团队已公开或用户为管理员/成员时放行。
+   */
+  private async assertTeamVisible(teamId: string | null, userId?: string, isAdmin = false) {
+    if (!teamId || isAdmin) return;
+    const team = await this.teamRepository.findOne({ where: { id: teamId } });
+    if (!team || team.is_public) return; // 团队不存在（脏数据）或已公开 → 放行
+    if (!userId) throw new ForbiddenException('该团队未对外展示，仅团队成员可访问');
+    const member = await this.teamMemberRepository.findOne({
+      where: { team_id: teamId, user_id: userId },
+    });
+    if (!member) throw new ForbiddenException('该团队未对外展示，仅团队成员可访问');
+  }
+
+  async assertSkillTeamVisible(skillId: string, userId?: string, isAdmin = false) {
+    const skill = await this.skillRepository.findOne({ where: { id: skillId } });
+    if (!skill) return; // 404 由调用方处理
+    await this.assertTeamVisible(skill.owner_team_id, userId, isAdmin);
+  }
+
   async getDownloadUrl(skillId: string, versionId?: string, userId?: string, isAdmin = false) {
+    await this.assertSkillTeamVisible(skillId, userId, isAdmin);
     const skill = await this.findOne(skillId, undefined, true);
 
     const isOwner = userId && skill.owner_user_id === userId;

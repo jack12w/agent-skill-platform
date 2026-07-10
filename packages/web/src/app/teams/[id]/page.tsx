@@ -127,6 +127,14 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
             <h1 className="text-3xl sm:text-4xl font-bold text-neutral-900">{team.name}</h1>
+            {team.is_public === false && (
+              <span className="ml-2 inline-flex items-center gap-1 align-middle text-xs px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600 border border-neutral-200">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                仅团队可见
+              </span>
+            )}
             {team.description && (
               <p className="text-lg text-neutral-600 mt-3 max-w-2xl">{team.description}</p>
             )}

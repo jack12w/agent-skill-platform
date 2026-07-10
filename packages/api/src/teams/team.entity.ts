@@ -18,6 +18,9 @@ export class Team {
   @Column()
   owner_user_id: string;
 
+  @Column({ default: true })
+  is_public: boolean;
+
   @ManyToOne(() => User)
   @JoinColumn({ name: 'owner_user_id' })
   owner: User;

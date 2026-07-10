@@ -135,7 +135,9 @@ export class SkillsController {
         isAdmin = payload?.role === 'admin';
       } catch { /* ignore */ }
     }
-    return this.skillsService.findOne(id, userId, false, isAdmin);
+    const result = await this.skillsService.findOne(id, userId, false, isAdmin);
+    await this.skillsService.assertSkillTeamVisible(id, userId, isAdmin);
+    return result;
   }
 
   @Post(':id/like')

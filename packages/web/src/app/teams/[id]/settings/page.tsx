@@ -21,13 +21,15 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
   const [tagGroups, setTagGroups] = useState<Record<string, string[]>>({});
   const [tagGroupsLoading, setTagGroupsLoading] = useState(false);
   const [savingTags, setSavingTags] = useState(false);
+  const [isPublic, setIsPublic] = useState(true);
+  const [togglingPublic, setTogglingPublic] = useState(false);
 
   const load = async () => {
     const token = localStorage.getItem('token'); if (!token) return router.push('/auth');
     try {
       const res = await fetch(`/api/teams/${params.id}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.message || `HTTP ${res.status}`); }
-      const tData = await res.json(); setTeam(tData); setForm({ name: tData.name ?? '', description: tData.description ?? '' });
+      const tData = await res.json(); setTeam(tData); setForm({ name: tData.name ?? '', description: tData.description ?? '' }); setIsPublic(tData.is_public !== false);
     } catch (e: any) { setError(e.message || 'Load failed'); }
     finally { setLoading(false); }
   };
@@ -52,6 +54,25 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
 
   // 标签分组中文名（仅展示 scene/role/category，过滤系统自动打的 source 组）
   const TAG_GROUP_LABELS: Record<string, string> = { scene: '场景', role: '角色', category: '分类' };
+
+  const handleTogglePublic = async (next: boolean) => {
+    const token = localStorage.getItem('token'); if (!token) return;
+    setTogglingPublic(true);
+    try {
+      setIsPublic(next);
+      const res = await fetch(`/api/teams/${params.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ is_public: next }),
+      });
+      if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.message || `HTTP ${res.status}`); }
+    } catch (err: any) {
+      setIsPublic(!next); // 失败回滚
+      alert('更新失败: ' + err.message);
+    } finally {
+      setTogglingPublic(false);
+    }
+  };
 
   const handleStartEditTags = async () => {
     setTagGroupsLoading(true);
@@ -113,6 +134,28 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
           </form>
         )}
       </div>
+      {/* 对外展示开关 */}
+      {team.is_owner && (
+        <div className="mb-10 p-6 border rounded-xl bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-neutral-900">对外展示</h2>
+            <p className="text-sm text-neutral-500 mt-1">
+              {isPublic ? '开启后，所有用户都能查看并下载该团队的技能' : '关闭后，仅团队成员可以查看并下载该团队的技能'}
+            </p>
+          </div>
+          <label className="inline-flex items-center cursor-pointer shrink-0">
+            <input
+              type="checkbox"
+              className="sr-only peer"
+              checked={isPublic}
+              disabled={togglingPublic}
+              onChange={(e) => handleTogglePublic(e.target.checked)}
+            />
+            <div className="relative w-11 h-6 bg-neutral-200 peer-focus:outline-none rounded-full peer-checked:bg-brand-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+            <span className="ml-2 text-sm text-neutral-700">{isPublic ? '已公开' : '仅团队'}</span>
+          </label>
+        </div>
+      )}
       {/* 团队标签 区块 */}
       <div className="mb-10">
         <div className="flex items-center justify-between mb-4">
