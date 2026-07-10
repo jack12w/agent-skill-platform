@@ -227,7 +227,7 @@ export default function NotificationBell() {
       {open && (
         <div
           ref={panelRef}
-          className="fixed left-4 right-4 sm:left-auto sm:right-4 sm:w-[340px] top-14 z-[60] bg-white border border-neutral-200 rounded-xl shadow-xl h-[380px] flex flex-col overflow-hidden"
+          className="absolute right-0 top-full mt-2 w-[340px] z-[60] bg-white border border-neutral-200 rounded-xl shadow-xl h-[380px] flex flex-col overflow-hidden"
         >
           {/* 评论通知 */}
           <div className="h-[190px] flex flex-col min-h-0 overflow-hidden border-b border-neutral-200">
