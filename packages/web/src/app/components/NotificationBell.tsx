@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -21,6 +21,29 @@ function markRead(commentId: string) {
   ids.add(commentId);
   try { localStorage.setItem('read_comment_ids', JSON.stringify(Array.from(ids))); }
   catch { /* noop */ }
+}
+
+function extractTargetName(title?: string): string {
+  if (!title) return '';
+  const oldMatch = title.match(/你订阅的\s+(.+?)\s+有/);
+  if (oldMatch) return oldMatch[1].trim();
+  const newMatch = title.match(/^(.+?)\s+发布了/);
+  return newMatch ? newMatch[1].trim() : (title.split(' ')[0] || '');
+}
+
+function Avatar({ src, fallback }: { src?: string; fallback: ReactNode }) {
+  const [error, setError] = useState(false);
+  if (src && !error) {
+    return (
+      <img
+        src={src}
+        alt=""
+        className="w-full h-full object-cover"
+        onError={() => setError(true)}
+      />
+    );
+  }
+  return <>{fallback}</>;
 }
 
 export default function NotificationBell() {
@@ -218,7 +241,7 @@ export default function NotificationBell() {
                 {notiItems.map((n: any) => {
                   const skills = n.payload?.skills ?? [];
                   const targetAvatar = n.payload?.targetAvatar;
-                  const targetName = n.payload?.targetName || n.title?.split(' ')[0] || '';
+                  const targetName = n.payload?.targetName || extractTargetName(n.title) || '';
                   const fallbackLetter = targetName.charAt(0).toUpperCase();
                   return (
                     <div
@@ -226,16 +249,17 @@ export default function NotificationBell() {
                       className={`w-full px-4 py-2.5 transition border-b border-neutral-100 last:border-0 ${n.read ? '' : 'bg-brand-50/60 hover:bg-brand-100/60'} hover:bg-neutral-100`}
                     >
                       <div className="flex items-start gap-2.5">
-                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-400 to-accent-500 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5 overflow-hidden">
-                          {targetAvatar ? (
-                            <img src={targetAvatar} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            fallbackLetter || (
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                              </svg>
-                            )
-                          )}
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-400 to-accent-500 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5 overflow-hidden">
+                          <Avatar
+                            src={targetAvatar}
+                            fallback={
+                              fallbackLetter || (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                                </svg>
+                              )
+                            }
+                          />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="text-xs text-neutral-500">
