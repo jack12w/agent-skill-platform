@@ -122,7 +122,7 @@ export class TeamsService {
     };
   }
 
-  async updateTeam(teamId: string, data: { name?: string; description?: string; tags?: string[] }, userId: string) {
+  async updateTeam(teamId: string, data: { name?: string; description?: string; tags?: string[]; is_public?: boolean }, userId: string) {
     const team = await this.teamRepository.findOne({ where: { id: teamId } });
     if (!team) throw new NotFoundException('Team not found');
     if (team.owner_user_id !== userId) {

@@ -124,7 +124,7 @@ export class SkillsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string, @Request() req: any) {
+  async findOne(@Param('id') id: string, @Request() req: any) {
     let userId: string | undefined;
     let isAdmin = false;
     const token = req.headers.authorization?.split(' ')[1];
