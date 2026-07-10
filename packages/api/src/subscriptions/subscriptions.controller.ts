@@ -63,7 +63,7 @@ export class NotificationsController {
 
   @UseGuards(AuthGuard)
   @Delete()
-  clearAll(@Request() req: any) {
-    return this.svc.clearAll(req.user.sub);
+  clearRead(@Request() req: any) {
+    return this.svc.clearRead(req.user.sub);
   }
 }

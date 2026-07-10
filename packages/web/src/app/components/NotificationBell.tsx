@@ -145,21 +145,23 @@ export default function NotificationBell() {
   const unread = visibleComments.filter((c) => !readIds.has(c.id));
   const unreadCount = unread.length + notiUnread;
 
-  // 清空评论通知：把当前可见评论 id 记入本地隐藏集合
+  // 清空评论通知：只隐藏当前已读的评论（未读保留）
   const clearComments = () => {
-    clearCommentIds(visibleComments.map((c) => c.id));
+    const readVisible = visibleComments.filter((c) => readIds.has(c.id));
+    if (readVisible.length === 0) return;
+    clearCommentIds(readVisible.map((c) => c.id));
     setClearedIds(getClearedIds());
   };
 
-  // 清空订阅通知：调用后端删除当前用户所有站内通知
+  // 清空订阅通知：调用后端删除当前用户已读通知，保留未读
   const clearNotifications = async () => {
     const token = localStorage.getItem('token');
     if (!token) return;
     try {
       await fetch('/api/notifications', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
     } catch { /* ignore */ }
-    setNotiItems([]);
-    setNotiUnread(0);
+    // 后端已删已读，前端仅移除已读项，未读继续保留
+    setNotiItems((items) => items.filter((it) => !it.read));
   };
 
   const handleClickComment = (commentId: string) => {
@@ -231,7 +233,7 @@ export default function NotificationBell() {
           <div className="h-[190px] flex flex-col min-h-0 overflow-hidden border-b border-neutral-200">
             <div className="px-4 py-2.5 text-sm font-semibold text-neutral-800 bg-neutral-50 border-b border-neutral-200 z-10 flex items-center justify-between shrink-0">
               <span>评论通知{unread.length > 0 && <span className="ml-1 text-danger-500">({unread.length})</span>}</span>
-              {visibleComments.length > 0 && (
+              {visibleComments.some((c) => readIds.has(c.id)) && (
                 <button onClick={clearComments} className="text-xs font-normal text-neutral-400 hover:text-danger-500 transition">清空</button>
               )}
             </div>
@@ -276,7 +278,7 @@ export default function NotificationBell() {
           <div className="h-[190px] flex flex-col min-h-0 overflow-hidden">
             <div className="px-4 py-2.5 text-sm font-semibold text-neutral-800 bg-neutral-50 border-b border-neutral-200 z-10 flex items-center justify-between shrink-0">
               <span>订阅通知{notiUnread > 0 && <span className="ml-1 text-danger-500">({notiUnread})</span>}</span>
-              {notiItems.length > 0 && (
+              {notiItems.some((n) => n.read) && (
                 <button onClick={clearNotifications} className="text-xs font-normal text-neutral-400 hover:text-danger-500 transition">清空</button>
               )}
             </div>

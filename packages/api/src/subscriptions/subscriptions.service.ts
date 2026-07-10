@@ -86,9 +86,9 @@ export class SubscriptionsService {
     return { ok: true };
   }
 
-  /** 彻底清空当前用户所有站内通知 */
-  async clearAll(userId: string) {
-    await this.notiRepo.delete({ user_id: userId });
+  /** 只清空当前用户已读站内通知，保留未读 */
+  async clearRead(userId: string) {
+    await this.notiRepo.delete({ user_id: userId, read: true });
     return { ok: true };
   }
 
