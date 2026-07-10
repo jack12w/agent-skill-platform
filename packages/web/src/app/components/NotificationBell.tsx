@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 function loadUser() {
   try { const data = localStorage.getItem('user'); return data ? JSON.parse(data) : null; }
@@ -23,10 +24,13 @@ function markRead(commentId: string) {
 }
 
 export default function NotificationBell() {
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [allComments, setAllComments] = useState<any[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(getReadIds());
+  const [notiItems, setNotiItems] = useState<any[]>([]);
+  const [notiUnread, setNotiUnread] = useState(0);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -45,28 +49,66 @@ export default function NotificationBell() {
     } catch { /* ignore */ }
   }, []);
 
+  // 订阅类站内通知
+  const fetchSubNotifications = useCallback(async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    try {
+      const res = await fetch('/api/notifications', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNotiItems(data.items ?? []);
+        setNotiUnread(data.unread ?? 0);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   // Poll every 60s, pause when tab hidden
   useEffect(() => {
     if (!loadUser()) return;
     fetchNotifications();
+    fetchSubNotifications();
     const interval = setInterval(() => {
-      if (!document.hidden && loadUser()) fetchNotifications();
+      if (!document.hidden && loadUser()) {
+        fetchNotifications();
+        fetchSubNotifications();
+      }
     }, 60000);
-    const onVisible = () => { if (loadUser()) fetchNotifications(); };
+    const onVisible = () => { if (loadUser()) { fetchNotifications(); fetchSubNotifications(); } };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [fetchNotifications]);
+  }, [fetchNotifications, fetchSubNotifications]);
 
-  // Unread = comments not in readIds
+  // Unread = comments not in readIds + 订阅通知未读
   const unread = allComments.filter((c) => !readIds.has(c.id));
-  const unreadCount = unread.length;
+  const unreadCount = unread.length + notiUnread;
 
   const handleClickComment = (commentId: string) => {
     markRead(commentId);
     setReadIds(getReadIds());
+  };
+
+  // 点击订阅通知：标记已读并跳转到 link
+  const handleClickNotification = async (n: any) => {
+    try {
+      await fetch('/api/notifications/read', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token') || ''}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id: n.id }),
+      });
+    } catch { /* ignore */ }
+    setNotiItems((items) => items.map((it) => (it.id === n.id ? { ...it, read: true } : it)));
+    setNotiUnread((u) => Math.max(0, u - 1));
+    if (n.link) router.push(n.link);
+    setOpen(false);
   };
 
   if (!mounted || !loadUser()) return null;
@@ -133,6 +175,40 @@ export default function NotificationBell() {
                   </Link>
                 );
               })
+            )}
+
+            {/* 订阅通知 */}
+            {notiItems.length > 0 && (
+              <>
+                <div className="px-4 py-2.5 text-sm font-medium text-neutral-700 border-b border-t border-neutral-100 sticky top-[45px] bg-white z-10">
+                  订阅通知{notiUnread > 0 && <span className="ml-1 text-danger-500">({notiUnread})</span>}
+                </div>
+                {notiItems.map((n: any) => (
+                  <button
+                    key={n.id}
+                    onClick={() => handleClickNotification(n)}
+                    className={`block w-full text-left px-4 py-2.5 transition border-b border-neutral-100 last:border-0 ${n.read ? 'hover:bg-neutral-100' : 'bg-brand-50/60 hover:bg-brand-100/60'}`}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-400 to-accent-500 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l9 6 9-6M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs text-neutral-500">
+                          <span className="font-medium text-neutral-700">{n.title}</span>
+                          {!n.read && <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-brand-500 align-middle" />}
+                        </div>
+                        <div className="text-sm text-neutral-600 mt-0.5 line-clamp-2 whitespace-pre-line">{n.body}</div>
+                        <div className="text-[10px] text-neutral-400 mt-1">
+                          {new Date(n.created_at).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </>
             )}
           </div>
         </>

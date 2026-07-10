@@ -21,6 +21,14 @@ export default function UserProfile({ params }: { params: { username: string } }
   const [total, setTotal] = useState(0);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  // ── 订阅相关 ──
+  const [subscriberCount, setSubscriberCount] = useState(0);
+  const [subscribed, setSubscribed] = useState(false);
+  const [subLoading, setSubLoading] = useState(false);
+  const currentUserId = (() => {
+    try { const u = JSON.parse(localStorage.getItem('user') || 'null'); return u?.id || null; } catch { return null; }
+  })();
   const sentinelRef = useRef<HTMLDivElement>(null);
   const hasMore = skills.length < total && total > 0;
 
@@ -42,6 +50,26 @@ export default function UserProfile({ params }: { params: { username: string } }
 
       const userData = await userRes.json();
       setUser(userData);
+
+      // 订阅数 + 当前用户订阅状态
+      try {
+        const countRes = await fetch(`/api/subscriptions/count?targetType=user&targetId=${encodeURIComponent(userData.id)}`);
+        if (countRes.ok) {
+          const c = await countRes.json();
+          setSubscriberCount(c.count ?? 0);
+        }
+      } catch { /* ignore */ }
+      if (currentUserId && currentUserId !== userData.id) {
+        try {
+          const stRes = await fetch(`/api/subscriptions/status?targetType=user&targetId=${encodeURIComponent(userData.id)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (stRes.ok) {
+            const st = await stRes.json();
+            setSubscribed(!!st.subscribed);
+          }
+        } catch { /* ignore */ }
+      }
 
       if (skillsRes.ok) {
         const skillsData = await skillsRes.json();
@@ -81,6 +109,27 @@ export default function UserProfile({ params }: { params: { username: string } }
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [hasMore, loadMore]);
+
+  const toggleSubscribe = async () => {
+    if (!currentUserId || !user) return;
+    setSubLoading(true);
+    try {
+      const token = localStorage.getItem('token') || '';
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+      if (subscribed) {
+        const res = await fetch(`/api/subscriptions?targetType=user&targetId=${encodeURIComponent(user.id)}`, { method: 'DELETE', headers });
+        if (res.ok) { setSubscribed(false); setSubscriberCount((c) => Math.max(0, c - 1)); }
+      } else {
+        const res = await fetch('/api/subscriptions', {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetType: 'user', targetId: user.id }),
+        });
+        if (res.ok) { setSubscribed(true); setSubscriberCount((c) => c + 1); }
+      }
+    } catch { /* ignore */ }
+    finally { setSubLoading(false); }
+  };
 
   if (loading) {
     return (
@@ -151,6 +200,32 @@ export default function UserProfile({ params }: { params: { username: string } }
                 <span className="text-xs sm:text-sm text-neutral-500">{t('detail.downloads')}</span>
               </div>
             </div>
+
+            {/* Subscribe row */}
+            {currentUserId && currentUserId !== user.id ? (
+              <div className="flex items-center gap-3 mt-3">
+                <button
+                  onClick={toggleSubscribe}
+                  disabled={subLoading}
+                  className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition ${subscribed ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' : 'bg-brand-600 text-white hover:bg-brand-700'}`}
+                >
+                  {subscribed ? (
+                    <>
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>
+                      已订阅
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>
+                      订阅
+                    </>
+                  )}
+                </button>
+                <span className="text-sm text-neutral-500">{subscriberCount} 人订阅</span>
+              </div>
+            ) : (
+              <div className="mt-3 text-sm text-neutral-500">{subscriberCount} 人订阅</div>
+            )}
           </div>
         </div>
       </div>

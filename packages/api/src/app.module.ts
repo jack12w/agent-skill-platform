@@ -6,6 +6,7 @@ import { TeamsModule } from './teams/teams.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { StorageModule } from './storage/storage.module';
 import { UsersModule } from './users/users.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { HealthController } from './common/health.controller';
 import { AdminController } from './common/admin.controller';
 import { AdminService } from './common/admin.service';
@@ -56,6 +57,7 @@ import { FeedbackController } from './common/feedback.controller';
     TeamsModule,
     LeaderboardModule,
     UsersModule,
+    SubscriptionsModule,
   ],
   controllers: [HealthController, AdminController, PublicTagGroupsController, AnalyticsController, FeedbackController],
   providers: [AdminService, AdminGuard],

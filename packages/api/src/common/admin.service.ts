@@ -11,6 +11,7 @@ import { AdminLog } from './admin-log.entity';
 import { TagGroup } from './tag-group.entity';
 import { PageView } from './page-view.entity';
 import { Feedback } from './feedback.entity';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { SkillStatus } from '@platform/shared';
 
 @Injectable()
@@ -26,6 +27,7 @@ export class AdminService {
     @InjectRepository(PageView) private pvRepo: Repository<PageView>,
     @InjectRepository(Feedback) private fbRepo: Repository<Feedback>,
     @InjectRepository(SkillVersion) private versionRepo: Repository<SkillVersion>,
+    private subService: SubscriptionsService,
   ) {}
 
   async getStats() {
@@ -107,6 +109,9 @@ export class AdminService {
   async batchUpdateSkills(ids: string[], action: string, payload?: any) {
     if (!ids.length) return { ok: true, updated: 0 };
 
+    // 收集审核通过事件，最后统一触发订阅通知（聚合发送）
+    const publishEvents: any[] = [];
+
     switch (action) {
       case 'publish':
         // Also sync published_version_id and metadata from the latest version
@@ -129,6 +134,16 @@ export class AdminService {
               }
             }
             await this.skillRepo.update(id, updateData);
+
+            const target = this.getTargetOfSkill(skill);
+            if (target) {
+              publishEvents.push({
+                targetType: target.targetType,
+                targetId: target.targetId,
+                skillName: skill.name,
+                subtype: skill.status === SkillStatus.PUBLISHED ? 'new_version' : 'new_skill',
+              });
+            }
           }
         }
         break;
@@ -164,6 +179,15 @@ export class AdminService {
         break;
       default:
         throw new Error(`Unknown action: ${action}`);
+    }
+
+    // 审核通过：触发订阅者通知（聚合，每位订阅者最多 1 邮件 + 1 站内通知）
+    if (publishEvents.length) {
+      try {
+        await this.subService.notifySubscribers(publishEvents);
+      } catch (e: any) {
+        console.error('[subscriptions] 批量通知失败:', e?.message || e);
+      }
     }
 
     return { ok: true, updated: ids.length };
@@ -372,6 +396,13 @@ export class AdminService {
     return { items: enriched, total, page, size };
   }
 
+  /** 根据技能归属确定订阅目标（个人 or 团队） */
+  private getTargetOfSkill(skill: Skill): { targetType: 'user' | 'team'; targetId: string } | null {
+    if (skill.owner_user_id) return { targetType: 'user', targetId: skill.owner_user_id };
+    if (skill.owner_team_id) return { targetType: 'team', targetId: skill.owner_team_id };
+    return null;
+  }
+
   async approveSkill(id: string) {
     const skill = await this.skillRepo.findOneBy({ id });
     if (!skill) throw new NotFoundException('Skill not found');
@@ -397,6 +428,22 @@ export class AdminService {
     }
 
     await this.skillRepo.update(id, updateData);
+
+    // 审核通过：触发订阅者通知（聚合，每位订阅者最多 1 邮件 + 1 站内通知）
+    const target = this.getTargetOfSkill(skill);
+    if (target) {
+      try {
+        await this.subService.notifySubscribers([{
+          targetType: target.targetType,
+          targetId: target.targetId,
+          skillName: skill.name,
+          subtype: skill.status === SkillStatus.PUBLISHED ? 'new_version' : 'new_skill',
+        }]);
+      } catch (e: any) {
+        console.error('[subscriptions] 通知失败:', e?.message || e);
+      }
+    }
+
     return { ok: true };
   }
 

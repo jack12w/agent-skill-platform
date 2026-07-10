@@ -13,6 +13,14 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
   const [isOwner, setIsOwner] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
 
+  // ── 订阅相关 ──
+  const [subscriberCount, setSubscriberCount] = useState(0);
+  const [subscribed, setSubscribed] = useState(false);
+  const [subLoading, setSubLoading] = useState(false);
+  const currentUserId = (() => {
+    try { const u = JSON.parse(localStorage.getItem('user') || 'null'); return u?.id || null; } catch { return null; }
+  })();
+
   const load = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     try {
@@ -26,6 +34,27 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
       const data = await res.json();
       setTeam(data);
       setIsOwner(data.is_owner);
+
+      // 订阅数 + 当前用户订阅状态
+      try {
+        const countRes = await fetch(`/api/subscriptions/count?targetType=team&targetId=${encodeURIComponent(params.id)}`);
+        if (countRes.ok) {
+          const c = await countRes.json();
+          setSubscriberCount(c.count ?? 0);
+        }
+      } catch { /* ignore */ }
+      const me = currentUserId;
+      if (me && !data.is_owner) {
+        try {
+          const stRes = await fetch(`/api/subscriptions/status?targetType=team&targetId=${encodeURIComponent(params.id)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (stRes.ok) {
+            const st = await stRes.json();
+            setSubscribed(!!st.subscribed);
+          }
+        } catch { /* ignore */ }
+      }
     } catch (e: any) {
       setError(e.message || 'Load failed');
     } finally {
@@ -41,6 +70,27 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, [params.id]);
+
+  const toggleSubscribe = async () => {
+    if (!currentUserId || !team) return;
+    setSubLoading(true);
+    try {
+      const tk = localStorage.getItem('token') || '';
+      const headers: Record<string, string> = { Authorization: `Bearer ${tk}` };
+      if (subscribed) {
+        const res = await fetch(`/api/subscriptions?targetType=team&targetId=${encodeURIComponent(params.id)}`, { method: 'DELETE', headers });
+        if (res.ok) { setSubscribed(false); setSubscriberCount((c) => Math.max(0, c - 1)); }
+      } else {
+        const res = await fetch('/api/subscriptions', {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetType: 'team', targetId: params.id }),
+        });
+        if (res.ok) { setSubscribed(true); setSubscriberCount((c) => c + 1); }
+      }
+    } catch { /* ignore */ }
+    finally { setSubLoading(false); }
+  };
 
   if (loading) {
     return (
@@ -93,20 +143,47 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
                 </svg>
                 {skills.length} {t('team.teamSkills')}
               </span>
+              <span className="flex items-center gap-1">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                </svg>
+                {subscriberCount} 订阅
+              </span>
             </div>
           </div>
-          {isOwner && (
-            <Link
-              href={`/teams/${params.id}/settings`}
-              className="inline-flex items-center gap-2 px-4 py-2 border border-neutral-300 rounded-lg text-sm font-medium text-neutral-700 hover:bg-neutral-100 transition shrink-0"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              {t('team.manage')}
-            </Link>
-          )}
+          <div className="flex items-center gap-3 shrink-0">
+            {currentUserId && !isOwner && (
+              <button
+                onClick={toggleSubscribe}
+                disabled={subLoading}
+                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition ${subscribed ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' : 'bg-brand-600 text-white hover:bg-brand-700'}`}
+              >
+                {subscribed ? (
+                  <>
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>
+                    已订阅
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>
+                    订阅
+                  </>
+                )}
+              </button>
+            )}
+            {isOwner && (
+              <Link
+                href={`/teams/${params.id}/settings`}
+                className="inline-flex items-center gap-2 px-4 py-2 border border-neutral-300 rounded-lg text-sm font-medium text-neutral-700 hover:bg-neutral-100 transition"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                {t('team.manage')}
+              </Link>
+            )}
+          </div>
         </div>
       </div>
 
