@@ -13,6 +13,28 @@ export interface SendMailOptions {
  */
 @Injectable()
 export class EmailService {
+  private transporter: any = null;
+
+  /** 懒加载并复用 SMTP 传输器（带超时，避免 SMTP 不可达时挂起请求） */
+  private getTransporter() {
+    if (this.transporter) return this.transporter;
+    const nodemailer = require('nodemailer');
+    this.transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.qq.com',
+      port: parseInt(process.env.SMTP_PORT || '587', 10),
+      secure: false,
+      // 关键：设置超时，避免 SMTP 不可达时挂起整个请求（最长 15s）
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+    return this.transporter;
+  }
+
   async sendMail({ to, subject, text, html }: SendMailOptions): Promise<boolean> {
     if (!to) {
       console.log('[SMTP] 收件人为空，跳过发送');
@@ -23,17 +45,7 @@ export class EmailService {
       return false;
     }
     try {
-      const nodemailer = require('nodemailer');
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || 'smtp.qq.com',
-        port: parseInt(process.env.SMTP_PORT || '587', 10),
-        secure: false,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-      const info = await transporter.sendMail({
+      const info = await this.getTransporter().sendMail({
         from: `"SkillDepot" <${process.env.SMTP_USER}>`,
         to,
         subject,
@@ -44,6 +56,8 @@ export class EmailService {
       return true;
     } catch (e: any) {
       console.error('[SMTP] 邮件发送失败:', e?.message || e);
+      // 重置传输器，下次重试时重建连接
+      this.transporter = null;
       return false;
     }
   }

@@ -105,8 +105,15 @@ export class SubscriptionsService {
 
     // 2) 找出所有相关订阅者，按订阅者聚合其订阅的目标组
     const perSubscriber = new Map<string, { targetType: SubscriptionTargetType; targetId: string; events: SubscriptionEvent[] }[]>();
+    // 团队目标预取 owner，避免向团队主理人自己发通知（同时减少查询）
+    const teamOwnerCache = new Map<string, string | undefined>();
+    const targetInfoCache = new Map<string, { name: string; path: string; avatar?: string }>();
     for (const [key, evts] of byTarget) {
       const [targetType, targetId] = key.split(':') as [SubscriptionTargetType, string];
+      if (targetType === 'team' && !teamOwnerCache.has(targetId)) {
+        const t = await this.teamRepo.findOne({ where: { id: targetId }, select: ['owner_user_id'] });
+        teamOwnerCache.set(targetId, t?.owner_user_id);
+      }
       const subs = await this.subRepo.find({ where: { target_type: targetType, target_id: targetId } });
       for (const s of subs) {
         if (!perSubscriber.has(s.subscriber_id)) perSubscriber.set(s.subscriber_id, []);
@@ -123,26 +130,23 @@ export class SubscriptionsService {
     });
     const userMap = new Map(users.map((u) => [u.id, u]));
 
-    // 4) 逐个订阅者发送（每订阅者最多 1 邮件 + 1 站内通知）
-    console.log(`[subscriptions] 开始聚合通知：${events.length} 个事件，${perSubscriber.size} 位订阅者`);
+    // 4) 组装站内通知（批量落库）+ 邮件任务（后台发送，不阻塞 admin 接口）
+    const notifications: Partial<Notification>[] = [];
+    const emailJobs: { to: string; subject: string; html: string }[] = [];
+
     for (const [subscriberId, groups] of perSubscriber) {
       const subUser = userMap.get(subscriberId);
-      if (!subUser?.email) {
-        console.log(`[subscriptions] 订阅者 ${subscriberId} 无邮箱，跳过邮件`);
-      }
-
-      // 跳过「订阅了自己」的噪音（仅 user 目标有意义）
       const first = groups[0];
 
-      const allEvents = groups.flatMap((g) => g.events);
-      // 获取目标名称、主页路径与头像
-      const { name: targetName, path: homePath, avatar: targetAvatar } = await this.getTargetInfo(first.targetType, first.targetId);
-
       // 跳过团队 owner 自己收到自己的团队通知
-      if (first.targetType === 'team') {
-        const team = await this.teamRepo.findOne({ where: { id: first.targetId }, select: ['owner_user_id'] });
-        if (team && team.owner_user_id === subscriberId) continue;
-      }
+      if (first.targetType === 'team' && teamOwnerCache.get(first.targetId) === subscriberId) continue;
+
+      const allEvents = groups.flatMap((g) => g.events);
+      const { name: targetName, path: homePath, avatar: targetAvatar } = await this.getCachedTargetInfo(
+        first.targetType,
+        first.targetId,
+        targetInfoCache,
+      );
 
       const count = allEvents.length;
       const title = `${targetName} 发布了新内容`;
@@ -158,8 +162,7 @@ export class SubscriptionsService {
         link: `/skills/${e.skillSlug || e.skillId}`,
       }));
 
-      // 站内通知（1 条）
-      await this.notiRepo.save({
+      notifications.push({
         user_id: subscriberId,
         type: 'subscription',
         subtype: allEvents.map((e) => e.subtype).join(','),
@@ -170,16 +173,52 @@ export class SubscriptionsService {
         read: false,
       });
 
-      // 邮件（1 封）
       if (subUser?.email) {
-        const sent = await this.emailService.sendMail({
-          to: subUser.email,
-          subject: title,
-          html: this.buildEmailHtml(targetName, allEvents, homePath, base),
-        });
-        console.log(`[subscriptions] 邮件发送给 ${subUser.email}: ${sent ? '成功' : '失败'}`);
+        emailJobs.push({ to: subUser.email, subject: title, html: this.buildEmailHtml(targetName, allEvents, homePath, base) });
       }
     }
+
+    // 站内通知：批量落库（快，立即让铃铛可显示）
+    if (notifications.length) {
+      await this.notiRepo.save(notifications as Notification[]);
+      console.log(`[subscriptions] 已创建 ${notifications.length} 条站内通知`);
+    }
+
+    // 邮件：后台异步发送，绝不阻塞审核接口
+    if (emailJobs.length) {
+      void this.sendEmailsAsync(emailJobs);
+    }
+  }
+
+  /** 后台发送邮件（不阻塞请求），带超时与结果统计 */
+  private async sendEmailsAsync(jobs: { to: string; subject: string; html: string }[]) {
+    console.log(`[subscriptions] 开始后台发送 ${jobs.length} 封邮件`);
+    let ok = 0;
+    let fail = 0;
+    for (const job of jobs) {
+      try {
+        const sent = await this.emailService.sendMail(job);
+        if (sent) ok++;
+        else fail++;
+      } catch (e: any) {
+        fail++;
+        console.error('[subscriptions] 邮件任务异常:', e?.message || e);
+      }
+    }
+    console.log(`[subscriptions] 邮件发送完成：成功 ${ok}，失败 ${fail}`);
+  }
+
+  private async getCachedTargetInfo(
+    targetType: SubscriptionTargetType,
+    targetId: string,
+    cache: Map<string, { name: string; path: string; avatar?: string }>,
+  ) {
+    const key = `${targetType}:${targetId}`;
+    const hit = cache.get(key);
+    if (hit) return hit;
+    const info = await this.getTargetInfo(targetType, targetId);
+    cache.set(key, info);
+    return info;
   }
 
   private async getTargetInfo(
