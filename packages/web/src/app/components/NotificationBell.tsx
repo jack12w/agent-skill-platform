@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -31,6 +31,7 @@ export default function NotificationBell() {
   const [readIds, setReadIds] = useState<Set<string>>(getReadIds());
   const [notiItems, setNotiItems] = useState<any[]>([]);
   const [notiUnread, setNotiUnread] = useState(0);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -83,6 +84,22 @@ export default function NotificationBell() {
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [fetchNotifications, fetchSubNotifications]);
+
+  // 点击面板外部自动关闭
+  useEffect(() => {
+    if (!open) return;
+    const handle = (e: Event) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handle);
+    document.addEventListener('touchstart', handle);
+    return () => {
+      document.removeEventListener('mousedown', handle);
+      document.removeEventListener('touchstart', handle);
+    };
+  }, [open]);
 
   // Unread = comments not in readIds + 订阅通知未读
   const unread = allComments.filter((c) => !readIds.has(c.id));
@@ -149,12 +166,10 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        <>
-          <div className="fixed inset-0 z-[55]" onClick={() => setOpen(false)} />
-          <div
-            className="fixed left-4 right-4 sm:left-auto sm:right-4 sm:w-[340px] top-14 z-[60] bg-white border rounded-xl shadow-xl max-h-[380px] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div
+          ref={panelRef}
+          className="fixed left-4 right-4 sm:left-auto sm:right-4 sm:w-[340px] top-14 z-[60] bg-white border rounded-xl shadow-xl max-h-[380px] overflow-y-auto"
+        >
             <div className="px-4 py-2.5 text-sm font-medium text-neutral-700 border-b sticky top-0 bg-white rounded-t-xl z-10 flex items-center justify-between">
               <span>评论通知{unread.length > 0 && <span className="ml-1 text-danger-500">({unread.length})</span>}</span>
             </div>
@@ -202,16 +217,25 @@ export default function NotificationBell() {
                 </div>
                 {notiItems.map((n: any) => {
                   const skills = n.payload?.skills ?? [];
+                  const targetAvatar = n.payload?.targetAvatar;
+                  const targetName = n.payload?.targetName || n.title?.split(' ')[0] || '';
+                  const fallbackLetter = targetName.charAt(0).toUpperCase();
                   return (
                     <div
                       key={n.id}
                       className={`w-full px-4 py-2.5 transition border-b border-neutral-100 last:border-0 ${n.read ? '' : 'bg-brand-50/60 hover:bg-brand-100/60'} hover:bg-neutral-100`}
                     >
                       <div className="flex items-start gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-400 to-accent-500 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                          </svg>
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-400 to-accent-500 flex items-center justify-center text-white text-xs font-bold shrink-0 mt-0.5 overflow-hidden">
+                          {targetAvatar ? (
+                            <img src={targetAvatar} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            fallbackLetter || (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                              </svg>
+                            )
+                          )}
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="text-xs text-neutral-500">
@@ -257,7 +281,6 @@ export default function NotificationBell() {
               </>
             )}
           </div>
-        </>
       )}
     </div>
   );

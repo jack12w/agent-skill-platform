@@ -135,8 +135,8 @@ export class SubscriptionsService {
       const first = groups[0];
 
       const allEvents = groups.flatMap((g) => g.events);
-      // 获取目标名称与主页路径
-      const { name: targetName, path: homePath } = await this.getTargetInfo(first.targetType, first.targetId);
+      // 获取目标名称、主页路径与头像
+      const { name: targetName, path: homePath, avatar: targetAvatar } = await this.getTargetInfo(first.targetType, first.targetId);
 
       // 跳过团队 owner 自己收到自己的团队通知
       if (first.targetType === 'team') {
@@ -166,7 +166,7 @@ export class SubscriptionsService {
         title,
         body,
         link: homePath,
-        payload: { targetName, targetType: first.targetType, targetId: first.targetId, homePath, skills },
+        payload: { targetName, targetType: first.targetType, targetId: first.targetId, homePath, targetAvatar, skills },
         read: false,
       });
 
@@ -185,15 +185,20 @@ export class SubscriptionsService {
   private async getTargetInfo(
     targetType: SubscriptionTargetType,
     targetId: string,
-  ): Promise<{ name: string; path: string }> {
+  ): Promise<{ name: string; path: string; avatar?: string }> {
     if (targetType === 'user') {
-      const u = await this.userRepo.findOne({ where: { id: targetId }, select: ['name'] });
+      const u = await this.userRepo.findOne({ where: { id: targetId }, select: ['name', 'avatar_url'] });
       const name = u?.name || '用户';
-      return { name, path: `/users/${encodeURIComponent(name)}` };
+      return { name, path: `/users/${encodeURIComponent(name)}`, avatar: u?.avatar_url || undefined };
     }
-    const t = await this.teamRepo.findOne({ where: { id: targetId }, select: ['name'] });
+    const t = await this.teamRepo.findOne({ where: { id: targetId }, select: ['name', 'owner_user_id'] });
     const name = t?.name || '团队';
-    return { name, path: `/teams/${targetId}` };
+    let avatar: string | undefined;
+    if (t?.owner_user_id) {
+      const owner = await this.userRepo.findOne({ where: { id: t.owner_user_id }, select: ['avatar_url'] });
+      avatar = owner?.avatar_url || undefined;
+    }
+    return { name, path: `/teams/${targetId}`, avatar };
   }
 
   private buildEmailHtml(
