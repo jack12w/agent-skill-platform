@@ -210,6 +210,17 @@ const zh = {
     loginFirst: '请先登录后再评论',
     empty: '暂无评论，来发表第一条吧',
   },
+  notification: {
+    title: '通知',
+    commentsTitle: '评论通知',
+    subscriptionTitle: '订阅通知',
+    clear: '清空',
+    noComments: '暂无评论',
+    noSubscriptions: '暂无订阅',
+    commentedOn: '评论了',
+    newVersion: '新版本',
+    newSkill: '新技能',
+  },
   tags: {
     source: '来源',
     scene: '场景',

@@ -210,6 +210,17 @@ const en = {
     loginFirst: 'Please log in to comment',
     empty: 'No comments yet. Be the first!',
   },
+  notification: {
+    title: 'Notifications',
+    commentsTitle: 'Comments',
+    subscriptionTitle: 'Subscriptions',
+    clear: 'Clear',
+    noComments: 'No comments',
+    noSubscriptions: 'No subscriptions',
+    commentedOn: 'commented on',
+    newVersion: 'New version',
+    newSkill: 'New skill',
+  },
   tags: {
     source: 'Source',
     scene: 'Scene',

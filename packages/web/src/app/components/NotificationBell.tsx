@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import useTranslation from '../../hooks/useTranslation';
 
 function loadUser() {
   try { const data = localStorage.getItem('user'); return data ? JSON.parse(data) : null; }
@@ -70,6 +71,7 @@ export default function NotificationBell() {
   const [notiItems, setNotiItems] = useState<any[]>([]);
   const [notiUnread, setNotiUnread] = useState(0);
   const panelRef = useRef<HTMLDivElement>(null);
+  const { t } = useTranslation();
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -211,7 +213,7 @@ export default function NotificationBell() {
       <button
         onClick={() => setOpen(!open)}
         className="relative p-1.5 text-neutral-500 hover:text-neutral-700 hover:bg-neutral-100 rounded-full transition"
-        title="通知"
+        title={t('notification.title')}
       >
         <svg className="w-[20px] h-[20px] sm:w-[22px] sm:h-[22px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -232,14 +234,14 @@ export default function NotificationBell() {
           {/* 评论通知 */}
           <div className="h-[190px] flex flex-col min-h-0 overflow-hidden border-b border-neutral-200">
             <div className="px-4 py-2.5 text-sm font-semibold text-neutral-800 bg-neutral-50 border-b border-neutral-200 z-10 flex items-center justify-between shrink-0">
-              <span>评论通知{unread.length > 0 && <span className="ml-1 text-danger-500">({unread.length})</span>}</span>
+              <span>{t('notification.commentsTitle')}{unread.length > 0 && <span className="ml-1 text-danger-500">({unread.length})</span>}</span>
               {visibleComments.some((c) => readIds.has(c.id)) && (
-                <button onClick={clearComments} className="text-xs font-normal text-neutral-400 hover:text-danger-500 transition">清空</button>
+                <button onClick={clearComments} className="text-xs font-normal text-neutral-400 hover:text-danger-500 transition">{t('notification.clear')}</button>
               )}
             </div>
             <div className="flex-1 overflow-y-auto">
               {visibleComments.length === 0 ? (
-                <div className="px-4 py-8 text-center text-sm text-neutral-400">暂无评论</div>
+                <div className="px-4 py-8 text-center text-sm text-neutral-400">{t('notification.noComments')}</div>
               ) : (
                 [...unread, ...visibleComments.filter((c) => readIds.has(c.id))].map((c: any) => {
                   const isUnread = !readIds.has(c.id);
@@ -257,7 +259,7 @@ export default function NotificationBell() {
                         <div className="min-w-0 flex-1">
                           <div className="text-xs text-neutral-500">
                             <span className="font-medium text-neutral-700">{c.user_name}</span>
-                            {' 评论了 '}
+                            {' '}{t('notification.commentedOn')}{' '}
                             <span className="text-brand-600">{c.skill_name}</span>
                             {isUnread && <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-brand-500 align-middle" />}
                           </div>
@@ -277,14 +279,14 @@ export default function NotificationBell() {
           {/* 订阅通知 */}
           <div className="h-[190px] flex flex-col min-h-0 overflow-hidden">
             <div className="px-4 py-2.5 text-sm font-semibold text-neutral-800 bg-neutral-50 border-b border-neutral-200 z-10 flex items-center justify-between shrink-0">
-              <span>订阅通知{notiUnread > 0 && <span className="ml-1 text-danger-500">({notiUnread})</span>}</span>
+              <span>{t('notification.subscriptionTitle')}{notiUnread > 0 && <span className="ml-1 text-danger-500">({notiUnread})</span>}</span>
               {notiItems.some((n) => n.read) && (
-                <button onClick={clearNotifications} className="text-xs font-normal text-neutral-400 hover:text-danger-500 transition">清空</button>
+                <button onClick={clearNotifications} className="text-xs font-normal text-neutral-400 hover:text-danger-500 transition">{t('notification.clear')}</button>
               )}
             </div>
             <div className="flex-1 overflow-y-auto">
               {notiItems.length === 0 ? (
-                <div className="px-4 py-8 text-center text-sm text-neutral-400">暂无订阅</div>
+                <div className="px-4 py-8 text-center text-sm text-neutral-400">{t('notification.noSubscriptions')}</div>
               ) : (
                 notiItems.map((n: any) => {
                   const skills = n.payload?.skills ?? [];
@@ -329,7 +331,7 @@ export default function NotificationBell() {
                                       s.subtype === 'new_version' ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'
                                     }`}
                                   >
-                                    {s.subtype === 'new_version' ? '新版本' : '新技能'}
+                                    {s.subtype === 'new_version' ? t('notification.newVersion') : t('notification.newSkill')}
                                   </span>
                                 </Link>
                               ))}
