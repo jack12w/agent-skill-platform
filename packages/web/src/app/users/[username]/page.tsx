@@ -172,7 +172,34 @@ export default function UserProfile({ params }: { params: { username: string } }
           </div>
 
           <div className="flex-1 min-w-0">
-            <h1 className="text-2xl sm:text-4xl font-bold text-neutral-900 truncate">{user.name}</h1>
+            {/* 用户名行：左用户名 / 右订阅组件 */}
+            <div className="flex items-center justify-between gap-3">
+              <h1 className="text-2xl sm:text-4xl font-bold text-neutral-900 truncate">{user.name}</h1>
+              {currentUserId && currentUserId !== user.id ? (
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-sm text-neutral-500">{subscriberCount} 人订阅</span>
+                  <button
+                    onClick={toggleSubscribe}
+                    disabled={subLoading}
+                    className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition ${subscribed ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' : 'bg-brand-600 text-white hover:bg-brand-700'}`}
+                  >
+                    {subscribed ? (
+                      <>
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 006 0h-6z" /></svg>
+                        已订阅
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+                        订阅
+                      </>
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <span className="text-sm text-neutral-500 shrink-0">{subscriberCount} 人订阅</span>
+              )}
+            </div>
             {user.bio && (
               <p className="text-neutral-600 mt-1 max-w-2xl text-sm sm:text-base">{user.bio}</p>
             )}
@@ -201,31 +228,6 @@ export default function UserProfile({ params }: { params: { username: string } }
               </div>
             </div>
 
-            {/* Subscribe row */}
-            {currentUserId && currentUserId !== user.id ? (
-              <div className="flex items-center gap-3 mt-3">
-                <button
-                  onClick={toggleSubscribe}
-                  disabled={subLoading}
-                  className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium transition ${subscribed ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' : 'bg-brand-600 text-white hover:bg-brand-700'}`}
-                >
-                  {subscribed ? (
-                    <>
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>
-                      已订阅
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>
-                      订阅
-                    </>
-                  )}
-                </button>
-                <span className="text-sm text-neutral-500">{subscriberCount} 人订阅</span>
-              </div>
-            ) : (
-              <div className="mt-3 text-sm text-neutral-500">{subscriberCount} 人订阅</div>
-            )}
           </div>
         </div>
       </div>
