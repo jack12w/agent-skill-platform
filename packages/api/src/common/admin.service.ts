@@ -183,13 +183,11 @@ export class AdminService {
         throw new Error(`Unknown action: ${action}`);
     }
 
-    // 审核通过：触发订阅者通知（聚合，每位订阅者最多 1 邮件 + 1 站内通知）
+    // 审核通过即返回，通知异步 fan-out（站内通知 + 邮件），不阻塞审核接口
     if (publishEvents.length) {
-      try {
-        await this.subService.notifySubscribers(publishEvents);
-      } catch (e: any) {
-        console.error('[subscriptions] 批量通知失败:', e?.message || e);
-      }
+      void this.subService.notifySubscribers(publishEvents).catch((e: any) =>
+        console.error('[subscriptions] 批量通知失败:', e?.message || e),
+      );
     }
 
     return { ok: true, updated: ids.length };
@@ -431,21 +429,17 @@ export class AdminService {
 
     await this.skillRepo.update(id, updateData);
 
-    // 审核通过：触发订阅者通知（聚合，每位订阅者最多 1 邮件 + 1 站内通知）
+    // 审核通过即返回，通知异步 fan-out（站内通知 + 邮件），不阻塞接口
     const target = this.getTargetOfSkill(skill);
     if (target) {
-      try {
-        await this.subService.notifySubscribers([{
-          targetType: target.targetType,
-          targetId: target.targetId,
-          skillId: skill.id,
-          skillSlug: skill.slug,
-          skillName: skill.name,
-          subtype: skill.status === SkillStatus.PUBLISHED ? 'new_version' : 'new_skill',
-        }]);
-      } catch (e: any) {
-        console.error('[subscriptions] 通知失败:', e?.message || e);
-      }
+      void this.subService.notifySubscribers([{
+        targetType: target.targetType,
+        targetId: target.targetId,
+        skillId: skill.id,
+        skillSlug: skill.slug,
+        skillName: skill.name,
+        subtype: skill.status === SkillStatus.PUBLISHED ? 'new_version' : 'new_skill',
+      }]).catch((e: any) => console.error('[subscriptions] 通知失败:', e?.message || e));
     }
 
     return { ok: true };

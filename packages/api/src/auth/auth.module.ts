@@ -8,6 +8,7 @@ import { User } from './user.entity';
 import { VerificationCode } from './verification-code.entity';
 import { Skill } from '../skills/skill.entity';
 import { Comment } from '../skills/comment.entity';
+import { CommonModule } from '../common/common.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { Comment } from '../skills/comment.entity';
       secret: process.env.JWT_SECRET || (() => { throw new Error('JWT_SECRET env var is required'); })(),
       signOptions: { expiresIn: '7d' },
     }),
+    CommonModule,
   ],
   providers: [AuthService, AuthGuard],
   controllers: [AuthController],

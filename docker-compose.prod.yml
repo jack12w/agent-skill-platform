@@ -53,6 +53,7 @@ services:
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASS=${SMTP_PASS}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       - WECHAT_APPID=${WECHAT_APPID:-wxb2537aa7600236a7}
       - WECHAT_APPSECRET=${WECHAT_APPSECRET}
     # API 不暴露宿主机端口，仅 Docker 内网通信（Web 容器通过 api:3001 访问）
@@ -65,6 +66,24 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app_net
+
+  # ── Redis（邮件队列 Bull 后端）─────────────
+  redis:
+    image: redis:7-alpine
+    container_name: agent_platform_redis
+    restart: always
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - app_net
 
@@ -103,3 +122,4 @@ networks:
 
 volumes:
   postgres_data:
+  redis_data:

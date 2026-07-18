@@ -5,7 +5,7 @@ import { Subscription, SubscriptionTargetType } from './subscription.entity';
 import { Notification } from './notification.entity';
 import { User } from '../auth/user.entity';
 import { Team } from '../teams/team.entity';
-import { EmailService } from '../common/email.service';
+import { MailQueueService } from '../common/mail-queue.service';
 
 export interface SubscriptionEvent {
   targetType: SubscriptionTargetType;
@@ -27,7 +27,7 @@ export class SubscriptionsService {
     private userRepo: Repository<User>,
     @InjectRepository(Team)
     private teamRepo: Repository<Team>,
-    private emailService: EmailService,
+    private mailQueue: MailQueueService,
   ) {}
 
   async subscribe(subscriberId: string, targetType: SubscriptionTargetType, targetId: string) {
@@ -196,22 +196,15 @@ export class SubscriptionsService {
     }
   }
 
-  /** 后台发送邮件（不阻塞请求），带超时与结果统计 */
+  /** 后台发送邮件（不阻塞请求）：交给邮件队列异步投递（Redis 可用时入队，
+   * 否则自动回退为内联并发发送）。并发度由队列 worker / SMTP 连接池限流，
+   * 避免逐个 await 串行导致订阅者越多、尾部邮件越延迟。
+   */
   private async sendEmailsAsync(jobs: { to: string; subject: string; html: string }[]) {
-    console.log(`[subscriptions] 开始后台发送 ${jobs.length} 封邮件`);
-    let ok = 0;
-    let fail = 0;
-    for (const job of jobs) {
-      try {
-        const sent = await this.emailService.sendMail(job);
-        if (sent) ok++;
-        else fail++;
-      } catch (e: any) {
-        fail++;
-        console.error('[subscriptions] 邮件任务异常:', e?.message || e);
-      }
-    }
-    console.log(`[subscriptions] 邮件发送完成：成功 ${ok}，失败 ${fail}`);
+    if (!jobs.length) return;
+    console.log(`[subscriptions] 提交 ${jobs.length} 封邮件任务（队列 / 内联）`);
+    await this.mailQueue.sendBulk(jobs);
+    console.log(`[subscriptions] 邮件任务已提交：${jobs.length} 封`);
   }
 
   private async getCachedTargetInfo(

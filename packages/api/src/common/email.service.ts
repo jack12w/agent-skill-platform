@@ -23,6 +23,10 @@ export class EmailService {
       host: process.env.SMTP_HOST || 'smtp.qq.com',
       port: parseInt(process.env.SMTP_PORT || '587', 10),
       secure: false,
+      // 连接池：允许多封邮件并发复用 TCP/TLS 连接，避免逐个重开连接拖慢批量发送
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
       // 关键：设置超时，避免 SMTP 不可达时挂起整个请求（最长 15s）
       connectionTimeout: 10000,
       greetingTimeout: 10000,

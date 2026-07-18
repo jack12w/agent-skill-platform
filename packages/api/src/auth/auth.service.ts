@@ -1,12 +1,13 @@
 import { Injectable, UnauthorizedException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
+import { Repository, DataSource, EntityManager } from 'typeorm';
 import { User } from './user.entity';
 import { VerificationCode } from './verification-code.entity';
 import { Skill } from '../skills/skill.entity';
 import { Comment } from '../skills/comment.entity';
 import { OssService } from '../storage/oss.service';
+import { MailQueueService } from '../common/mail-queue.service';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
@@ -30,21 +31,30 @@ export class AuthService {
     private commentRepository: Repository<Comment>,
     private jwtService: JwtService,
     private ossService: OssService,
+    private dataSource: DataSource,
+    private mailQueue: MailQueueService,
   ) {}
 
   async register(email: string, pass: string, name: string, code?: string) {
     // 验证码必填，防止绕过邮箱验证直接注册
-    if (!code) throw new BadRequestException('Verification code is required');
-    await this.verifyCode(email, code);
-    const salt = await bcrypt.genSalt();
-    const password_hash = await bcrypt.hash(pass, salt);
-    const user = this.userRepository.create({ email, password_hash, name });
-    const saved = await this.userRepository.save(user);
-    const payload = { sub: saved.id, email: saved.email, role: saved.role };
-    return {
-      access_token: await this.jwtService.signAsync(payload),
-      user: { id: saved.id, email: saved.email, name: saved.name, avatar_url: saved.avatar_url },
-    };
+    if (!code) throw new BadRequestException('验证码必填');
+    // 事务包裹：校验并消费验证码 + 创建用户。任一步失败整体回滚，
+    // 验证码的 used=true 不会被误提交，用户可用同一验证码重试，避免「验证码错误」误报。
+    return this.dataSource.transaction(async (manager) => {
+      await this.verifyCode(email, code, manager);
+      // 提前拦截重复注册：给出明确提示而非靠唯一约束抛 500，且不会烧掉验证码
+      const existing = await manager.getRepository(User).findOne({ where: { email } });
+      if (existing) throw new BadRequestException('该邮箱已注册，请直接登录');
+      const salt = await bcrypt.genSalt();
+      const password_hash = await bcrypt.hash(pass, salt);
+      const user = manager.getRepository(User).create({ email, password_hash, name });
+      const saved = await manager.getRepository(User).save(user);
+      const payload = { sub: saved.id, email: saved.email, role: saved.role };
+      return {
+        access_token: await this.jwtService.signAsync(payload),
+        user: { id: saved.id, email: saved.email, name: saved.name, avatar_url: saved.avatar_url },
+      };
+    });
   }
 
   async login(email: string, pass: string) {
@@ -98,63 +108,120 @@ export class AuthService {
   }
 
   // ── 邮箱验证码 ───────────────────────────
+  // 应用层限流（内存，单实例部署足够）：
+  //  - sendCooldown：同邮箱两次「获取验证码」最小间隔，防狂点打满 SMTP 连接池
+  //  - verifyAttempts：同邮箱验证码错误累计次数，超限锁定一段时间，防暴力枚举 6 位码
+  private static sendCooldown = new Map<string, number>(); // email -> 下次允许发送的时间戳
+  private static verifyAttempts = new Map<string, { count: number; resetAt: number }>();
+  private static readonly SEND_COOLDOWN_MS = 60 * 1000; // 同邮箱 60s 冷却
+  private static readonly MAX_VERIFY_ATTEMPTS = 5; // 窗口内最多 5 次错误
+  private static readonly VERIFY_WINDOW_MS = 10 * 60 * 1000; // 计数窗口 10 分钟
+
+  // 惰性清理过期条目，避免 Map 无限增长（配合 P2-1 数据卫生思路）
+  private static sweepRateLimitMaps(now: number) {
+    for (const [k, ts] of AuthService.sendCooldown) if (ts <= now) AuthService.sendCooldown.delete(k);
+    for (const [k, r] of AuthService.verifyAttempts) if (r.resetAt <= now) AuthService.verifyAttempts.delete(k);
+  }
+
   async sendVerificationCode(email: string) {
-    // 生成 6 位随机验证码
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const now = Date.now();
+    AuthService.sweepRateLimitMaps(now);
+    // 同邮箱发送冷却：命中则直接拒绝，不落库、不发信（防狂点耗尽连接池）
+    const nextAllowed = AuthService.sendCooldown.get(email) || 0;
+    if (now < nextAllowed) {
+      const wait = Math.ceil((nextAllowed - now) / 1000);
+      throw new BadRequestException(`验证码发送过于频繁，请 ${wait} 秒后再试`);
+    }
+    AuthService.sendCooldown.set(email, now + AuthService.SEND_COOLDOWN_MS);
+
+    // P2-1 数据卫生：惰性清理该邮箱已使用/已过期的旧验证码，避免 verification_codes 表无限膨胀。
+    // 每次获取新码时触发，无需额外定时任务依赖；仅删 junk（保留本次即将写入的未用记录之外）。
+    await this.codeRepository.delete({ email, used: true });
+    await this.codeRepository
+      .createQueryBuilder()
+      .delete()
+      .from(VerificationCode)
+      .where('email = :email AND expires_at < :now', { email, now: new Date() })
+      .execute();
+
+    // 生成 6 位密码学安全随机验证码（crypto.randomInt 均匀分布，不可预测；
+    // 旧实现 Math.random() 非密码学安全，理论上可被预测/枚举）
+    const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
     const expires_at = new Date(Date.now() + 10 * 60 * 1000); // 10 分钟有效
 
     await this.codeRepository.save({ email, code, used: false, expires_at });
 
-    // 尝试通过 nodemailer 发送（如果没有配置，仅记录日志）
-    try {
-      const nodemailer = require('nodemailer');
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || 'smtp.qq.com',
-        port: parseInt(process.env.SMTP_PORT || '587'),
-        secure: false,
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-      await transporter.sendMail({
-        from: `"Skill Register" <${process.env.SMTP_USER || 'noreply@example.com'}>`,
-        to: email,
-        subject: 'SkillDepot - 邮箱验证码',
-        text: `您的验证码是：${code}，10 分钟内有效。`,
-      });
-    } catch (e: any) {
-      // SMTP 未配置或发送失败
-      console.error('[SMTP] 邮件发送失败:', e.message || e);
-      // 开发环境：SMTP 没配时直接返回验证码，方便调试
-      if (!process.env.SMTP_USER) {
-        return { message: '验证码已生成（SMTP 未配置，验证码仅返回本次响应）', code, expires_in: 600 };
-      }
+    // 后台发送邮件，不阻塞 HTTP 响应：避免突发注册时请求被 SMTP 连接池排队阻塞
+    // （曾导致「获取验证码」转圈约 40s）。用户立即收到「已发送」，邮件由后台投递。
+    void this.sendOtpMail(email, code);
+
+    // 仅非生产环境且未配置 SMTP 时，在响应中回吐明文码方便本地调试。
+    // 生产环境绝不返回 code（防 P1-6 验证码/凭据泄露）。
+    if (process.env.NODE_ENV !== 'production' && !process.env.SMTP_USER) {
+      return { message: '验证码已生成（SMTP 未配置，验证码仅返回本次响应）', code, expires_in: 600 };
     }
-    return { message: '验证码已发送', expires_in: 600 };
+    // 邮件为后台投递，无法即时确认送达：给中性提示，避免用户误判「码错」而反复重试（P1-2）
+    return { message: '验证码已发送，若几分钟内未收到，请检查垃圾箱', expires_in: 600 };
   }
 
-  private async verifyCode(email: string, code: string) {
-    const record = await this.codeRepository.findOne({
+  /** 后台发送 OTP 邮件（不阻塞请求）：交给邮件队列异步投递，失败仅记录日志 */
+  private sendOtpMail(email: string, code: string) {
+    this.mailQueue.sendOtp(email, code);
+  }
+
+  // manager 可选：传入时复用调用方事务，保证「校验+消费+建用户」原子回滚
+  private async verifyCode(email: string, code: string, manager?: EntityManager) {
+    // 尝试次数限制（防暴力枚举 6 位码）：窗口内错误达上限则暂时锁定该邮箱
+    const now = Date.now();
+    AuthService.sweepRateLimitMaps(now);
+    const att = AuthService.verifyAttempts.get(email);
+    if (att && now < att.resetAt && att.count >= AuthService.MAX_VERIFY_ATTEMPTS) {
+      throw new BadRequestException('验证码错误次数过多，请稍后重试');
+    }
+    const repo = manager ? manager.getRepository(VerificationCode) : this.codeRepository;
+    const record = await repo.findOne({
       where: { email, code, used: false },
       order: { created_at: 'DESC' },
     });
-    if (!record) throw new BadRequestException('验证码错误');
-    if (new Date() > record.expires_at) throw new BadRequestException('验证码已过期');
-    record.used = true;
-    await this.codeRepository.save(record);
+    if (!record || new Date() > record.expires_at) {
+      // 记一次失败（record 为空=码错，或已过期都计入，防枚举）
+      this.bumpVerifyAttempts(email, now);
+      throw new BadRequestException(record ? '验证码已过期' : '验证码错误');
+    }
+    // 原子消费：仅当 used=false 时才置 true，并校验 affected 行数，
+    // 并发场景下败者 update 命中 0 行 → 抛错，避免同一验证码被重复消费
+    const result = await repo.update({ id: record.id, used: false }, { used: true });
+    if (result.affected === 0) {
+      this.bumpVerifyAttempts(email, now);
+      throw new BadRequestException('验证码错误');
+    }
+    // 校验成功：清零该邮箱失败计数
+    AuthService.verifyAttempts.delete(email);
+  }
+
+  /** 累加某邮箱的验证码错误次数（窗口内滚动，用于暴力枚举防护） */
+  private bumpVerifyAttempts(email: string, now: number) {
+    const att = AuthService.verifyAttempts.get(email);
+    if (att && now < att.resetAt) {
+      att.count += 1;
+    } else {
+      AuthService.verifyAttempts.set(email, { count: 1, resetAt: now + AuthService.VERIFY_WINDOW_MS });
+    }
   }
 
   // ── 忘记密码 ───────────────────────────
   async resetPassword(email: string, code: string, newPassword: string) {
     if (!code) throw new BadRequestException('验证码不能为空');
-    await this.verifyCode(email, code);
-    const user = await this.userRepository.findOne({ where: { email } });
-    if (!user) throw new NotFoundException('该邮箱未注册');
-    const salt = await bcrypt.genSalt();
-    user.password_hash = await bcrypt.hash(newPassword, salt);
-    await this.userRepository.save(user);
-    return { message: '密码已重置，请使用新密码登录' };
+    // 同样用事务包裹，保证验证码消费与密码更新原子：失败回滚，验证码可重试
+    return this.dataSource.transaction(async (manager) => {
+      await this.verifyCode(email, code, manager);
+      const user = await manager.getRepository(User).findOne({ where: { email } });
+      if (!user) throw new NotFoundException('该邮箱未注册');
+      const salt = await bcrypt.genSalt();
+      user.password_hash = await bcrypt.hash(newPassword, salt);
+      await manager.getRepository(User).save(user);
+      return { message: '密码已重置，请使用新密码登录' };
+    });
   }
 
   // ── 微信登录 ─────────────────────────────

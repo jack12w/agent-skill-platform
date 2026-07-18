@@ -106,7 +106,7 @@ export default function NotificationBell() {
     } catch { /* ignore */ }
   }, []);
 
-  // Poll every 60s, pause when tab hidden
+  // Poll every 15s, pause when tab hidden（缩短轮询周期，加快铃铛徽标更新）
   useEffect(() => {
     if (!loadUser()) return;
     fetchNotifications();
@@ -116,7 +116,7 @@ export default function NotificationBell() {
         fetchNotifications();
         fetchSubNotifications();
       }
-    }, 60000);
+    }, 15000);
     const onVisible = () => { if (loadUser()) { fetchNotifications(); fetchSubNotifications(); } };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
@@ -124,6 +124,14 @@ export default function NotificationBell() {
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [fetchNotifications, fetchSubNotifications]);
+
+  // 打开铃铛面板时立即刷新，避免等下一个轮询周期才看到新通知
+  useEffect(() => {
+    if (open && loadUser()) {
+      fetchNotifications();
+      fetchSubNotifications();
+    }
+  }, [open, fetchNotifications, fetchSubNotifications]);
 
   // 点击面板外部自动关闭
   useEffect(() => {
