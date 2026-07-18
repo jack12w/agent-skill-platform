@@ -3,6 +3,7 @@ import { StatsAggregationService } from '../stats-aggregation.service';
 import { AdminService } from './admin.service';
 import { AdminGuard } from './admin.guard';
 import { AuthGuard } from '../auth/auth.guard';
+import { SystemMetricsService } from './system-metrics.service';
 
 /**
  * Admin endpoints — protected by AuthGuard + AdminGuard.
@@ -14,6 +15,7 @@ export class AdminController {
   constructor(
     private readonly statsAggregation: StatsAggregationService,
     private readonly adminService: AdminService,
+    private readonly systemMetrics: SystemMetricsService,
   ) {}
 
   /**
@@ -121,6 +123,10 @@ export class AdminController {
   // ── 设置 ──
   @Get('settings')
   getSettings() { return this.adminService.getSettings(); }
+
+  // ── 系统监控指标（流量/资源/队列）──
+  @Get('system-metrics')
+  getSystemMetrics() { return this.systemMetrics.getMetrics(); }
 
   // ── 标签分组 ──
   @Get('tag-groups')

@@ -88,6 +88,16 @@ export class MailQueueService implements OnModuleDestroy {
     await this.emailService.sendMail(job);
   }
 
+  /** 返回队列任务计数（waiting/active/delayed/failed），未使用 Redis 时返回 null */
+  async getQueueCounts(): Promise<Record<string, number> | null> {
+    const q = this.queue as any;
+    if (q && typeof q.getJobCounts === 'function') {
+      const counts = await q.getJobCounts('waiting', 'active', 'delayed', 'failed');
+      return counts as Record<string, number>;
+    }
+    return null;
+  }
+
   async onModuleDestroy() {
     if (this.queue) await this.queue.close();
   }

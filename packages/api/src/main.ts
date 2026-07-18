@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
 import { RateLimitGuard } from './common/rate-limit.guard';
+import { SystemMetricsService } from './common/system-metrics.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -50,6 +51,17 @@ async function bootstrap() {
         res.status(503).json({ message: 'Request timeout' });
       }
     });
+    next();
+  });
+
+  // ── 请求计数中间件（用于系统监控 QPS）────
+  // 仅统计 /api 路径且排除健康检查，避免污染指标
+  const metrics = app.get(SystemMetricsService);
+  app.use((req, _res, next) => {
+    const url = (req.originalUrl || req.url || '') as string;
+    if (url.startsWith('/api') && !url.includes('/api/health')) {
+      metrics.recordRequest();
+    }
     next();
   });
 
