@@ -12,6 +12,28 @@ function fmtUptime(s: number): string {
   return `${h}h ${m}m ${sec}s`;
 }
 
+/** 极简 SVG 折线图（无依赖） */
+function Sparkline({ data, color = '#2563eb' }: { data: number[]; color?: string }) {
+  if (!data || data.length < 2) {
+    return <span className="text-xs text-neutral-400">—</span>;
+  }
+  const w = 260;
+  const h = 44;
+  const max = Math.max(...data, 1);
+  const pts = data
+    .map((v, i) => `${(i / (data.length - 1)) * w},${h - (v / max) * (h - 4) - 2}`)
+    .join(' ');
+  const last = data[data.length - 1];
+  return (
+    <svg width={w} height={h} className="overflow-visible">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} />
+      <text x={w} y={h - 4} textAnchor="end" fontSize="10" fill="#9ca3af">
+        {last}
+      </text>
+    </svg>
+  );
+}
+
 export default function HubSettingsPage() {
   const { t } = useTranslation();
   const [cfg, setCfg] = useState<any>(null);
@@ -78,6 +100,25 @@ export default function HubSettingsPage() {
                 <span className="text-sm font-medium text-neutral-900">{String(r.value)}</span>
               </div>
             ))}
+
+            {metrics.requests?.history ? (
+              <div className="px-5 py-4">
+                <div className="text-sm text-neutral-600 mb-2">{t('admin.metricsRealtime')}</div>
+                <Sparkline data={metrics.requests.history.map((h: any) => h.count)} />
+              </div>
+            ) : null}
+
+            {metrics.requests?.dailyHistory ? (
+              <div className="px-5 py-4">
+                <div className="text-sm text-neutral-600 mb-2">{t('admin.metrics7d')}</div>
+                <Sparkline
+                  data={metrics.requests.dailyHistory.map((d: any) => d.count)}
+                  color="#16a34a"
+                />
+              </div>
+            ) : (
+              <div className="px-5 py-4 text-xs text-neutral-400">{t('admin.metricsNoRedis')}</div>
+            )}
           </div>
         </>
       )}

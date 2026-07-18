@@ -4,6 +4,14 @@ import { MailQueueService } from './mail-queue.service';
 import Redis from 'ioredis';
 import os from 'os';
 
+/** 本地日期 YYYY-MM-DD（用于每日聚合 key） */
+function ymd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 /**
  * 轻量系统指标收集（用于管理后台「系统设置」展示）。
  * - 请求计数：每收到一个 API 请求调用 recordRequest()，维护滑动窗口算 QPS / 每分钟。
@@ -113,6 +121,10 @@ export class SystemMetricsService implements OnModuleInit {
       await this.redis.zadd(this.redisKey, minute, String(count));
       const cutoff = minute - this.historyMinutes * 60_000;
       await this.redis.zremrangebyscore(this.redisKey, '-inf', cutoff);
+      // 每日累计（用于 7 天曲线），30 天过期自动清理
+      const dayKey = `metrics:reqperday:${ymd(new Date())}`;
+      await this.redis.incrby(dayKey, count);
+      await this.redis.expire(dayKey, 30 * 24 * 3600);
     } catch {
       /* 静默降级 */
     }
@@ -143,6 +155,34 @@ export class SystemMetricsService implements OnModuleInit {
     const perSecond =
       this.buckets.reduce((sum, n) => sum + n, 0) / this.buckets.length;
 
+    // 从 Redis 读历史曲线（无 Redis 时为 null，前端不渲染）
+    let history: { ts: number; count: number }[] | null = null;
+    let dailyHistory: { date: string; count: number }[] | null = null;
+    if (this.redis) {
+      try {
+        const cutoff = Date.now() - this.historyMinutes * 60_000;
+        const raw = await this.redis.zrangebyscore(
+          this.redisKey,
+          cutoff,
+          '+inf',
+          'WITHSCORES',
+        );
+        history = [];
+        for (let i = 0; i < raw.length; i += 2) {
+          history.push({ ts: Number(raw[i + 1]), count: Number(raw[i]) });
+        }
+        dailyHistory = [];
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date(Date.now() - i * 24 * 3600 * 1000);
+          const c = await this.redis.get(`metrics:reqperday:${ymd(d)}`);
+          dailyHistory.push({ date: ymd(d), count: Number(c) || 0 });
+        }
+      } catch {
+        history = null;
+        dailyHistory = null;
+      }
+    }
+
     return {
       timestamp: new Date().toISOString(),
       process: {
@@ -161,6 +201,8 @@ export class SystemMetricsService implements OnModuleInit {
         total: this.totalRequests,
         perMinute: this.lastPerMinute,
         perSecond: Number(perSecond.toFixed(2)),
+        history,
+        dailyHistory,
       },
       database: { activeConnections: dbConnections },
       mailQueue,
