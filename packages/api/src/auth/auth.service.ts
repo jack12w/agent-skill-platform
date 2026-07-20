@@ -94,7 +94,10 @@ export class AuthService {
 
   // 返回当前登录用户的完整资料（含 bio / tags），供前端挂载时同步 localStorage
   async getMe(userId: string) {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'email', 'name', 'avatar_url', 'bio', 'tags', 'role', 'email_verified', 'wechat_openid'],
+    });
     if (!user) throw new NotFoundException('User not found');
     return {
       id: user.id,
