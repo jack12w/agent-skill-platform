@@ -96,7 +96,7 @@ export class AuthService {
   async getMe(userId: string) {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      select: ['id', 'email', 'name', 'avatar_url', 'bio', 'tags', 'role', 'email_verified', 'wechat_openid'],
+      select: ['id', 'email', 'name', 'avatar_url', 'bio', 'tags', 'role', 'email_verified', 'wechat_openid', 'password_hash'],
     });
     if (!user) throw new NotFoundException('User not found');
     return {
@@ -109,6 +109,7 @@ export class AuthService {
       role: user.role,
       wechatBound: !!user.wechat_openid,
       emailVerified: user.email_verified,
+      hasPassword: !!user.password_hash,
     };
   }
 

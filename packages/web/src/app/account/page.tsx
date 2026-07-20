@@ -14,6 +14,7 @@ interface MeUser {
   role?: string;
   wechatBound?: boolean;
   emailVerified?: boolean;
+  hasPassword?: boolean;
 }
 
 export default function AccountPage() {
@@ -165,6 +166,7 @@ export default function AccountPage() {
       alert('密码设置成功，现在可用邮箱+密码登录');
       setPwd('');
       setShowPwd(false);
+      reloadMe();
     } catch (err: any) {
       alert('设置失败: ' + (err.message || String(err)));
     } finally {
@@ -279,13 +281,17 @@ export default function AccountPage() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="font-semibold text-neutral-900">登录密码</h2>
-            <p className="text-sm text-neutral-500 mt-0.5">设置后可用邮箱+密码登录，作为微信/邮箱丢失时的兜底</p>
+            <p className="text-sm text-neutral-500 mt-0.5">
+              {me?.hasPassword
+                ? '已设置登录密码，可用邮箱+密码登录，作为微信/邮箱丢失时的兜底'
+                : '尚未设置登录密码，绑定邮箱后可用邮箱+密码登录'}
+            </p>
           </div>
           <button
             onClick={() => setShowPwd((v) => !v)}
             className="px-4 py-2 border border-brand-600 text-brand-600 rounded-lg text-sm font-medium hover:bg-brand-50"
           >
-            {showPwd ? '取消' : '设置密码'}
+            {showPwd ? '取消' : me?.hasPassword ? '修改密码' : '设置密码'}
           </button>
         </div>
         {showPwd && (
@@ -293,7 +299,7 @@ export default function AccountPage() {
             <input
               type="password"
               required
-              placeholder="新密码"
+              placeholder={me?.hasPassword ? '输入新密码' : '新密码'}
               className="w-full px-3 py-2 border rounded-lg"
               value={pwd}
               onChange={(e) => setPwd(e.target.value)}
@@ -303,7 +309,7 @@ export default function AccountPage() {
               disabled={pwdLoading}
               className="w-full py-2.5 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700 disabled:opacity-50"
             >
-              {pwdLoading ? '设置中...' : '保存密码'}
+              {pwdLoading ? '保存中...' : me?.hasPassword ? '保存新密码' : '保存密码'}
             </button>
           </form>
         )}
