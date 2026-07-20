@@ -431,10 +431,17 @@ export class AuthService {
   // ── 绑定邮箱（已登录会话发起；邮箱已属他人时自动合并账号） ──
   async bindEmail(userId: string, email: string, code: string, password?: string) {
     await this.verifyCode(email, code);
-    const currentUser = await this.userRepository.findOne({ where: { id: userId } });
+    // ⚠️ 必须 select wechat_openid，否则普通绑定分支 save() 时该 select:false 字段因未加载而被清空，
+    // 导致微信小号绑邮箱后丢失微信身份（下次微信登录又生成新小号）。
+    const currentUser = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'email', 'name', 'avatar_url', 'email_verified', 'password_hash', 'wechat_openid'],
+    });
     if (!currentUser) throw new NotFoundException('User not found');
 
-    const existing = await this.userRepository.findOne({ where: { email } });
+    // ⚠️ existing.wechat_openid 用于冲突判断，必须显式 select，否则 select:false 字段读不到，
+    // 该拦截时未拦截，会导致已绑微信的邮箱账号在合并时被错误清空微信身份。
+    const existing = await this.userRepository.findOne({ where: { email }, select: ['id', 'wechat_openid'] });
     if (existing && existing.id !== userId) {
       // 邮箱已被另一账号占用：把当前(多为微信小号)账号合并进该邮箱账号
       if (existing.wechat_openid && existing.wechat_openid !== currentUser.wechat_openid) {
@@ -497,8 +504,10 @@ export class AuthService {
       await skillRepo.update({ owner_user_id: fromId }, { owner_user_id: toId });
 
       // 迁移微信身份到目标（仅当目标尚未绑定）
-      const from = await userRepo.findOne({ where: { id: fromId } });
-      const to = await userRepo.findOne({ where: { id: toId } });
+      // ⚠️ wechat_openid/unionid 是 select:false 字段，普通 findOne 读不到，必须显式 select，
+      // 否则 from.wechat_openid 为 undefined，会把目标微信身份错误清空，导致合并后微信登录失效。
+      const from = await userRepo.findOne({ where: { id: fromId }, select: ['id', 'wechat_openid', 'wechat_unionid', 'avatar_url'] });
+      const to = await userRepo.findOne({ where: { id: toId }, select: ['id', 'wechat_openid', 'wechat_unionid', 'avatar_url'] });
       if (from && to && !to.wechat_openid) {
         to.wechat_openid = from.wechat_openid;
         to.wechat_unionid = from.wechat_unionid ?? to.wechat_unionid;
