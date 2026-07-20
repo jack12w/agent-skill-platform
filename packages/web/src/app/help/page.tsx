@@ -6,7 +6,6 @@ import useTranslation from '../../hooks/useTranslation';
 
 const MENU = [
   { key: 'quickstart' },
-  { key: 'profile' },
   { key: 'about' },
   { key: 'contact' },
   { key: 'feedback' },
@@ -59,7 +58,6 @@ export default function HelpCenterPage() {
 
   const menuLabels: Record<string, string> = {
     quickstart: t('help.quickstart'),
-    profile: t('help.profile'),
     about: t('help.about'),
     contact: t('help.contact'),
     feedback: t('help.feedback'),
@@ -128,24 +126,20 @@ tags: [搜索, 数据分析]
                 <li>{t('help.qsTeamSubscribe')}</li>
                 <li>{t('help.qsTeamRanking')}</li>
               </ul>
-            </div>
-          )}
 
-          {active === 'profile' && (
-            <div className="prose prose-sm max-w-none">
-              <h1 className="text-2xl font-bold mb-2">{t('help.profileTitle')}</h1>
-              <p className="text-neutral-500 text-sm mb-6">{t('help.profileDesc')}</p>
+              <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.profileTitle')}</h2>
+              <p className="text-neutral-600 text-sm leading-relaxed">{t('help.profileDesc')}</p>
 
-              <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.profileAccess')}</h2>
+              <h3 className="text-base font-semibold mt-4 mb-1">{t('help.profileAccess')}</h3>
               <p className="text-neutral-600 text-sm leading-relaxed">{t('help.profileAccessDesc')}</p>
 
-              <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.profileShow')}</h2>
+              <h3 className="text-base font-semibold mt-4 mb-1">{t('help.profileShow')}</h3>
               <p className="text-neutral-600 text-sm leading-relaxed">{t('help.profileShowDesc')}</p>
 
-              <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.profileSkills')}</h2>
+              <h3 className="text-base font-semibold mt-4 mb-1">{t('help.profileSkills')}</h3>
               <p className="text-neutral-600 text-sm leading-relaxed">{t('help.profileSkillsDesc')}</p>
 
-              <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.profileFollow')}</h2>
+              <h3 className="text-base font-semibold mt-4 mb-1">{t('help.profileFollow')}</h3>
               <p className="text-neutral-600 text-sm leading-relaxed">{t('help.profileFollowDesc')}</p>
             </div>
           )}
