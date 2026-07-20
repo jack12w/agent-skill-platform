@@ -6,6 +6,8 @@ import { User } from './user.entity';
 import { VerificationCode } from './verification-code.entity';
 import { Skill } from '../skills/skill.entity';
 import { Comment } from '../skills/comment.entity';
+import { Subscription } from '../subscriptions/subscription.entity';
+import { Notification } from '../subscriptions/notification.entity';
 import { OssService } from '../storage/oss.service';
 import { MailQueueService } from '../common/mail-queue.service';
 import * as bcrypt from 'bcryptjs';
@@ -16,6 +18,13 @@ const wechatStates = new Map<string, { expiresAt: number }>();
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of wechatStates) { if (v.expiresAt < now) wechatStates.delete(k); }
+}, 600_000);
+
+// 绑定态存储：微信「绑定」（已登录会话发起）使用，关联 userId 做 CSRF 防护
+const wechatBindStates = new Map<string, { userId: string; expiresAt: number }>();
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of wechatBindStates) { if (v.expiresAt < now) wechatBindStates.delete(k); }
 }, 600_000);
 
 @Injectable()
@@ -95,6 +104,8 @@ export class AuthService {
       bio: user.bio,
       tags: user.tags,
       role: user.role,
+      wechatBound: !!user.wechat_openid,
+      emailVerified: user.email_verified,
     };
   }
 
@@ -225,7 +236,15 @@ export class AuthService {
   }
 
   // ── 微信登录 ─────────────────────────────
+  // 微信登录总开关：关闭后所有微信链路（登录 / 绑定）在 API 层直接拒绝
+  private assertWechatLoginEnabled() {
+    if (process.env.WECHAT_LOGIN_ENABLED !== 'true') {
+      throw new BadRequestException('微信登录未启用');
+    }
+  }
+
   async getWechatAuthUrl() {
+    this.assertWechatLoginEnabled();
     const appId = process.env.WECHAT_APPID || 'wxb2537aa7600236a7';
     const redirectUri = encodeURIComponent(
       process.env.WECHAT_REDIRECT_URI || `${process.env.PUBLIC_BASE_URL}/api/auth/wechat/callback`
@@ -240,6 +259,7 @@ export class AuthService {
   }
 
   async wechatCallback(code: string, state: string) {
+    this.assertWechatLoginEnabled();
     // Verify state to prevent CSRF attacks
     const stored = wechatStates.get(state);
     if (!stored || Date.now() > stored.expiresAt) {
@@ -274,11 +294,13 @@ export class AuthService {
     });
     if (!user) {
       user = this.userRepository.create({
-        email: `wx_${openid.slice(0, 12)}@wechat.local`,
+        email: null,
         password_hash: '',
         name: wechatUser.nickname || '微信用户',
         wechat_openid: openid,
         wechat_unionid: unionid || null,
+        email_verified: false,
+        avatar_url: wechatUser.headimgurl || null,
       });
       await this.userRepository.save(user);
     }
@@ -345,5 +367,142 @@ export class AuthService {
     }));
 
     return { count, comments: items };
+  }
+
+  // ── 微信绑定（已登录会话发起，避免重复账号） ──
+  async getWechatBindUrl(userId: string) {
+    this.assertWechatLoginEnabled();
+    const appId = process.env.WECHAT_APPID || 'wxb2537aa7600236a7';
+    const base = process.env.PUBLIC_BASE_URL || 'http://localhost:3000';
+    const redirectUri = encodeURIComponent(`${base}/api/auth/wechat/bind-callback`);
+    const state = crypto.randomBytes(16).toString('hex');
+    // 绑定态关联当前登录用户，回调据此把 openid 落到正确账号
+    wechatBindStates.set(state, { userId, expiresAt: Date.now() + 5 * 60 * 1000 });
+    return {
+      url: `https://open.weixin.qq.com/connect/qrconnect?appid=${appId}&redirect_uri=${redirectUri}&response_type=code&scope=snsapi_login&state=${state}#wechat_redirect`,
+      state,
+    };
+  }
+
+  async completeWechatBind(code: string, state: string) {
+    this.assertWechatLoginEnabled();
+    const stored = wechatBindStates.get(state);
+    if (!stored || Date.now() > stored.expiresAt) {
+      throw new BadRequestException('Invalid or expired state parameter');
+    }
+    wechatBindStates.delete(state);
+    const userId = stored.userId;
+
+    const appId = process.env.WECHAT_APPID || 'wxb2537aa7600236a7';
+    const appSecret = process.env.WECHAT_APPSECRET;
+    if (!appSecret) throw new BadRequestException('WeChat AppSecret not configured');
+
+    const tokenRes = await fetch(
+      `https://api.weixin.qq.com/sns/oauth2/access_token?appid=${appId}&secret=${appSecret}&code=${code}&grant_type=authorization_code`,
+    );
+    const tokenData = await tokenRes.json();
+    if (tokenData.errcode) throw new BadRequestException(`微信绑定失败: ${tokenData.errmsg}`);
+    const { openid, unionid, access_token } = tokenData;
+
+    const userRes = await fetch(
+      `https://api.weixin.qq.com/sns/userinfo?access_token=${access_token}&openid=${openid}`,
+    );
+    const wechatUser = await userRes.json();
+
+    // 冲突检查：该 openid 已落在其他账号
+    const conflict = await this.userRepository.findOne({ where: { wechat_openid: openid } });
+    if (conflict && conflict.id !== userId) {
+      // 已绑在无邮箱的微信小号 → 合并进当前(邮箱)账号；已绑在有邮箱的真实账号 → 拒绝
+      if (conflict.email) throw new BadRequestException('该微信已绑定其他账号');
+      await this.mergeAccounts(conflict.id, userId);
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    user.wechat_openid = openid;
+    user.wechat_unionid = unionid || user.wechat_unionid || null;
+    if (wechatUser.headimgurl) user.avatar_url = wechatUser.headimgurl;
+    await this.userRepository.save(user);
+    return { ok: true };
+  }
+
+  // ── 绑定邮箱（已登录会话发起；邮箱已属他人时自动合并账号） ──
+  async bindEmail(userId: string, email: string, code: string, password?: string) {
+    await this.verifyCode(email, code);
+    const currentUser = await this.userRepository.findOne({ where: { id: userId } });
+    if (!currentUser) throw new NotFoundException('User not found');
+
+    const existing = await this.userRepository.findOne({ where: { email } });
+    if (existing && existing.id !== userId) {
+      // 邮箱已被另一账号占用：把当前(多为微信小号)账号合并进该邮箱账号
+      if (existing.wechat_openid && existing.wechat_openid !== currentUser.wechat_openid) {
+        throw new BadRequestException('该邮箱已绑定其他微信账号，无法合并');
+      }
+      await this.mergeAccounts(userId, existing.id);
+      await this.userRepository.update(existing.id, { email_verified: true });
+      const merged = await this.userRepository.findOne({ where: { id: existing.id } });
+      const payload = { sub: merged.id, email: merged.email, role: merged.role };
+      return {
+        access_token: await this.jwtService.signAsync(payload),
+        user: { id: merged.id, email: merged.email, name: merged.name, avatar_url: merged.avatar_url },
+        merged: true,
+      };
+    }
+
+    // 无冲突：普通绑定
+    currentUser.email = email;
+    currentUser.email_verified = true;
+    if (password) {
+      const salt = await bcrypt.genSalt();
+      currentUser.password_hash = await bcrypt.hash(password, salt);
+    }
+    await this.userRepository.save(currentUser);
+    const payload = { sub: currentUser.id, email, role: currentUser.role };
+    return {
+      access_token: await this.jwtService.signAsync(payload),
+      user: { id: currentUser.id, email, name: currentUser.name, avatar_url: currentUser.avatar_url },
+      merged: false,
+    };
+  }
+
+  async setPassword(userId: string, newPassword: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    const salt = await bcrypt.genSalt();
+    user.password_hash = await bcrypt.hash(newPassword, salt);
+    await this.userRepository.save(user);
+    return { ok: true };
+  }
+
+  /**
+   * 合并账号：把 fromId 的数据(订阅/通知/技能)迁移到 toId 并去重，迁移微信身份，删除 fromId。
+   * 用于「邮箱用户误点微信登录生成小号」后的自动合并，避免用户持有两个账号。
+   */
+  private async mergeAccounts(fromId: string, toId: string) {
+    await this.dataSource.transaction(async (manager) => {
+      const subRepo = manager.getRepository(Subscription);
+      const notiRepo = manager.getRepository(Notification);
+      const skillRepo = manager.getRepository(Skill);
+      const userRepo = manager.getRepository(User);
+
+      // 订阅去重：删除 from 中与 to 重复的订阅，避免唯一约束冲突
+      await manager.query(
+        `DELETE FROM subscriptions s WHERE s.subscriber_id = $1 AND EXISTS (SELECT 1 FROM subscriptions e WHERE e.subscriber_id = $2 AND e.target_type = s.target_type AND e.target_id = s.target_id)`,
+        [fromId, toId],
+      );
+      await subRepo.update({ subscriber_id: fromId }, { subscriber_id: toId });
+      await notiRepo.update({ user_id: fromId }, { user_id: toId });
+      await skillRepo.update({ owner_user_id: fromId }, { owner_user_id: toId });
+
+      // 迁移微信身份到目标（仅当目标尚未绑定）
+      const from = await userRepo.findOne({ where: { id: fromId } });
+      const to = await userRepo.findOne({ where: { id: toId } });
+      if (from && to && !to.wechat_openid) {
+        to.wechat_openid = from.wechat_openid;
+        to.wechat_unionid = from.wechat_unionid ?? to.wechat_unionid;
+        to.avatar_url = to.avatar_url || from.avatar_url;
+        await userRepo.save(to);
+      }
+      await userRepo.delete({ id: fromId });
+    });
   }
 }

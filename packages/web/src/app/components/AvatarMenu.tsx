@@ -61,6 +61,7 @@ export default function AvatarMenu() {
           <div className="absolute right-0 top-10 z-20 bg-white border rounded-lg shadow-lg py-1 min-w-[140px]">
             <div className="px-4 py-2 text-sm text-neutral-500 border-b">{user.name || user.email}</div>
             <Link href="/dashboard" onClick={() => setOpen(false)} className="block px-4 py-2 text-sm hover:bg-neutral-100">{t('avatar.dashboard')}</Link>
+            <Link href="/account" onClick={() => setOpen(false)} className="block px-4 py-2 text-sm hover:bg-neutral-100">{t('avatar.account')}</Link>
             {isAdmin() && (
               <Link href="/hub" onClick={() => setOpen(false)} className="block px-4 py-2 text-sm text-brand-600 hover:bg-neutral-100">{t('admin.hub')}</Link>
             )}

@@ -5,8 +5,14 @@ export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true })
+  // 微信登录用户初始无邮箱，允许为空；唯一约束下 Postgres 允许多个 NULL。
+  @Column({ unique: true, nullable: true })
   email: string;
+
+  // 邮箱是否已验证。true=真实可用邮箱（历史邮箱用户默认 true）；
+  // 微信未绑邮箱用户为 false，订阅邮件门禁据此跳过。
+  @Column({ default: true })
+  email_verified: boolean;
 
   @Column({ select: false })
   password_hash: string;

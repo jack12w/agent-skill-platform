@@ -187,6 +187,9 @@ export default function AuthPage() {
               Dev 微信登录 (模拟)
             </button>
           )}
+          <p className="text-xs text-neutral-500 text-center mt-3">
+            已有邮箱账号？请先用邮箱登录，在「账号设置」中绑定微信，可保留全部数据。
+          </p>
         </div>
       )}
 

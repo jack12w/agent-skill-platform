@@ -84,4 +84,36 @@ export class AuthController {
   async mockWechatLogin(@Body() body: { nickname?: string }) {
     return this.authService.mockWechatLogin(body.nickname);
   }
+
+  // ── 微信绑定（已登录会话发起，避免重复账号） ──
+  @UseGuards(AuthGuard)
+  @Get('wechat/bind-url')
+  getWechatBindUrl(@Request() req: any) {
+    return this.authService.getWechatBindUrl(req.user.sub);
+  }
+
+  // 微信绑定回调（微信 redirect 至此，公开）：完成绑定后通知父窗口刷新
+  @Get('wechat/bind-callback')
+  async wechatBindCallback(@Query('code') code: string, @Query('state') state: string) {
+    await this.authService.completeWechatBind(code, state);
+    return `
+      <html><body><script>
+        window.opener.postMessage({ type: 'WECHAT_BIND_DONE' }, '*');
+        window.close();
+      </script></body></html>
+    `;
+  }
+
+  // ── 绑定邮箱（已登录会话发起；邮箱已属他人时自动合并账号） ──
+  @UseGuards(AuthGuard)
+  @Post('bind-email')
+  bindEmail(@Request() req: any, @Body() body: { email: string; code: string; password?: string }) {
+    return this.authService.bindEmail(req.user.sub, body.email, body.code, body.password);
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('set-password')
+  setPassword(@Request() req: any, @Body() body: { newPassword: string }) {
+    return this.authService.setPassword(req.user.sub, body.newPassword);
+  }
 }

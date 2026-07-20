@@ -132,7 +132,7 @@ export class SubscriptionsService {
     const subscriberIds = Array.from(perSubscriber.keys());
     const users = await this.userRepo.find({
       where: { id: In(subscriberIds) },
-      select: ['id', 'name', 'email'],
+      select: ['id', 'name', 'email', 'email_verified'],
     });
     const userMap = new Map(users.map((u) => [u.id, u]));
 
@@ -179,7 +179,13 @@ export class SubscriptionsService {
         read: false,
       });
 
-      if (subUser?.email) {
+      // 仅向「已验证的真实邮箱」发信：跳过未绑邮箱(NULL)、占位微信邮箱(@wechat.local)、未验证邮箱。
+      // 未绑邮箱用户仍通过上方 notifications 落库收到站内通知（铃铛），不浪费 SMTP。
+      if (
+        subUser?.email &&
+        !subUser.email.endsWith('@wechat.local') &&
+        subUser.email_verified
+      ) {
         emailJobs.push({ to: subUser.email, subject: title, html: this.buildEmailHtml(targetName, allEvents, homePath, base) });
       }
     }

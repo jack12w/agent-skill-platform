@@ -200,6 +200,7 @@ const en = {
   },
   avatar: {
     dashboard: 'Dashboard',
+    account: 'Account Settings',
     logout: 'Logout',
   },
   comments: {

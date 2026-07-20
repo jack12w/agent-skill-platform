@@ -200,6 +200,7 @@ const zh = {
   },
   avatar: {
     dashboard: '个人中心',
+    account: '账号设置',
     logout: '退出登录',
   },
   comments: {
