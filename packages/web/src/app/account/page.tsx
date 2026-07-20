@@ -79,6 +79,10 @@ export default function AccountPage() {
           window.removeEventListener('message', onMsg);
           reloadMe();
           alert('微信绑定成功');
+        } else if (e.data?.type === 'WECHAT_BIND_ERROR') {
+          try { win.close(); } catch {}
+          window.removeEventListener('message', onMsg);
+          alert('微信绑定失败: ' + (e.data.message || '未知错误'));
         }
       };
       window.addEventListener('message', onMsg);

@@ -1,4 +1,5 @@
-import { Controller, Post, Patch, Get, Body, HttpCode, HttpStatus, UseGuards, UseInterceptors, UploadedFile, Request, Query, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Patch, Get, Body, HttpCode, HttpStatus, UseGuards, UseInterceptors, UploadedFile, Request, Query, BadRequestException, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
@@ -60,35 +61,18 @@ export class AuthController {
   }
 
   @Get('wechat/callback')
-  async wechatCallback(@Query('code') code: string, @Query('state') state: string) {
+  async wechatCallback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
+    const base = process.env.PUBLIC_BASE_URL || 'https://skills.rehomi.com';
     try {
       const result = await this.authService.wechatCallback(code, state);
-      const token = result.access_token;
-      const user = JSON.stringify(result.user).replace(/</g, '\\u003c');
-      return `
-        <html><body><script>
-          if (window.opener) {
-            window.opener.postMessage({ type: 'WECHAT_LOGIN', token: '${token}', user: ${user} }, '*');
-            window.close();
-          } else {
-            document.body.innerText = '登录成功，请关闭此窗口并刷新原页面';
-          }
-        </script></body></html>
-      `;
+      const params = new URLSearchParams({
+        token: result.access_token,
+        user: JSON.stringify(result.user),
+      });
+      return res.redirect(`${base}/auth/wechat-callback?${params.toString()}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : '微信登录失败';
-      const safeMessage = message.replace(/</g, '&lt;').replace(/'/g, '&#39;');
-      const errorPayload = JSON.stringify({ type: 'WECHAT_LOGIN_ERROR', message }).replace(/</g, '\\u003c');
-      return `
-        <html><body style="font-family:system-ui;padding:20px;text-align:center">
-          <h2>微信登录失败</h2>
-          <p style="color:#666;word-break:break-all">${safeMessage}</p>
-          <p>请关闭此窗口，返回登录页重试。</p>
-          <script>
-            if (window.opener) window.opener.postMessage(${errorPayload}, '*');
-          </script>
-        </body></html>
-      `;
+      return res.redirect(`${base}/auth/wechat-callback?error=${encodeURIComponent(message)}`);
     }
   }
 
@@ -111,34 +95,16 @@ export class AuthController {
     return this.authService.getWechatBindUrl(req.user.sub);
   }
 
-  // 微信绑定回调（微信 redirect 至此，公开）：完成绑定后通知父窗口刷新
+  // 微信绑定回调（微信 redirect 至此，公开）：完成绑定后重定向到前端页面通知父窗口刷新
   @Get('wechat/bind-callback')
-  async wechatBindCallback(@Query('code') code: string, @Query('state') state: string) {
+  async wechatBindCallback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
+    const base = process.env.PUBLIC_BASE_URL || 'https://skills.rehomi.com';
     try {
       await this.authService.completeWechatBind(code, state);
-      return `
-        <html><body><script>
-          if (window.opener) {
-            window.opener.postMessage({ type: 'WECHAT_BIND_DONE' }, '*');
-            window.close();
-          } else {
-            document.body.innerText = '绑定成功，请关闭此窗口并刷新原页面';
-          }
-        </script></body></html>
-      `;
+      return res.redirect(`${base}/auth/wechat-bind-callback`);
     } catch (err) {
       const message = err instanceof Error ? err.message : '微信绑定失败';
-      const safeMessage = message.replace(/</g, '&lt;').replace(/'/g, '&#39;');
-      const errorPayload = JSON.stringify({ type: 'WECHAT_BIND_ERROR', message }).replace(/</g, '\\u003c');
-      return `
-        <html><body style="font-family:system-ui;padding:20px;text-align:center">
-          <h2>微信绑定失败</h2>
-          <p style="color:#666;word-break:break-all">${safeMessage}</p>
-          <script>
-            if (window.opener) window.opener.postMessage(${errorPayload}, '*');
-          </script>
-        </body></html>
-      `;
+      return res.redirect(`${base}/auth/wechat-bind-callback?error=${encodeURIComponent(message)}`);
     }
   }
 
