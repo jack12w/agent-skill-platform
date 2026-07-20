@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import useTranslation from '../../hooks/useTranslation';
 
@@ -12,6 +12,7 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [sendingCode, setSendingCode] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const popupRef = useRef<Window | null>(null);
 
   // 倒计时
   useEffect(() => {
@@ -19,6 +20,34 @@ export default function AuthPage() {
     const timer = setTimeout(() => setCountdown(c => c - 1), 1000);
     return () => clearTimeout(timer);
   }, [countdown]);
+
+  // 微信登录完成：关闭弹窗 + 本页写入登录态并跳转。postMessage 与 storage 事件两条通道都会调用。
+  const finishWechatLogin = useCallback((token: string, user: any) => {
+    try { popupRef.current?.close(); } catch {}
+    popupRef.current = null;
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(user));
+    router.push('/dashboard');
+  }, [router]);
+
+  // 兜底通道：跨标签页 storage 事件（不依赖 window.opener 在多次 302 后是否存活）
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'wechat_login_event' && e.newValue) {
+        try {
+          const data = JSON.parse(e.newValue);
+          if (data.type === 'WECHAT_LOGIN' && data.token) {
+            finishWechatLogin(data.token, data.user);
+          } else if (data.type === 'WECHAT_LOGIN_ERROR') {
+            try { popupRef.current?.close(); } catch {}
+            alert('微信登录失败: ' + (data.message || '未知错误'));
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [finishWechatLogin]);
 
   const handleSendCode = async () => {
     if (!form.email) return;
@@ -91,15 +120,13 @@ export default function AuthPage() {
       const top = Math.max(0, (window.screen.availHeight - h) / 2);
       const popup = window.open(url, 'wechat_login', `width=${w},height=${h},left=${left},top=${top}`);
       if (!popup) { alert('请允许弹窗以使用微信登录'); return; }
+      popupRef.current = popup;
       const onMsg = (e: MessageEvent) => {
         if (e.origin !== window.location.origin) return;
         if (e.data?.type === 'WECHAT_LOGIN') {
-          try { popup.close(); } catch {}
-          localStorage.setItem('token', e.data.token);
-          localStorage.setItem('user', JSON.stringify(e.data.user));
-          router.push('/dashboard');
+          finishWechatLogin(e.data.token, e.data.user);
         } else if (e.data?.type === 'WECHAT_LOGIN_ERROR') {
-          try { popup.close(); } catch {}
+          try { popupRef.current?.close(); } catch {}
           alert('微信登录失败: ' + (e.data.message || '未知错误'));
         }
       };

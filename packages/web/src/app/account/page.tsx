@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -26,6 +26,8 @@ export default function AccountPage() {
 
   // 微信绑定弹窗
   const [wechatLoading, setWechatLoading] = useState(false);
+  const bindWinRef = useRef<Window | null>(null);
+
   // 邮箱绑定表单
   const [emailForm, setEmailForm] = useState({ email: '', code: '', password: '' });
   const [emailSending, setEmailSending] = useState(false);
@@ -49,6 +51,29 @@ export default function AccountPage() {
       window.dispatchEvent(new Event('user-updated'));
     }
   }, []);
+
+  // 兜底通道：跨标签页 storage 事件（不依赖 window.opener 在多次 302 后是否存活）
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'wechat_bind_event' && e.newValue) {
+        try {
+          const data = JSON.parse(e.newValue);
+          if (data.type === 'WECHAT_BIND_DONE') {
+            try { bindWinRef.current?.close(); } catch {}
+            bindWinRef.current = null;
+            reloadMe();
+            alert('微信绑定成功');
+          } else if (data.type === 'WECHAT_BIND_ERROR') {
+            try { bindWinRef.current?.close(); } catch {}
+            bindWinRef.current = null;
+            alert('微信绑定失败: ' + (data.message || '未知错误'));
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [reloadMe]);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -74,15 +99,18 @@ export default function AccountPage() {
       const top = Math.max(0, (window.screen.availHeight - h) / 2);
       const win = window.open(url, 'wechat_bind', `width=${w},height=${h},left=${left},top=${top}`);
       if (!win) { alert('请允许弹窗以完成微信绑定'); return; }
+      bindWinRef.current = win;
       const onMsg = (e: MessageEvent) => {
         if (e.origin !== window.location.origin) return;
         if (e.data?.type === 'WECHAT_BIND_DONE') {
           try { win.close(); } catch {}
+          bindWinRef.current = null;
           window.removeEventListener('message', onMsg);
           reloadMe();
           alert('微信绑定成功');
         } else if (e.data?.type === 'WECHAT_BIND_ERROR') {
           try { win.close(); } catch {}
+          bindWinRef.current = null;
           window.removeEventListener('message', onMsg);
           alert('微信绑定失败: ' + (e.data.message || '未知错误'));
         }
