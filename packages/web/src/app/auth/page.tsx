@@ -96,6 +96,8 @@ export default function AuthPage() {
           localStorage.setItem('token', e.data.token);
           localStorage.setItem('user', JSON.stringify(e.data.user));
           router.push('/dashboard');
+        } else if (e.data?.type === 'WECHAT_LOGIN_ERROR') {
+          alert('微信登录失败: ' + (e.data.message || '未知错误'));
         }
       }, { once: true });
     } catch { alert('微信登录失败'); }

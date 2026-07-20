@@ -61,16 +61,35 @@ export class AuthController {
 
   @Get('wechat/callback')
   async wechatCallback(@Query('code') code: string, @Query('state') state: string) {
-    const result = await this.authService.wechatCallback(code, state);
-    // 返回 HTML 页面通知父窗口登录成功
-    const token = result.access_token;
-    const user = JSON.stringify(result.user).replace(/</g, '\\u003c');
-    return `
-      <html><body><script>
-        window.opener.postMessage({ type: 'WECHAT_LOGIN', token: '${token}', user: ${user} }, '*');
-        window.close();
-      </script></body></html>
-    `;
+    try {
+      const result = await this.authService.wechatCallback(code, state);
+      const token = result.access_token;
+      const user = JSON.stringify(result.user).replace(/</g, '\\u003c');
+      return `
+        <html><body><script>
+          if (window.opener) {
+            window.opener.postMessage({ type: 'WECHAT_LOGIN', token: '${token}', user: ${user} }, '*');
+            window.close();
+          } else {
+            document.body.innerText = '登录成功，请关闭此窗口并刷新原页面';
+          }
+        </script></body></html>
+      `;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '微信登录失败';
+      const safeMessage = message.replace(/</g, '&lt;').replace(/'/g, '&#39;');
+      const errorPayload = JSON.stringify({ type: 'WECHAT_LOGIN_ERROR', message }).replace(/</g, '\\u003c');
+      return `
+        <html><body style="font-family:system-ui;padding:20px;text-align:center">
+          <h2>微信登录失败</h2>
+          <p style="color:#666;word-break:break-all">${safeMessage}</p>
+          <p>请关闭此窗口，返回登录页重试。</p>
+          <script>
+            if (window.opener) window.opener.postMessage(${errorPayload}, '*');
+          </script>
+        </body></html>
+      `;
+    }
   }
 
   @UseGuards(AuthGuard)
@@ -95,13 +114,32 @@ export class AuthController {
   // 微信绑定回调（微信 redirect 至此，公开）：完成绑定后通知父窗口刷新
   @Get('wechat/bind-callback')
   async wechatBindCallback(@Query('code') code: string, @Query('state') state: string) {
-    await this.authService.completeWechatBind(code, state);
-    return `
-      <html><body><script>
-        window.opener.postMessage({ type: 'WECHAT_BIND_DONE' }, '*');
-        window.close();
-      </script></body></html>
-    `;
+    try {
+      await this.authService.completeWechatBind(code, state);
+      return `
+        <html><body><script>
+          if (window.opener) {
+            window.opener.postMessage({ type: 'WECHAT_BIND_DONE' }, '*');
+            window.close();
+          } else {
+            document.body.innerText = '绑定成功，请关闭此窗口并刷新原页面';
+          }
+        </script></body></html>
+      `;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '微信绑定失败';
+      const safeMessage = message.replace(/</g, '&lt;').replace(/'/g, '&#39;');
+      const errorPayload = JSON.stringify({ type: 'WECHAT_BIND_ERROR', message }).replace(/</g, '\\u003c');
+      return `
+        <html><body style="font-family:system-ui;padding:20px;text-align:center">
+          <h2>微信绑定失败</h2>
+          <p style="color:#666;word-break:break-all">${safeMessage}</p>
+          <script>
+            if (window.opener) window.opener.postMessage(${errorPayload}, '*');
+          </script>
+        </body></html>
+      `;
+    }
   }
 
   // ── 绑定邮箱（已登录会话发起；邮箱已属他人时自动合并账号） ──
