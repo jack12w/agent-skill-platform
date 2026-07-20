@@ -89,17 +89,21 @@ export default function AuthPage() {
       const w = 600, h = 700;
       const left = Math.max(0, (window.screen.availWidth - w) / 2);
       const top = Math.max(0, (window.screen.availHeight - h) / 2);
-      const win = window.open(url, 'wechat_login', `width=${w},height=${h},left=${left},top=${top}`);
-      if (!win) { alert('请允许弹窗以使用微信登录'); return; }
-      window.addEventListener('message', (e) => {
+      const popup = window.open(url, 'wechat_login', `width=${w},height=${h},left=${left},top=${top}`);
+      if (!popup) { alert('请允许弹窗以使用微信登录'); return; }
+      const onMsg = (e: MessageEvent) => {
+        if (e.origin !== window.location.origin) return;
         if (e.data?.type === 'WECHAT_LOGIN') {
+          try { popup.close(); } catch {}
           localStorage.setItem('token', e.data.token);
           localStorage.setItem('user', JSON.stringify(e.data.user));
           router.push('/dashboard');
         } else if (e.data?.type === 'WECHAT_LOGIN_ERROR') {
+          try { popup.close(); } catch {}
           alert('微信登录失败: ' + (e.data.message || '未知错误'));
         }
-      }, { once: true });
+      };
+      window.addEventListener('message', onMsg);
     } catch { alert('微信登录失败'); }
   };
 

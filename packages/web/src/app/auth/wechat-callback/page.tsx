@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 // 微信登录回调落地页：由 API 302 重定向至此（同源、打包 JS 不受 CSP 内联脚本限制）。
-// 负责把 token/user 通过 postMessage 回传给登录页弹窗的父窗口，并关闭弹窗。
+// 负责把 token/user 通过 postMessage 回传给登录页弹窗的父窗口，由父窗口关闭弹窗。
 export default function WechatLoginCallback() {
   const router = useRouter();
   useEffect(() => {
@@ -33,12 +33,13 @@ export default function WechatLoginCallback() {
         return;
       }
     }
-    if (window.opener) window.close();
+    // 注意：不要在这里 window.close()。经 302 重定向后的弹窗通常无法被自己脚本关闭，
+    // 关闭弹窗由父窗口（window.open 的创建者）在收到 postMessage 后负责。
   }, [router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center text-sm text-neutral-500">
-      登录处理中...
+      登录处理中，请稍候…
     </div>
   );
 }

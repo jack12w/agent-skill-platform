@@ -74,6 +74,7 @@ export default function AccountPage() {
       const win = window.open(url, 'wechat_bind', `width=${w},height=${h},left=${left},top=${top}`);
       if (!win) { alert('请允许弹窗以完成微信绑定'); return; }
       const onMsg = (e: MessageEvent) => {
+        if (e.origin !== window.location.origin) return;
         if (e.data?.type === 'WECHAT_BIND_DONE') {
           try { win.close(); } catch {}
           window.removeEventListener('message', onMsg);
