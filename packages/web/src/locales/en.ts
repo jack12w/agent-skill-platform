@@ -386,7 +386,7 @@ const en = {
     qsTeamVisibility: 'Visibility toggle: in team settings you can switch between "Public" and "Members only". Private teams are visible and downloadable only to their members.',
     qsTeamSubscribe: 'Subscribe to teams: other users can subscribe to a team and get notified when it publishes new skills or updates.',
     qsTeamRanking: 'Team leaderboard: likes and downloads of team skills count toward the team leaderboard for more exposure.',
-    profileTitle: 'User Profile',
+    profileTitle: '5. User Profile',
     profileDesc: 'Every creator has a dedicated profile page that showcases their skills and community impact.',
     profileAccess: 'How to Access',
     profileAccessDesc: 'Click a creator\'s name on any skill card or detail page to open their profile (URL like /users/username).',

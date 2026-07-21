@@ -387,7 +387,7 @@ const zh = {
     qsTeamVisibility: '对外展示开关：在团队设置中可切换「公开」或「仅团队成员可见」，私有团队仅成员能查看和下载其技能。',
     qsTeamSubscribe: '订阅团队：其他用户可订阅团队，团队发布新技能或更新版本时会收到通知。',
     qsTeamRanking: '团队排行榜：团队技能的获赞与下载会计入团队排行榜，助力团队获得更多曝光。',
-    profileTitle: '个人主页',
+    profileTitle: '5. 个人主页',
     profileDesc: '每位创作者都有一个专属的个人主页，集中展示你的技能作品与社区影响力。',
     profileAccess: '如何进入',
     profileAccessDesc: '点击任意技能卡片或详情页上的作者名，即可打开该创作者的个人主页（地址形如 /users/用户名）。',
