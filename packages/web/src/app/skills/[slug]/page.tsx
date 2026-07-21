@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import MDEditor from '@uiw/react-md-editor';
 import useTranslation from '../../../hooks/useTranslation';
+import { setShareConfig, resetShareConfig } from '../../../lib/share';
 import CommentSection from '../../components/CommentSection';
 import SkillUpdateBadge from '../../components/SkillUpdateBadge';
 
@@ -59,12 +60,20 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
         }
         const data = await res.json();
         setSkill(data);
+        setShareConfig({
+          title: data.name,
+          desc: data.summary || data.short_summary || '',
+          imgUrl: data.cover_url || undefined,
+        });
         await loadVersions(data.id);
       }
       catch (e: any) { setError(e.message || 'Failed to load skill'); }
       finally { setLoading(false); }
     })();
   }, [params.slug]);
+
+  // 离开页面时清空分享配置，避免影响其他页面
+  useEffect(() => () => resetShareConfig(), []);
 
   // 技能不存在时拉取推荐列表
   useEffect(() => {

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import useTranslation from '../../../hooks/useTranslation';
+import { setShareConfig, resetShareConfig } from '../../../lib/share';
 import SkillUpdateBadge from '../../components/SkillUpdateBadge';
 
 export default function TeamShowcase({ params }: { params: { id: string } }) {
@@ -41,6 +42,11 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
       }
       const data = await res.json();
       setTeam(data);
+      setShareConfig({
+        title: data.name,
+        desc: data.description || '',
+        imgUrl: data.cover_url || undefined,
+      });
       setIsOwner(data.is_owner);
 
       // 订阅数 + 当前用户订阅状态
@@ -71,6 +77,9 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
   };
 
   useEffect(() => { setActiveTag(null); load(); }, [params.id]);
+
+  // 离开页面时清空分享配置，避免影响其他页面
+  useEffect(() => () => resetShareConfig(), []);
 
   // 非团队成员访问私有团队：提示后自动跳转到技能广场
   useEffect(() => {

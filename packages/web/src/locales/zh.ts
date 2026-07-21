@@ -435,6 +435,16 @@ const zh = {
     fbAdminDelete: '删除',
     fbAdminEmpty: '暂无反馈',
   },
+  share: {
+    button: '分享',
+    guideTitle: '分享给好友',
+    guideDesc: '点击右上角「···」菜单，选择「发送给朋友」或「分享到朋友圈」。',
+    guideClose: '我知道了',
+    copyLink: '复制链接',
+    copySuccess: '链接已复制，去粘贴给好友吧',
+    copyFailed: '复制失败，请手动复制',
+    openInWechat: '请在微信中打开以使用分享功能',
+  },
 };
 
 export default zh;

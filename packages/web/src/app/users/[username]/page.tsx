@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import useTranslation from '../../../hooks/useTranslation';
+import { setShareConfig, resetShareConfig } from '../../../lib/share';
 import SkillUpdateBadge from '../../components/SkillUpdateBadge';
 
 export default function UserProfile({ params }: { params: { username: string } }) {
@@ -50,6 +51,11 @@ export default function UserProfile({ params }: { params: { username: string } }
 
       const userData = await userRes.json();
       setUser(userData);
+      setShareConfig({
+        title: userData.name,
+        desc: userData.bio || '',
+        imgUrl: userData.avatar_url || undefined,
+      });
 
       // 订阅数 + 当前用户订阅状态
       try {
@@ -84,6 +90,9 @@ export default function UserProfile({ params }: { params: { username: string } }
       setLoadingMore(false);
     }
   }, [username]);
+
+  // 离开页面时清空分享配置，避免影响其他页面
+  useEffect(() => () => resetShareConfig(), []);
 
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return;

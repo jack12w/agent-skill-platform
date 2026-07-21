@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import AvatarMenu from './AvatarMenu';
 import NotificationBell from './NotificationBell';
+import ShareButton from './ShareButton';
 import useTranslation from '../../hooks/useTranslation';
 
 export default function NavBar() {
@@ -53,6 +54,7 @@ export default function NavBar() {
           <span>{langLabel}</span>
           <svg className="w-3 h-3 ml-0.5" viewBox="0 0 1024 1024" fill="currentColor"><path d="M543.962 746.182l384.163-401.629c17.681-18.504 17.68-48.475 0-66.947s-46.361-18.474-64.043 0L511.953 645.8l-352.155-368.194c-17.68-18.474-46.331-18.474-64.012 0s-17.682 48.444 0 66.947L479.949 746.182c17.652 18.504 46.331 18.504 64.012 0z"/></svg>
         </div>
+        <ShareButton />
         <NotificationBell />
         <AvatarMenu />
       </div>
@@ -64,6 +66,7 @@ export default function NavBar() {
         </button>
         <NotificationBell />
         <AvatarMenu />
+        <ShareButton />
         <button onClick={() => setMenuOpen(!menuOpen)} className="p-2 -mr-2 text-neutral-600 hover:text-neutral-900" aria-label="Menu">
           {menuOpen ? (
             <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>

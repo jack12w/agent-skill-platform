@@ -434,6 +434,16 @@ const en = {
     fbAdminDelete: 'Delete',
     fbAdminEmpty: 'No feedback',
   },
+  share: {
+    button: 'Share',
+    guideTitle: 'Share with friends',
+    guideDesc: 'Tap the "···" menu at the top right, then choose "Send to Chat" or "Share to Moments".',
+    guideClose: 'Got it',
+    copyLink: 'Copy link',
+    copySuccess: 'Link copied, go paste it to your friends',
+    copyFailed: 'Copy failed, please copy manually',
+    openInWechat: 'Open in WeChat to use the share feature',
+  },
 };
 
 export default en;
