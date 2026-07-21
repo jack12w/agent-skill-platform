@@ -4,17 +4,12 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import useTranslation from '../../hooks/useTranslation';
 
-// 健壮关闭微信弹窗：跨域 302（open.weixin.qq.com）后部分浏览器会收回「脚本可关闭」标记，
-// 直接 close() 被静默拦截。先跳到 about:blank（可被脚本关闭的特殊页）再 close 作为兜底。
+// 健壮关闭微信弹窗：跨域 302（open.weixin.qq.com）后部分浏览器会收回「脚本可关闭」标记。
+// 弹窗落地页本身也会自关，这里父窗口再尝试一次作为辅助；若关不掉也不阻塞主流程跳转。
 function closePopupRobustly(win: Window | null) {
   if (!win || win.closed) return;
   try { win.close(); } catch {}
-  try {
-    if (!win.closed) {
-      win.location.href = 'about:blank';
-      setTimeout(() => { try { win.close(); } catch {} }, 150);
-    }
-  } catch {}
+  setTimeout(() => { try { win.close(); } catch {} }, 300);
 }
 
 export default function AuthPage() {

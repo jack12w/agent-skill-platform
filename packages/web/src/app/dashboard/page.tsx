@@ -9,6 +9,20 @@ import { fetchTagGroups } from '../../lib/tag-groups';
 export default function Dashboard() {
   const router = useRouter();
   const { t } = useTranslation();
+
+  // 安全网：若微信登录弹窗因缓存/旧代码落到了 dashboard，识别后主动关闭弹窗
+  useEffect(() => {
+    if (window.opener && window.opener !== window) {
+      const fromLogin = sessionStorage.getItem('wechat_login_popup') === '1';
+      const fromBind = sessionStorage.getItem('wechat_bind_popup') === '1';
+      if (fromLogin || fromBind) {
+        try { window.close(); } catch {}
+        try { window.open('', '_self')?.close(); } catch {}
+        try { sessionStorage.removeItem('wechat_login_popup'); sessionStorage.removeItem('wechat_bind_popup'); } catch {}
+      }
+    }
+  }, []);
+
   const [user, setUser] = useState<any>(null);
   const [teams, setTeams] = useState<any[]>([]);
   const [skills, setSkills] = useState<any[]>([]);
