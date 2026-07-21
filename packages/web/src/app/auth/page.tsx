@@ -4,6 +4,19 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import useTranslation from '../../hooks/useTranslation';
 
+// 健壮关闭微信弹窗：跨域 302（open.weixin.qq.com）后部分浏览器会收回「脚本可关闭」标记，
+// 直接 close() 被静默拦截。先跳到 about:blank（可被脚本关闭的特殊页）再 close 作为兜底。
+function closePopupRobustly(win: Window | null) {
+  if (!win || win.closed) return;
+  try { win.close(); } catch {}
+  try {
+    if (!win.closed) {
+      win.location.href = 'about:blank';
+      setTimeout(() => { try { win.close(); } catch {} }, 150);
+    }
+  } catch {}
+}
+
 export default function AuthPage() {
   const router = useRouter();
   const { t } = useTranslation();
@@ -23,7 +36,7 @@ export default function AuthPage() {
 
   // 微信登录完成：关闭弹窗 + 本页写入登录态并跳转。postMessage 与 storage 事件两条通道都会调用。
   const finishWechatLogin = useCallback((token: string, user: any) => {
-    try { popupRef.current?.close(); } catch {}
+    closePopupRobustly(popupRef.current);
     popupRef.current = null;
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(user));
@@ -39,7 +52,8 @@ export default function AuthPage() {
           if (data.type === 'WECHAT_LOGIN' && data.token) {
             finishWechatLogin(data.token, data.user);
           } else if (data.type === 'WECHAT_LOGIN_ERROR') {
-            try { popupRef.current?.close(); } catch {}
+            closePopupRobustly(popupRef.current);
+            popupRef.current = null;
             alert('微信登录失败: ' + (data.message || '未知错误'));
           }
         } catch {}
@@ -126,7 +140,8 @@ export default function AuthPage() {
         if (e.data?.type === 'WECHAT_LOGIN') {
           finishWechatLogin(e.data.token, e.data.user);
         } else if (e.data?.type === 'WECHAT_LOGIN_ERROR') {
-          try { popupRef.current?.close(); } catch {}
+          closePopupRobustly(popupRef.current);
+          popupRef.current = null;
           alert('微信登录失败: ' + (e.data.message || '未知错误'));
         }
       };

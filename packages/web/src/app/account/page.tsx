@@ -17,6 +17,19 @@ interface MeUser {
   hasPassword?: boolean;
 }
 
+// 健壮关闭微信弹窗：跨域 302（open.weixin.qq.com）后部分浏览器会收回「脚本可关闭」标记，
+// 直接 close() 被静默拦截。先跳到 about:blank 再 close 作为兜底。
+function closePopupRobustly(win: Window | null) {
+  if (!win || win.closed) return;
+  try { win.close(); } catch {}
+  try {
+    if (!win.closed) {
+      win.location.href = 'about:blank';
+      setTimeout(() => { try { win.close(); } catch {} }, 150);
+    }
+  } catch {}
+}
+
 export default function AccountPage() {
   const router = useRouter();
   const [me, setMe] = useState<MeUser | null>(null);
@@ -59,12 +72,12 @@ export default function AccountPage() {
         try {
           const data = JSON.parse(e.newValue);
           if (data.type === 'WECHAT_BIND_DONE') {
-            try { bindWinRef.current?.close(); } catch {}
+            closePopupRobustly(bindWinRef.current);
             bindWinRef.current = null;
             reloadMe();
             alert('微信绑定成功');
           } else if (data.type === 'WECHAT_BIND_ERROR') {
-            try { bindWinRef.current?.close(); } catch {}
+            closePopupRobustly(bindWinRef.current);
             bindWinRef.current = null;
             alert('微信绑定失败: ' + (data.message || '未知错误'));
           }
@@ -103,13 +116,13 @@ export default function AccountPage() {
       const onMsg = (e: MessageEvent) => {
         if (e.origin !== window.location.origin) return;
         if (e.data?.type === 'WECHAT_BIND_DONE') {
-          try { win.close(); } catch {}
+          closePopupRobustly(win);
           bindWinRef.current = null;
           window.removeEventListener('message', onMsg);
           reloadMe();
           alert('微信绑定成功');
         } else if (e.data?.type === 'WECHAT_BIND_ERROR') {
-          try { win.close(); } catch {}
+          closePopupRobustly(win);
           bindWinRef.current = null;
           window.removeEventListener('message', onMsg);
           alert('微信绑定失败: ' + (e.data.message || '未知错误'));
