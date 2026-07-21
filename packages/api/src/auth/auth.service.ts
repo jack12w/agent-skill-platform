@@ -504,6 +504,23 @@ export class AuthService {
       await notiRepo.update({ user_id: fromId }, { user_id: toId });
       await skillRepo.update({ owner_user_id: fromId }, { owner_user_id: toId });
 
+      // 团队归属：把 from 拥有的团队转交给 to。teams.owner_user_id 是 RESTRICT 外键（无 ON DELETE），
+      // 若不在删除 from 前改掉，删除 from 会因外键违反而失败，导致整个合并事务回滚。
+      await manager.query(`UPDATE teams SET owner_user_id = $2 WHERE owner_user_id = $1`, [fromId, toId]);
+
+      // 团队成员：先删 from 中与 to 重复的成员行（同一团队 to 已是成员，避免主键冲突），再迁移剩余
+      await manager.query(
+        `DELETE FROM team_members tm WHERE tm.user_id = $1 AND EXISTS (SELECT 1 FROM team_members e WHERE e.team_id = tm.team_id AND e.user_id = $2)`,
+        [fromId, toId],
+      );
+      await manager.query(`UPDATE team_members SET user_id = $2 WHERE user_id = $1`, [fromId, toId]);
+
+      // 评论 / 事件 / 反馈：转移归属。否则删除 from 时，comments/team_members 的 CASCADE 外键会
+      // 连带删除 from 的数据，events/feedbacks 的 SET NULL 外键会丢失归属，造成数据丢失。
+      await manager.query(`UPDATE comments SET user_id = $2 WHERE user_id = $1`, [fromId, toId]);
+      await manager.query(`UPDATE events SET user_id = $2 WHERE user_id = $1`, [fromId, toId]);
+      await manager.query(`UPDATE feedbacks SET user_id = $2 WHERE user_id = $1`, [fromId, toId]);
+
       // 迁移微信身份到目标（仅当目标尚未绑定）
       // ⚠️ wechat_openid/unionid 是 select:false 字段，普通 findOne 读不到，必须显式 select，
       // 否则 from.wechat_openid 为 undefined，会把目标微信身份错误清空，导致合并后微信登录失效。
