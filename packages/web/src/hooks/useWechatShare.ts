@@ -24,7 +24,16 @@ function readMeta(content: boolean): string {
   if (typeof document === 'undefined') return '';
   const sel = content ? 'meta[property="og:description"], meta[name="description"]' : 'meta[property="og:image"]';
   const el = document.querySelector(sel) as HTMLMetaElement | null;
-  return el?.content || '';
+  const val = el?.content || '';
+  if (!val) return '';
+  if (content) return val;
+  // og:image 仅用于分享缩略图：微信要求绝对 URL 且不支持 SVG。
+  // 相对路径 / SVG 一律回退到 getDefaultOgImage()（绝对路径 PNG）。
+  if (!/^https?:\/\//i.test(val)) {
+    if (/\.svg(\?|$)/i.test(val)) return '';
+    return window.location.origin + (val.startsWith('/') ? '' : '/') + val;
+  }
+  return val;
 }
 
 function getDefaultOgImage(): string {
