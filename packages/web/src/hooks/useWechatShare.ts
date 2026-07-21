@@ -66,7 +66,7 @@ export function useWechatShare(pathname: string) {
         .then((wx) => {
           if (cancelled || !wx) return;
           fetch(`/api/wechat/jssdk?url=${encodeURIComponent(url)}`)
-            .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`status ${r.status}`))))
+            .then((r) => (r.ok ? r.json() : r.json().then((d: any) => Promise.reject(new Error(d?.message || `status ${r.status}`)))).catch(() => Promise.reject(new Error(`status ${r.status}`))))
             .then((data: any) => {
               if (cancelled) return;
               wx.config({
