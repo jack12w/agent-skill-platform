@@ -33,14 +33,38 @@ export class WechatService {
     return (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
   }
 
+  /** 从 PUBLIC_BASE_URL 解析出的主机名（用于校验签名 url 域名） */
+  get baseHost(): string {
+    try {
+      return new URL(this.baseUrl).hostname;
+    } catch {
+      return '';
+    }
+  }
+
   /** 生成 JS-SDK 配置签名所需的全部参数 */
-  async getJssdkConfig(rawUrl: string): Promise<{ appId: string; timestamp: number; nonceStr: string; signature: string }> {
+  async getJssdkConfig(
+    rawUrl: string,
+    allowedHosts: string[] = []
+  ): Promise<{ appId: string; timestamp: number; nonceStr: string; signature: string }> {
     const url = this.normalizeUrl(rawUrl);
     if (!this.appId || !this.appSecret) {
       throw new BadRequestException('公众号 AppID/AppSecret 未配置（WECHAT_OA_APPID / WECHAT_OA_APPSECRET）');
     }
-    if (!url || !url.startsWith(this.baseUrl)) {
-      throw new BadRequestException('签名 url 必须是本站域名下的地址');
+    if (!url.startsWith('https://')) {
+      throw new BadRequestException('签名 url 必须是 https 地址');
+    }
+    // 域名白名单：请求 Host 或配置的 PUBLIC_BASE_URL 主机名，二者任一匹配即可。
+    // 不再用 startsWith(baseUrl) —— 该方式在 PUBLIC_BASE_URL 配错/未配时会误杀线上请求。
+    const host = (() => {
+      try {
+        return new URL(url).hostname;
+      } catch {
+        return '';
+      }
+    })();
+    if (allowedHosts.length && host && !allowedHosts.includes(host)) {
+      throw new BadRequestException('签名 url 域名不在允许列表内');
     }
 
     const ticket = await this.getJsapiTicket();
