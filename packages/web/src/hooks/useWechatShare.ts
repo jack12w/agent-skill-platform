@@ -27,10 +27,12 @@ function readMeta(content: boolean): string {
   const val = el?.content || '';
   if (!val) return '';
   if (content) return val;
-  // og:image 仅用于分享缩略图：微信要求绝对 URL 且不支持 SVG。
-  // 相对路径 / SVG 一律回退到 getDefaultOgImage()（绝对路径 PNG）。
+  // og:image 仅用于分享缩略图：微信不支持 SVG。
+  // 注意：Next.js 会基于 metadataBase 把相对 `/og-image.svg` 改写成绝对
+  // `https://.../og-image.svg`，所以 SVG 判断必须在「是否 http(s)」之前、
+  // 对绝对/相对地址一视同仁，否则绝对地址的 SVG 会漏过去传给微信 → 无图。
+  if (/\.svg(\?|#|$)/i.test(val)) return '';
   if (!/^https?:\/\//i.test(val)) {
-    if (/\.svg(\?|$)/i.test(val)) return '';
     return window.location.origin + (val.startsWith('/') ? '' : '/') + val;
   }
   return val;
