@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import QRCode from 'qrcode';
 import useTranslation from '../../hooks/useTranslation';
 import { useWechatShare } from '../../hooks/useWechatShare';
 
@@ -15,35 +16,37 @@ export default function ShareButton() {
   // 配置微信原生分享菜单（路由变化或详情页更新配置时自动重新签名）
   useWechatShare(pathname);
 
-  const [showGuide, setShowGuide] = useState(false);
+  const [show, setShow] = useState(false);
+  const [qrUrl, setQrUrl] = useState<string>('');
   const [toast, setToast] = useState('');
 
-  const onClick = async () => {
-    if (isWechat()) {
-      setShowGuide(true);
-      return;
-    }
-    // 非微信环境：复制当前链接
-    const url = window.location.href.split('#')[0];
+  const pageUrl = typeof window !== 'undefined' ? window.location.href.split('#')[0] : '';
+
+  useEffect(() => {
+    if (!pageUrl || isWechat()) return;
+    let cancelled = false;
+    QRCode.toDataURL(pageUrl, { width: 220, margin: 2, color: { dark: '#000000', light: '#ffffff' } })
+      .then((url) => {
+        if (!cancelled) setQrUrl(url);
+      })
+      .catch(() => {
+        // ignore
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pageUrl]);
+
+  const open = () => setShow(true);
+  const close = () => setShow(false);
+
+  const copyLink = async () => {
+    if (!pageUrl) return;
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(pageUrl);
       setToast(t('share.copySuccess'));
     } catch {
-      try {
-        const ta = document.createElement('textarea');
-        ta.value = url;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        setToast(t('share.copySuccess'));
-      } catch {
-        setToast(t('share.copyFailed'));
-      } finally {
-        const ta = document.querySelector('textarea');
-        if (ta && ta.parentElement) ta.parentElement.removeChild(ta);
-      }
+      setToast(t('share.copyFailed'));
     }
     setTimeout(() => setToast(''), 2200);
   };
@@ -51,7 +54,8 @@ export default function ShareButton() {
   return (
     <>
       <button
-        onClick={onClick}
+        onClick={open}
+        onMouseEnter={open}
         className="flex items-center gap-1 text-sm font-medium text-neutral-600 hover:text-brand-500 transition-colors"
         aria-label={t('share.button')}
       >
@@ -65,23 +69,45 @@ export default function ShareButton() {
         <span>{t('share.button')}</span>
       </button>
 
-      {showGuide && (
+      {show && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setShowGuide(false)}
+          onClick={close}
         >
           <div
-            className="bg-white rounded-2xl p-6 max-w-xs w-full shadow-xl"
+            className="bg-white rounded-2xl p-6 max-w-xs w-full shadow-xl text-center"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold mb-2">{t('share.guideTitle')}</h3>
-            <p className="text-sm text-neutral-600 leading-relaxed mb-4">{t('share.guideDesc')}</p>
-            <button
-              onClick={() => setShowGuide(false)}
-              className="w-full py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors"
-            >
-              {t('share.guideClose')}
-            </button>
+            <h3 className="text-lg font-semibold mb-1">
+              {isWechat() ? t('share.guideTitle') : t('share.scanToShare')}
+            </h3>
+            {isWechat() ? (
+              <p className="text-sm text-neutral-600 leading-relaxed">
+                {t('share.guideDesc')}
+              </p>
+            ) : (
+              <>
+                {qrUrl ? (
+                  <img
+                    src={qrUrl}
+                    alt="QR Code"
+                    className="w-56 h-56 mx-auto mt-3 rounded-lg border border-neutral-100"
+                  />
+                ) : (
+                  <div className="w-56 h-56 mx-auto mt-3 rounded-lg bg-neutral-100 animate-pulse" />
+                )}
+                <p className="text-sm text-neutral-500 mt-3 mb-4">
+                  {t('share.scanDesc')}
+                </p>
+                <button
+                  type="button"
+                  onClick={copyLink}
+                  className="text-sm text-brand-600 hover:text-brand-700 font-medium"
+                >
+                  {t('share.copyLink')}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
