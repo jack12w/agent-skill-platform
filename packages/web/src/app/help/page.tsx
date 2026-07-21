@@ -130,17 +130,12 @@ tags: [搜索, 数据分析]
               <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.profileTitle')}</h2>
               <p className="text-neutral-600 text-sm leading-relaxed">{t('help.profileDesc')}</p>
 
-              <h3 className="text-base font-semibold mt-4 mb-1">{t('help.profileAccess')}</h3>
-              <p className="text-neutral-600 text-sm leading-relaxed">{t('help.profileAccessDesc')}</p>
-
-              <h3 className="text-base font-semibold mt-4 mb-1">{t('help.profileShow')}</h3>
-              <p className="text-neutral-600 text-sm leading-relaxed">{t('help.profileShowDesc')}</p>
-
-              <h3 className="text-base font-semibold mt-4 mb-1">{t('help.profileSkills')}</h3>
-              <p className="text-neutral-600 text-sm leading-relaxed">{t('help.profileSkillsDesc')}</p>
-
-              <h3 className="text-base font-semibold mt-4 mb-1">{t('help.profileFollow')}</h3>
-              <p className="text-neutral-600 text-sm leading-relaxed">{t('help.profileFollowDesc')}</p>
+              <ul className="list-disc pl-5 mt-2 space-y-1 text-neutral-600 text-sm leading-relaxed">
+                <li>{t('help.profileAccess')}</li>
+                <li>{t('help.profileShow')}</li>
+                <li>{t('help.profileSkills')}</li>
+                <li>{t('help.profileFollow')}</li>
+              </ul>
             </div>
           )}
 
