@@ -37,7 +37,9 @@ function readMeta(content: boolean): string {
 }
 
 function getDefaultOgImage(): string {
-  const base = process.env.NEXT_PUBLIC_BASE_URL || window.location.origin;
+  // 浏览器端运行时永远用当前 origin，避免构建期 PUBLIC_BASE_URL 固化错误（如 https://localhost）
+  // 导致默认图 URL 404，微信抓不到缩略图。
+  const base = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_BASE_URL || '');
   return `${base}/og-image.png`;
 }
 
