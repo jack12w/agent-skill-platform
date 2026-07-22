@@ -224,6 +224,12 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+      {!user?.emailVerified && (
+        <div className="mb-4 py-2 px-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center justify-between gap-3">
+          <span>{t('dashboard.emailBindHint')}</span>
+          <Link href="/account" className="shrink-0 font-medium text-amber-900 underline hover:text-amber-700">{t('dashboard.bindNow')}</Link>
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 mb-12 bg-transparent">
         <label className="relative cursor-pointer group shrink-0">
           <input type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" disabled={uploadingAvatar} />
@@ -285,13 +291,6 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-
-      {!user?.emailVerified && (
-        <div className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-center justify-between gap-3">
-          <span>{t('dashboard.emailBindHint')}</span>
-          <Link href="/account" className="shrink-0 font-medium text-amber-900 underline hover:text-amber-700">{t('dashboard.bindNow')}</Link>
-        </div>
-      )}
 
       <div className="grid md:grid-cols-3 gap-12">
         <div className="md:col-span-2">
