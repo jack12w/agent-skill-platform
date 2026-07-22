@@ -154,6 +154,8 @@ const zh = {
     noSkills: '暂无已发布技能。',
     noTeams: '你还没有加入任何团队。',
     addNewSkill: '+ 提交新技能',
+    emailBindHint: '你当前未绑定邮箱，订阅更新将通过站内通知推送。绑定邮箱后可接收邮件通知，并支持邮箱+密码登录。',
+    bindNow: '去绑定',
     statusPending: '审核中',
     createTeam: '创建团队',
     teamName: '团队名称',

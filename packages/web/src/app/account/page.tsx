@@ -230,12 +230,6 @@ export default function AccountPage() {
         </div>
       </div>
 
-      {!me?.emailVerified && (
-        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
-          你当前未绑定邮箱，订阅更新将通过<strong>站内通知</strong>推送。绑定邮箱后可接收<strong>邮件通知</strong>，并支持邮箱+密码登录。
-        </div>
-      )}
-
       <section className="bg-white border rounded-lg p-5 mb-4">
         <div className="flex items-center justify-between">
           <div>

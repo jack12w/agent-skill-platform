@@ -154,6 +154,8 @@ const en = {
     noSkills: 'No skills published yet.',
     noTeams: 'You are not in any teams.',
     addNewSkill: '+ Add New Skill',
+    emailBindHint: 'You have not bound an email yet. Subscription updates will be pushed via in-site notifications. After binding, you will receive email notifications and can sign in with email + password.',
+    bindNow: 'Bind now',
     statusPending: 'Under Review',
     createTeam: 'Create Team',
     teamName: 'Team name',

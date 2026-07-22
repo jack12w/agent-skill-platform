@@ -285,6 +285,14 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {!user?.emailVerified && (
+        <div className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 flex items-center justify-between gap-3">
+          <span>{t('dashboard.emailBindHint')}</span>
+          <Link href="/account" className="shrink-0 font-medium text-amber-900 underline hover:text-amber-700">{t('dashboard.bindNow')}</Link>
+        </div>
+      )}
+
       <div className="grid md:grid-cols-3 gap-12">
         <div className="md:col-span-2">
           <h2 className="text-2xl font-bold mb-6">{t('dashboard.mySkills')}</h2>
