@@ -11,6 +11,7 @@ export default function WithdrawPage() {
   const router = useRouter();
   const { t } = useTranslation();
   const [balance, setBalance] = useState<any>(null);
+  const [wd, setWd] = useState<any>(null);
   const [minCents, setMinCents] = useState(1000);
   const [wechatBound, setWechatBound] = useState(true);
   const [records, setRecords] = useState<any[]>([]);
@@ -33,6 +34,7 @@ export default function WithdrawPage() {
       if (b.ok) {
         const data = await b.json();
         setBalance(data.balance);
+        setWd(data.withdrawable || null);
         if (data.withdrawMinCents) setMinCents(Number(data.withdrawMinCents));
         setWechatBound(!!data.wechatBound);
       }
@@ -89,6 +91,15 @@ export default function WithdrawPage() {
     } as Record<string, string>)[s] || 'bg-neutral-100 text-neutral-600';
 
   const available = Number(balance?.available_cents || 0);
+  const withdrawable = Number(wd?.withdrawableCents ?? 0);
+  const settling = Number(wd?.frozenIncomeCents || 0);
+  const lockedByPending = Number(wd?.pendingWithdrawCents || 0);
+  const delayDays = Number(wd?.settlementDelayDays ?? 7);
+  const canSubmit =
+    wechatBound &&
+    !!amount &&
+    withdrawable >= minCents &&
+    Math.round(parseFloat(amount || '0') * 100) <= withdrawable;
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
@@ -103,14 +114,42 @@ export default function WithdrawPage() {
       )}
 
       <div className="p-5 rounded-xl border border-neutral-200 bg-white mb-8">
-        <div className="text-xs text-neutral-500 mb-4">
-          {t('pay.minTip').replace('{n}', String(minCents / 100)).replace('{bal}', yuan(available))}
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="p-3 rounded-lg bg-brand-50 border border-brand-100">
+            <div className="text-xs text-neutral-500 mb-0.5">{t('pay.withdrawable')}</div>
+            <div className="text-lg font-bold text-brand-700">¥{yuan(withdrawable)}</div>
+          </div>
+          <div className="p-3 rounded-lg bg-amber-50 border border-amber-100">
+            <div className="text-xs text-neutral-500 mb-0.5">{t('pay.settling')}</div>
+            <div className="text-lg font-bold text-amber-600">¥{yuan(settling)}</div>
+          </div>
+          <div className="p-3 rounded-lg bg-neutral-50 border border-neutral-200">
+            <div className="text-xs text-neutral-500 mb-0.5">{t('pay.lockedPending')}</div>
+            <div className="text-lg font-bold text-neutral-600">¥{yuan(lockedByPending)}</div>
+          </div>
+        </div>
+
+        <div className="text-xs text-neutral-500 mb-4 leading-relaxed">
+          {t('pay.settlingTip').replace('{d}', String(delayDays))}
+          {settling > 0 && wd?.nextUnlockAt && (
+            <span suppressHydrationWarning>
+              {' '}
+              {t('pay.nextUnlock').replace('{time}', new Date(wd.nextUnlockAt).toLocaleString())}
+            </span>
+          )}
+          <br />
+          {t('pay.minTip').replace('{n}', String(minCents / 100)).replace('{bal}', yuan(withdrawable))}
+          <span className="text-neutral-400">
+            {' · '}
+            {t('pay.available')} ¥{yuan(available)}
+          </span>
         </div>
 
         <label className="block text-sm font-medium mb-1">{t('pay.withdrawAmount')}</label>
         <input
           type="number"
           min={minCents / 100}
+          max={withdrawable / 100}
           step="0.01"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
@@ -139,7 +178,7 @@ export default function WithdrawPage() {
 
         <button
           onClick={submit}
-          disabled={submitting || !wechatBound || !amount || available < minCents}
+          disabled={submitting || !canSubmit}
           className="w-full py-2.5 rounded-lg bg-brand-600 text-white font-medium hover:bg-brand-700 disabled:opacity-50"
         >
           {submitting ? t('pay.submitting') : t('pay.submitWithdraw')}

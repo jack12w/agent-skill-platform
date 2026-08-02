@@ -10,6 +10,7 @@ export default function HubPaySettingsPage() {
   const [settings, setSettings] = useState<any>(null);
   const [commission, setCommission] = useState('');
   const [prices, setPrices] = useState({ monthly: '', quarterly: '', yearly: '' });
+  const [payout, setPayout] = useState({ days: '', min: '' });
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
@@ -23,6 +24,10 @@ export default function HubPaySettingsPage() {
           monthly: String((j.membershipPrices?.monthly || 0) / 100),
           quarterly: String((j.membershipPrices?.quarterly || 0) / 100),
           yearly: String((j.membershipPrices?.yearly || 0) / 100),
+        });
+        setPayout({
+          days: String(j.settlementDelayDays ?? 7),
+          min: String((j.withdrawMinCents ?? 1000) / 100),
         });
       })
       .catch(e => console.error(e));
@@ -53,6 +58,21 @@ export default function HubPaySettingsPage() {
     setMsg(r.ok ? '会员价已保存' : '保存失败');
   };
 
+  const savePayout = async () => {
+    const token = getToken(); if (!token) return;
+    setMsg('');
+    const r = await fetch('/api/admin/pay/settings/payout', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        settlementDelayDays: Math.round(Number(payout.days)),
+        withdrawMinCents: Math.round(Number(payout.min) * 100),
+      }),
+    });
+    if (r.ok) { setMsg('结算设置已保存'); return; }
+    const e = await r.json().catch(() => ({}));
+    setMsg(e.message || '保存失败');
+  };
+
   if (!settings) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" /></div>;
 
   return (
@@ -68,6 +88,32 @@ export default function HubPaySettingsPage() {
           <span className="text-sm text-neutral-500">%（历史订单不受影响，仅影响新订单）</span>
         </div>
         <button onClick={saveCommission} className="mt-3 px-4 py-1.5 bg-brand-600 text-white text-sm rounded hover:bg-brand-700">{t('admin.saveSettings')}</button>
+      </div>
+
+      <div className="bg-white border rounded-xl p-5 mb-5 max-w-md">
+        <h2 className="text-sm font-medium text-neutral-700 mb-1">{t('admin.payoutSettings')}</h2>
+        <p className="text-xs text-neutral-500 mb-3">{t('admin.payoutSettingsHint')}</p>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-neutral-600">{t('admin.settlementDelay')}</span>
+            <div className="flex items-center gap-1.5">
+              <input type="number" step="1" min="0" max="90" value={payout.days}
+                onChange={e => setPayout(p => ({ ...p, days: e.target.value }))}
+                className="px-3 py-1.5 text-sm border rounded-lg w-24" />
+              <span className="text-sm text-neutral-500">{t('admin.days')}</span>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-neutral-600">{t('admin.withdrawMin')}</span>
+            <div className="flex items-center gap-1.5">
+              <input type="number" step="1" min="1" value={payout.min}
+                onChange={e => setPayout(p => ({ ...p, min: e.target.value }))}
+                className="px-3 py-1.5 text-sm border rounded-lg w-24" />
+              <span className="text-sm text-neutral-500">{t('admin.yuan')}</span>
+            </div>
+          </div>
+        </div>
+        <button onClick={savePayout} className="mt-4 px-4 py-1.5 bg-brand-600 text-white text-sm rounded hover:bg-brand-700">{t('admin.saveSettings')}</button>
       </div>
 
       <div className="bg-white border rounded-xl p-5 max-w-md">

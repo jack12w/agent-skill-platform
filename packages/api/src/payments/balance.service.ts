@@ -1,17 +1,41 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { CreatorBalance, BalanceTransaction } from './payments.entity';
+import { Repository, MoreThan } from 'typeorm';
+import { CreatorBalance, BalanceTransaction, Withdrawal } from './payments.entity';
+import { SettingsService } from './settings.service';
+
+/** 可提现额度明细 */
+export interface WithdrawableInfo {
+  /** 账面可用余额 */
+  availableCents: number;
+  /** 仍处于结算冻结期内的收入（不可提） */
+  frozenIncomeCents: number;
+  /** 已提交待审、尚未冻结余额的提现单占用（不可重复提） */
+  pendingWithdrawCents: number;
+  /** 实际可提现额度 */
+  withdrawableCents: number;
+  /** 结算冻结期（天） */
+  settlementDelayDays: number;
+  /** 最早一笔冻结中收入的解冻时间，无冻结则为 null */
+  nextUnlockAt: string | null;
+}
 
 /**
  * 创作者余额。所有增减用 Repository.increment 原子 SQL（UPDATE ... = col + N），
  * 避免并发竞态；不复式流水，永不删改。退款致余额不足允许为负挂账。
+ *
+ * 结算冻结期：收入立即进 available_cents（保证流水与账面一致），但可提现额度按
+ * 「available - 冻结期内收入 - 待审提现占用」实时计算，无需定时任务解冻。
  */
 @Injectable()
 export class BalanceService {
+  private readonly logger = new Logger(BalanceService.name);
+
   constructor(
     @InjectRepository(CreatorBalance) private readonly balRepo: Repository<CreatorBalance>,
     @InjectRepository(BalanceTransaction) private readonly txRepo: Repository<BalanceTransaction>,
+    @InjectRepository(Withdrawal) private readonly wdRepo: Repository<Withdrawal>,
+    private readonly settings: SettingsService,
   ) {}
 
   /** 确保余额行存在（首次有收入前） */
@@ -86,5 +110,86 @@ export class BalanceService {
       biz_type: 'refund_deduct',
       ref_id,
     } as any);
+  }
+
+  /* ============ 可提现额度（结算冻结期，无定时任务） ============ */
+
+  /**
+   * 仍在结算冻结期内的收入合计。
+   * 退款走 direction='out' 不在此统计内，因此该值只会偏大 → 额度只会偏保守，方向安全。
+   */
+  async getFrozenIncomeCents(user_id: string, delayDays: number): Promise<number> {
+    if (!delayDays || delayDays <= 0) return 0;
+    const since = new Date(Date.now() - delayDays * 86_400_000);
+    const row = await this.txRepo
+      .createQueryBuilder('t')
+      .select('COALESCE(SUM(t.amount_cents), 0)', 'sum')
+      .where('t.user_id = :uid', { uid: user_id })
+      .andWhere("t.direction = 'in'")
+      .andWhere('t.created_at > :since', { since })
+      .getRawOne<{ sum: string }>();
+    return Number(row?.sum || 0);
+  }
+
+  /**
+   * 待审提现单占用。PENDING 状态尚未 freeze 余额，若不扣除，
+   * 创作者可重复提交多张单据把同一笔钱提走多次。
+   * REVIEWING 已经 freeze（available 已减），不重复计算。
+   */
+  async getPendingWithdrawCents(user_id: string): Promise<number> {
+    const row = await this.wdRepo
+      .createQueryBuilder('w')
+      .select('COALESCE(SUM(w.amount_cents), 0)', 'sum')
+      .where('w.user_id = :uid', { uid: user_id })
+      .andWhere("w.status = 'PENDING'")
+      .getRawOne<{ sum: string }>();
+    return Number(row?.sum || 0);
+  }
+
+  /** 可提现额度明细。任一查询异常时降级为「不可提现」（出账不可逆，宁可拦住） */
+  async getWithdrawableInfo(user_id: string): Promise<WithdrawableInfo> {
+    const settlementDelayDays = await this.settings.getSettlementDelayDays();
+    try {
+      const bal = await this.balRepo.findOne({ where: { user_id } });
+      const availableCents = Number(bal?.available_cents || 0);
+      const [frozenIncomeCents, pendingWithdrawCents] = await Promise.all([
+        this.getFrozenIncomeCents(user_id, settlementDelayDays),
+        this.getPendingWithdrawCents(user_id),
+      ]);
+      const withdrawableCents = Math.max(0, availableCents - frozenIncomeCents - pendingWithdrawCents);
+
+      let nextUnlockAt: string | null = null;
+      if (frozenIncomeCents > 0 && settlementDelayDays > 0) {
+        const since = new Date(Date.now() - settlementDelayDays * 86_400_000);
+        const oldest = await this.txRepo.findOne({
+          where: { user_id, direction: 'in', created_at: MoreThan(since) } as any,
+          order: { created_at: 'ASC' },
+        });
+        if (oldest?.created_at) {
+          nextUnlockAt = new Date(
+            new Date(oldest.created_at).getTime() + settlementDelayDays * 86_400_000,
+          ).toISOString();
+        }
+      }
+
+      return {
+        availableCents,
+        frozenIncomeCents,
+        pendingWithdrawCents,
+        withdrawableCents,
+        settlementDelayDays,
+        nextUnlockAt,
+      };
+    } catch (e) {
+      this.logger.warn(`可提现额度计算失败，降级为不可提现: ${(e as Error)?.message}`);
+      return {
+        availableCents: 0,
+        frozenIncomeCents: 0,
+        pendingWithdrawCents: 0,
+        withdrawableCents: 0,
+        settlementDelayDays,
+        nextUnlockAt: null,
+      };
+    }
   }
 }

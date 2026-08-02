@@ -92,8 +92,17 @@ export class AdminPaymentsService {
     wd.reviewed_at = new Date();
     await this.wdRepo.save(wd);
 
-    // 冻结余额（防并发重复提现）
-    await this.balance.freeze(wd.user_id, Number(wd.amount_cents));
+    // 冻结余额（防并发重复提现）。申请之后若发生退款，余额可能已不足，
+    // 此处必须捕获：否则提现单永久卡在 REVIEWING，且审批接口直接 500。
+    try {
+      await this.balance.freeze(wd.user_id, Number(wd.amount_cents));
+    } catch (e: any) {
+      wd.status = 'FAILED';
+      wd.fail_reason = e?.message || '余额不足，冻结失败';
+      await this.wdRepo.save(wd);
+      this.logger.warn(`提现冻结失败 ${wd.out_bill_no}: ${wd.fail_reason}`);
+      return wd;
+    }
 
     try {
       const r = await this.wechat.transferToBalance({

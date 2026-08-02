@@ -12,6 +12,7 @@ export default function EarningsPage() {
   const router = useRouter();
   const { t } = useTranslation();
   const [balance, setBalance] = useState<any>(null);
+  const [wd, setWd] = useState<any>(null);
   const [txns, setTxns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -25,6 +26,7 @@ export default function EarningsPage() {
         if (res.ok) {
           const data = await res.json();
           setBalance(data.balance);
+          setWd(data.withdrawable || null);
           setTxns(data.transactions || []);
         }
       } finally {
@@ -36,16 +38,17 @@ export default function EarningsPage() {
 
   const bizLabel = (b: string) =>
     ({
-      sale: '技能售卖',
-      membership_share: '会员分成',
-      refund_deduct: '退款扣回',
-      withdraw: '提现',
-      adjust: '人工调整',
+      sale: t('pay.bizSale'),
+      membership_share: t('pay.bizMemberShare'),
+      refund_deduct: t('pay.bizRefund'),
+      withdraw: t('pay.bizWithdraw'),
+      adjust: t('pay.bizAdjust'),
     } as Record<string, string>)[b] || b;
 
   const cards = [
-    { label: t('pay.available'), value: balance?.available_cents, accent: 'text-brand-700' },
-    { label: t('pay.frozen'), value: balance?.frozen_cents, accent: 'text-amber-600' },
+    { label: t('pay.withdrawable'), value: wd?.withdrawableCents, accent: 'text-brand-700' },
+    { label: t('pay.settling'), value: wd?.frozenIncomeCents, accent: 'text-amber-600' },
+    { label: t('pay.frozen'), value: balance?.frozen_cents, accent: 'text-blue-600' },
     { label: t('pay.totalEarned'), value: balance?.total_earned_cents, accent: 'text-neutral-900' },
     { label: t('pay.totalWithdrawn'), value: balance?.total_withdrawn_cents, accent: 'text-neutral-500' },
   ];
@@ -56,7 +59,7 @@ export default function EarningsPage() {
       <h1 className="text-2xl font-bold mb-1">{t('pay.earningsTitle')}</h1>
       <p className="text-sm text-neutral-500 mb-6">{t('pay.earningsDesc')}</p>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
         {cards.map((c) => (
           <div key={c.label} className="p-4 rounded-xl border border-neutral-200 bg-white">
             <div className="text-xs text-neutral-500 mb-1">{c.label}</div>
@@ -64,6 +67,10 @@ export default function EarningsPage() {
           </div>
         ))}
       </div>
+
+      <p className="text-xs text-neutral-400 mb-6">
+        {t('pay.settlingTip').replace('{d}', String(wd?.settlementDelayDays ?? 7))}
+      </p>
 
       <div className="mb-8">
         <Link
