@@ -6,6 +6,9 @@ import useTranslation from '../../../hooks/useTranslation';
 function getToken() { try { return localStorage.getItem('token'); } catch { return null; } }
 function getUserId() { try { return JSON.parse(localStorage.getItem('user') || 'null')?.id || null; } catch { return null; } }
 
+// 推荐会员价（对标知识星球个人星球）：月 ¥9 / 季 ¥29 / 年 ¥99
+const RECOMMENDED_PLAN = { monthly: 9, quarterly: 29, yearly: 99 };
+
 export default function HubPaySettingsPage() {
   const { t } = useTranslation();
   const [settings, setSettings] = useState<any>(null);
@@ -41,6 +44,13 @@ export default function HubPaySettingsPage() {
               monthly: String((p.plans.monthly || 0) / 100),
               quarterly: String((p.plans.quarterly || 0) / 100),
               yearly: String((p.plans.yearly || 0) / 100),
+            });
+          } else {
+            // 未设置时默认填入推荐价，用户可修改后再保存
+            setMyPlan({
+              monthly: String(RECOMMENDED_PLAN.monthly),
+              quarterly: String(RECOMMENDED_PLAN.quarterly),
+              yearly: String(RECOMMENDED_PLAN.yearly),
             });
           }
         })
@@ -138,15 +148,16 @@ export default function HubPaySettingsPage() {
 
       <div className="bg-white border rounded-xl p-5 max-w-md">
         <h2 className="text-sm font-medium text-neutral-700 mb-1">{t('paySet.myMembershipTitle')}</h2>
-        <p className="text-xs text-neutral-500 mb-3">{t('paySet.myMembershipHint')}</p>
+        <p className="text-xs text-neutral-500 mb-2">{t('paySet.myMembershipHint')}</p>
+        <p className="text-xs text-brand-600 mb-3">{t('paySet.priceRecommended')}</p>
         {planLoading ? (
           <div className="text-sm text-neutral-400">加载中…</div>
         ) : (
           <>
             <div className="space-y-3">
-              <PriceRow label={t('admin.membershipPriceMonthly')} value={myPlan.monthly} onChange={v => setMyPlan(p => ({ ...p, monthly: v }))} />
-              <PriceRow label={t('admin.membershipPriceQuarterly')} value={myPlan.quarterly} onChange={v => setMyPlan(p => ({ ...p, quarterly: v }))} />
-              <PriceRow label={t('admin.membershipPriceYearly')} value={myPlan.yearly} onChange={v => setMyPlan(p => ({ ...p, yearly: v }))} />
+              <PriceRow label={t('admin.membershipPriceMonthly')} value={myPlan.monthly} placeholder={`推荐 ¥${RECOMMENDED_PLAN.monthly}`} onChange={v => setMyPlan(p => ({ ...p, monthly: v }))} />
+              <PriceRow label={t('admin.membershipPriceQuarterly')} value={myPlan.quarterly} placeholder={`推荐 ¥${RECOMMENDED_PLAN.quarterly}`} onChange={v => setMyPlan(p => ({ ...p, quarterly: v }))} />
+              <PriceRow label={t('admin.membershipPriceYearly')} value={myPlan.yearly} placeholder={`推荐 ¥${RECOMMENDED_PLAN.yearly}`} onChange={v => setMyPlan(p => ({ ...p, yearly: v }))} />
             </div>
             <button onClick={saveMyPlan} disabled={savingPlan} className="mt-4 px-4 py-1.5 bg-brand-600 text-white text-sm rounded hover:bg-brand-700 disabled:opacity-50">{t('admin.saveSettings')}</button>
           </>
@@ -156,11 +167,11 @@ export default function HubPaySettingsPage() {
   );
 }
 
-function PriceRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function PriceRow({ label, value, placeholder, onChange }: { label: string; value: string; placeholder?: string; onChange: (v: string) => void }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <span className="text-sm text-neutral-600">{label}</span>
-      <input type="number" step="0.01" value={value} onChange={e => onChange(e.target.value)}
+      <input type="number" step="0.01" value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)}
         className="px-3 py-1.5 text-sm border rounded-lg w-32" />
     </div>
   );

@@ -6,6 +6,9 @@ import Link from 'next/link';
 import useTranslation from '../../../../hooks/useTranslation';
 import { fetchTagGroups } from '../../../../lib/tag-groups';
 
+// 推荐会员价（对标知识星球个人星球）：月 ¥9 / 季 ¥29 / 年 ¥99
+const RECOMMENDED_PLAN = { monthly: 9, quarterly: 29, yearly: 99 };
+
 export default function TeamSettings({ params }: { params: { id: string } }) {
   const router = useRouter();
   const { t } = useTranslation();
@@ -44,6 +47,13 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
               monthly: String((p.plans.monthly || 0) / 100),
               quarterly: String((p.plans.quarterly || 0) / 100),
               yearly: String((p.plans.yearly || 0) / 100),
+            });
+          } else {
+            // 未设置时默认填入推荐价，用户可修改后再保存
+            setTeamPlan({
+              monthly: String(RECOMMENDED_PLAN.monthly),
+              quarterly: String(RECOMMENDED_PLAN.quarterly),
+              yearly: String(RECOMMENDED_PLAN.yearly),
             });
           }
         })
@@ -254,14 +264,15 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
       {team.is_owner && (
         <div className="mb-10 p-6 border rounded-xl bg-white">
           <h2 className="text-xl font-bold mb-1">{t('team.membershipTitle')}</h2>
-          <p className="text-sm text-neutral-500 mb-4">{t('team.membershipHint')}</p>
+          <p className="text-sm text-neutral-500 mb-2">{t('team.membershipHint')}</p>
+          <p className="text-xs text-brand-600 mb-4">{t('team.membershipRecommended')}</p>
           {planLoading ? (
             <div className="text-sm text-neutral-400">加载中…</div>
           ) : (
             <div className="space-y-3 max-w-md">
-              <PlanRow label={t('pay.planMonthly')} value={teamPlan.monthly} onChange={(v) => setTeamPlan((p) => ({ ...p, monthly: v }))} />
-              <PlanRow label={t('pay.planQuarterly')} value={teamPlan.quarterly} onChange={(v) => setTeamPlan((p) => ({ ...p, quarterly: v }))} />
-              <PlanRow label={t('pay.planYearly')} value={teamPlan.yearly} onChange={(v) => setTeamPlan((p) => ({ ...p, yearly: v }))} />
+              <PlanRow label={t('pay.planMonthly')} value={teamPlan.monthly} placeholder={`推荐 ¥${RECOMMENDED_PLAN.monthly}`} onChange={(v) => setTeamPlan((p) => ({ ...p, monthly: v }))} />
+              <PlanRow label={t('pay.planQuarterly')} value={teamPlan.quarterly} placeholder={`推荐 ¥${RECOMMENDED_PLAN.quarterly}`} onChange={(v) => setTeamPlan((p) => ({ ...p, quarterly: v }))} />
+              <PlanRow label={t('pay.planYearly')} value={teamPlan.yearly} placeholder={`推荐 ¥${RECOMMENDED_PLAN.yearly}`} onChange={(v) => setTeamPlan((p) => ({ ...p, yearly: v }))} />
               <button onClick={handleSavePlan} disabled={savingPlan}
                 className="mt-1 px-4 py-2 bg-brand-600 text-white text-sm rounded hover:bg-brand-700 disabled:opacity-50">
                 {savingPlan ? t('team.saving') : t('team.save')}
@@ -282,14 +293,14 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
   );
 }
 
-function PlanRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+function PlanRow({ label, value, placeholder, onChange }: { label: string; value: string; placeholder?: string; onChange: (v: string) => void }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <span className="text-sm text-neutral-600">{label}</span>
       <div className="flex items-center gap-1.5">
         <span className="text-sm text-neutral-400">¥</span>
-        <input type="number" step="0.01" min="0" value={value} onChange={(e) => onChange(e.target.value)}
-          className="px-3 py-1.5 text-sm border rounded-lg w-32" placeholder="0" />
+        <input type="number" step="0.01" min="0" value={value} placeholder={placeholder || '0'} onChange={(e) => onChange(e.target.value)}
+          className="px-3 py-1.5 text-sm border rounded-lg w-32" />
       </div>
     </div>
   );
