@@ -81,6 +81,8 @@ const en = {
     reviewBanner: 'This skill is under review and not yet public',
     subscribeAuthor: 'Subscribe to author',
     subscribedAuthor: 'Subscribed to author',
+    followAuthor: 'Follow author',
+    followedAuthor: 'Following (click to unfollow)',
   },
   edit: {
     title: 'Edit Skill',

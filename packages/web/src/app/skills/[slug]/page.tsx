@@ -45,6 +45,10 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   const [memberSubOpen, setMemberSubOpen] = useState(false);
   const [authorSub, setAuthorSub] = useState<any>(null);
   const [pendingVersionId, setPendingVersionId] = useState<string | undefined>(undefined);
+  // ── 作者订阅：有付费套餐走会员支付，无套餐走免费关注 ──
+  const [hasPlan, setHasPlan] = useState(false);
+  const [freeSub, setFreeSub] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
 
   useEffect(() => { setCurrentUserId(decodeUserId()); }, []);
 
@@ -79,15 +83,32 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
           .then((r) => (r.ok ? r.json() : null))
           .then((p) => { if (p?.pricing) setPricing(p.pricing); })
           .catch(() => {});
-        // 当前用户对该技能创作者的会员订阅状态
+        // 作者是否设置了付费会员套餐（公开接口）→ 决定订阅按钮走付费还是免费关注
+        const ownerType = data.owner_team_id ? 'team' : 'user';
+        const ownerId = data.owner_team_id || data.owner_user_id;
+        let planHas = false;
+        try {
+          const planRes = await fetch(`/api/pay/creator-plan?targetType=${ownerType}&targetId=${encodeURIComponent(ownerId)}`);
+          if (planRes.ok) {
+            const p = await planRes.json();
+            planHas = !!p.hasPlan;
+            setHasPlan(planHas);
+          }
+        } catch { /* ignore */ }
+        // 当前用户对该技能创作者的订阅状态（付费会员 or 免费关注）
         const uid = decodeUserId();
         if (uid) {
-          const ownerType = data.owner_team_id ? 'team' : 'user';
-          const ownerId = data.owner_team_id || data.owner_user_id;
-          fetch(`/api/pay/membership/subscribe/${ownerType}/${ownerId}`, { headers: getAuthHeaders() })
-            .then((r) => (r.ok ? r.json() : null))
-            .then((s) => { if (s) setAuthorSub(s); })
-            .catch(() => {});
+          if (planHas) {
+            fetch(`/api/pay/membership/subscribe/${ownerType}/${ownerId}`, { headers: getAuthHeaders() })
+              .then((r) => (r.ok ? r.json() : null))
+              .then((s) => { if (s) setAuthorSub(s); })
+              .catch(() => {});
+          } else {
+            fetch(`/api/subscriptions/status?targetType=${ownerType}&targetId=${encodeURIComponent(ownerId)}`, { headers: getAuthHeaders() })
+              .then((r) => (r.ok ? r.json() : null))
+              .then((s) => { if (s) setFreeSub(!!s.subscribed); })
+              .catch(() => {});
+          }
         }
       }
       catch (e: any) { setError(e.message || 'Failed to load skill'); }
@@ -124,6 +145,39 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
     finally { setActing(null); }
   };
 
+  // 作者未设置付费套餐时：免费关注 / 取消关注（POST / DELETE /api/subscriptions）
+  const toggleFollow = async () => {
+    if (followBusy || !skill) return;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) { alert(t('detail.loginFirst')); router.push('/auth'); return; }
+    const oType = skill.owner_team_id ? 'team' : 'user';
+    const oId = skill.owner_team_id || skill.owner_user_id;
+    setFollowBusy(true);
+    try {
+      if (freeSub) {
+        const res = await fetch(`/api/subscriptions?targetType=${oType}&targetId=${encodeURIComponent(oId)}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) setFreeSub(false);
+      } else {
+        const res = await fetch('/api/subscriptions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ targetType: oType, targetId: oId }),
+        });
+        if (res.ok) setFreeSub(true);
+      }
+    } catch { /* ignore */ }
+    finally { setFollowBusy(false); }
+  };
+
+  // 订阅作者按钮：有付费套餐 → 打开会员支付弹窗；无套餐 → 免费关注
+  const handleAuthorSubClick = () => {
+    if (hasPlan) setMemberSubOpen(true);
+    else toggleFollow();
+  };
+
   const handleDownload = async (versionId?: string) => {
     if (!skill) return;
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -142,7 +196,20 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
         if (info?.pricing) setPricing(info.pricing);
         setPendingVersionId(versionId);
         // 会员技能：引导订阅该创作者会员（订阅后整个创作者全部技能可下）
+        // 但作者若未设置付费会员套餐，会员弹窗是死路 → 回退到单技能购买
+        let planExists = hasPlan;
         if (info?.pricing?.member_included && info?.owner) {
+          try {
+            const oType = skill.owner_team_id ? 'team' : 'user';
+            const oId = skill.owner_team_id || skill.owner_user_id;
+            const pr = await fetch(`/api/pay/creator-plan?targetType=${oType}&targetId=${encodeURIComponent(oId)}`);
+            if (pr.ok) {
+              planExists = !!(await pr.json()).hasPlan;
+              setHasPlan(planExists);
+            }
+          } catch { /* 保持已有判断 */ }
+        }
+        if (info?.pricing?.member_included && info?.owner && planExists) {
           setMemberSubOpen(true);
         } else {
           setCheckoutOpen(true);
@@ -278,18 +345,30 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
                 )}
               </div>
             )}
-            {pricing?.member_included && !isOwner && !authorSub?.subscribed && (
-              <button
-                onClick={() => setMemberSubOpen(true)}
-                className="w-full mb-3 py-2.5 rounded-lg border border-brand-600 text-brand-600 font-medium hover:bg-brand-50"
-              >
-                {t('detail.subscribeAuthor')}
-              </button>
-            )}
-            {pricing?.member_included && authorSub?.subscribed && (
-              <div className="mb-3 text-center text-xs text-green-700 bg-green-50 rounded-lg py-2">
-                {t('detail.subscribedAuthor')}
-              </div>
+            {/* 订阅作者：设了付费套餐 → 会员支付；未设 → 免费关注 */}
+            {!isOwner && currentUserId && (
+              hasPlan ? (
+                authorSub?.subscribed ? (
+                  <div className="mb-3 text-center text-xs text-green-700 bg-green-50 rounded-lg py-2">
+                    {t('detail.subscribedAuthor')}
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleAuthorSubClick}
+                    className="w-full mb-3 py-2.5 rounded-lg border border-brand-600 text-brand-600 font-medium hover:bg-brand-50"
+                  >
+                    {t('detail.subscribeAuthor')}
+                  </button>
+                )
+              ) : (
+                <button
+                  onClick={handleAuthorSubClick}
+                  disabled={followBusy}
+                  className={`w-full mb-3 py-2.5 rounded-lg font-medium transition disabled:opacity-50 ${freeSub ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' : 'border border-brand-600 text-brand-600 hover:bg-brand-50'}`}
+                >
+                  {freeSub ? t('detail.followedAuthor') : t('detail.followAuthor')}
+                </button>
+              )
             )}
             <button onClick={() => handleDownload()} disabled={acting !== null || versions.length === 0} className="w-full py-3 bg-brand-600 text-white rounded-lg font-bold hover:bg-brand-700 mb-3 disabled:opacity-50 disabled:cursor-not-allowed">{acting === 'download' ? t('detail.downloading') : versions.length === 0 ? t('detail.noVersionYet') : `${t('detail.download')} v${versions.find((v) => v.id === skill.latest_version_id)?.version || versions[0]?.version || 'latest'}`}</button>
             <button onClick={handleLike} disabled={acting !== null} className="w-full py-3 border border-brand-600 text-brand-600 rounded-lg font-bold hover:bg-brand-50 disabled:opacity-50 disabled:cursor-not-allowed">{acting === 'like' ? t('detail.liking') : t('detail.likeSkill')}</button>

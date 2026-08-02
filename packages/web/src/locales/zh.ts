@@ -81,6 +81,8 @@ const zh = {
     reviewBanner: '此技能正在审核中，暂未公开',
     subscribeAuthor: '订阅作者会员',
     subscribedAuthor: '已订阅作者会员',
+    followAuthor: '订阅作者',
+    followedAuthor: '已订阅（点击取消）',
   },
   edit: {
     title: '编辑技能',
