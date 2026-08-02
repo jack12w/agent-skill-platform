@@ -10,6 +10,7 @@ import { Comment } from './comment.entity';
 import { TeamMember } from '../teams/team-member.entity';
 import { Team } from '../teams/team.entity';
 import { OssService } from '../storage/oss.service';
+import { EntitlementService } from '../payments/entitlement.service';
 import { EventType, SkillStatus, parseSkillMd } from '@platform/shared';
 import AdmZip from 'adm-zip';
 
@@ -54,6 +55,7 @@ export class SkillsService {
     @InjectRepository(Team)
     private teamRepository: Repository<Team>,
     private ossService: OssService,
+    private entitlementService: EntitlementService,
   ) {}
 
   async findAll(query: { query?: string; tag?: string; tags?: string; sort?: string; page?: number; size?: number; owner?: string; owner_id?: string }, userId?: string) {
@@ -469,7 +471,12 @@ export class SkillsService {
     await this.assertSkillTeamVisible(skillId, userId, isAdmin);
     const skill = await this.findOne(skillId, undefined, true);
 
+    // ▼▼ 付费墙：免费/作者/管理员/已购/有效会员路径由 entitlementService 内部判断，未授权抛 402
+    await this.entitlementService.assertCanDownload(skill, userId, isAdmin);
+    // ▲▲
+
     const isOwner = userId && skill.owner_user_id === userId;
+
     const canSeeLatest = isOwner || isAdmin;
     let version: SkillVersion | null = null;
     if (versionId) {

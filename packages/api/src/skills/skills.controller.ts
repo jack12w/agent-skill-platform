@@ -182,7 +182,7 @@ export class SkillsController {
   @UseGuards(AuthGuard)
   @Get(':id/download')
   async download(@Param('id') id: string, @Request() req: any) {
-    const result = await this.skillsService.getDownloadUrl(id, undefined, req.user.sub);
+    const result = await this.skillsService.getDownloadUrl(id, undefined, req.user.sub, req.user?.role === 'admin');
     await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub, undefined, { version_id: result.version_id, version: result.version });
     return result;
   }
@@ -194,7 +194,7 @@ export class SkillsController {
     @Param('versionId') versionId: string,
     @Request() req: any,
   ) {
-    const result = await this.skillsService.getDownloadUrl(id, versionId, req.user.sub);
+    const result = await this.skillsService.getDownloadUrl(id, versionId, req.user.sub, req.user?.role === 'admin');
     await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub, undefined, { version_id: result.version_id, version: result.version });
     return result;
   }

@@ -32,7 +32,8 @@ async function bootstrap() {
   app.useGlobalGuards(new RateLimitGuard(60_000, 120));
 
   // ── Body Parser 限制 ─────────────────────
-  app.use(json({ limit: '10mb' }));
+  // verify 钩子缓存原始 body（req.rawBody），供微信支付回调验签使用（不修改既有 JSON 解析行为）
+  app.use(json({ limit: '10mb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
   app.use(urlencoded({ limit: '10mb', extended: true }));
 
   // ── 关闭 Express 指纹，减少攻击面 ─────────

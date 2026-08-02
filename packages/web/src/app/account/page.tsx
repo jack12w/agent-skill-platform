@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import AccountNav from '../components/AccountNav';
 
 interface MeUser {
   id: string;
@@ -218,6 +219,7 @@ export default function AccountPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
+      <AccountNav />
       <div className="flex items-center gap-3 mb-6">
         {me?.avatar_url ? (
           <img src={me.avatar_url} alt={me.name} className="w-14 h-14 rounded-full object-cover" />

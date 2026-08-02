@@ -8,6 +8,7 @@ import useTranslation from '../../../hooks/useTranslation';
 import { setShareConfig, resetShareConfig } from '../../../lib/share';
 import CommentSection from '../../components/CommentSection';
 import SkillUpdateBadge from '../../components/SkillUpdateBadge';
+import CheckoutModal from '../../components/CheckoutModal';
 
 function decodeUserId(): string | null {
   try {
@@ -37,6 +38,10 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [commentRefresh, setCommentRefresh] = useState(0);
   const [suggestedSkills, setSuggestedSkills] = useState<any[]>([]);
+  // ── 付费相关 ──
+  const [pricing, setPricing] = useState<any>(null);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [pendingVersionId, setPendingVersionId] = useState<string | undefined>(undefined);
 
   useEffect(() => { setCurrentUserId(decodeUserId()); }, []);
 
@@ -66,6 +71,11 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
           imgUrl: data.cover_url || undefined,
         });
         await loadVersions(data.id);
+        // 定价信息（公开接口，未登录也可读；失败不影响页面）
+        fetch(`/api/pay/pricing/${data.id}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((p) => { if (p?.pricing) setPricing(p.pricing); })
+          .catch(() => {});
       }
       catch (e: any) { setError(e.message || 'Failed to load skill'); }
       finally { setLoading(false); }
@@ -113,6 +123,15 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.status === 401) { alert(t('detail.loginExpired')); router.push('/auth'); return; }
+      // ▼▼ 付费墙：后端返回 402 时弹出收银台，支付成功后自动重试下载
+      if (res.status === 402) {
+        const info = await res.json().catch(() => ({} as any));
+        if (info?.pricing) setPricing(info.pricing);
+        setPendingVersionId(versionId);
+        setCheckoutOpen(true);
+        return;
+      }
+      // ▲▲
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       const disposition = res.headers.get('Content-Disposition');
@@ -230,6 +249,14 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
           <div className="p-6 border rounded-xl">
             <div className="text-center mb-6"><span className="text-sm text-neutral-500">{t('detail.skillScore')}</span><div className="text-3xl sm:text-4xl font-black text-brand-600">{parseFloat(skill.stats?.total_score || 0).toFixed(1)}</div></div>
             <div className="grid grid-cols-2 gap-4 text-center mb-6"><div className="p-3 bg-neutral-100 rounded-lg"><div className="font-bold">{skill.stats?.likes_total || 0}</div><div className="text-xs text-neutral-500">{t('detail.likes')}</div></div><div className="p-3 bg-neutral-100 rounded-lg"><div className="font-bold">{skill.stats?.downloads_total || 0}</div><div className="text-xs text-neutral-500">{t('detail.downloads')}</div></div></div>
+            {pricing && pricing.pricing_mode !== 'free' && (
+              <div className="mb-3 flex items-center justify-center gap-2">
+                <span className="text-2xl font-black text-brand-700">¥{((pricing.price_cents || 0) / 100).toFixed(2)}</span>
+                {pricing.member_included && (
+                  <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">{t('pay.included')}</span>
+                )}
+              </div>
+            )}
             <button onClick={() => handleDownload()} disabled={acting !== null || versions.length === 0} className="w-full py-3 bg-brand-600 text-white rounded-lg font-bold hover:bg-brand-700 mb-3 disabled:opacity-50 disabled:cursor-not-allowed">{acting === 'download' ? t('detail.downloading') : versions.length === 0 ? t('detail.noVersionYet') : `${t('detail.download')} v${versions.find((v) => v.id === skill.latest_version_id)?.version || versions[0]?.version || 'latest'}`}</button>
             <button onClick={handleLike} disabled={acting !== null} className="w-full py-3 border border-brand-600 text-brand-600 rounded-lg font-bold hover:bg-brand-50 disabled:opacity-50 disabled:cursor-not-allowed">{acting === 'like' ? t('detail.liking') : t('detail.likeSkill')}</button>
           </div>
@@ -241,6 +268,20 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
           </div>
         </div>
       </div>
+
+      {checkoutOpen && (
+        <CheckoutModal
+          skillId={skill.id}
+          skillName={skill.name}
+          initialPricing={pricing}
+          onClose={() => setCheckoutOpen(false)}
+          onPaid={() => {
+            setCheckoutOpen(false);
+            // 支付成功后自动重试一次下载
+            handleDownload(pendingVersionId);
+          }}
+        />
+      )}
     </div>
   );
 }

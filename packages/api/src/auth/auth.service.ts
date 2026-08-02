@@ -309,7 +309,7 @@ export class AuthService {
       await this.userRepository.save(user);
     }
 
-    const payload = { sub: user.id, email: user.email };
+    const payload = { sub: user.id, email: user.email, role: user.role };
     return {
       access_token: await this.jwtService.signAsync(payload),
       user: { id: user.id, email: user.email, name: user.name, avatar_url: user.avatar_url },
@@ -333,7 +333,7 @@ export class AuthService {
       });
       await this.userRepository.save(user);
     }
-    const payload = { sub: user.id, email: user.email };
+    const payload = { sub: user.id, email: user.email, role: user.role };
     return {
       access_token: await this.jwtService.signAsync(payload),
       user: { id: user.id, email: user.email, name: user.name, avatar_url: user.avatar_url },

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .next/
+.next_stale_*/
 .env
 .env.*
 !.env.example
@@ -14,6 +15,7 @@ badge-preview.html
 badge-color-preview.html
 subscribe-ui-preview.html
 *-preview.html
+email-otp-workflow.html
 coverage/
 .workbuddy/
 .codebuddy/
@@ -29,6 +31,8 @@ debug.log
 # project docs (local only)
 TECHNICAL.md
 development-manual.md
+支付与分成系统方案.md
+微信登录部署手册.md
 # 推广文案 & 海报（本地不推送）
 ProductHunt-MakerComment.md
 掘金文章-SkillDepot全栈实践.md
