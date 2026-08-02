@@ -89,12 +89,30 @@ export class WechatPayService {
     );
   }
 
-  /** 验证微信回调签名（铁律①）。缺平台证书时降级记录告警，不阻断（部署时必须配置） */
+  /**
+   * 验证微信回调签名（铁律①）—— fail-closed。
+   *
+   * 曾经的实现在未配置平台证书时 `return true` 放行，等于对外开放了一个
+   * 「任何人 POST 一个 trade_state=SUCCESS 的报文就能白拿付费技能、给自己刷余额」
+   * 的资金后门。回调是唯一的入账入口，任何情况下都必须验签通过才处理。
+   */
   verifySignature(timestamp: string, nonce: string, body: string, signature: string): boolean {
     const cert = this.platformCert;
     if (!cert) {
-      this.logger.warn('WECHAT_PAY_PLATFORM_CERT 未配置，跳过回调验签（生产必须配置！）');
-      return true;
+      this.logger.error(
+        'WECHAT_PAY_PLATFORM_CERT 未配置，拒绝处理微信回调（fail-closed）。请在 .env.production 配置平台证书公钥后重建容器。',
+      );
+      return false;
+    }
+    if (!timestamp || !nonce || !signature) {
+      this.logger.error('微信回调缺少签名头，拒绝处理');
+      return false;
+    }
+    // 防重放：微信官方要求拒绝接收时间与当前时间相差 5 分钟以上的报文
+    const ts = Number(timestamp);
+    if (!Number.isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > 300) {
+      this.logger.error(`微信回调时间戳超出 5 分钟窗口(${timestamp})，按重放攻击拒绝`);
+      return false;
     }
     const message = `${timestamp}\n${nonce}\n${body}\n`;
     try {
@@ -203,6 +221,42 @@ export class WechatPayService {
   async closeOrder(outTradeNo: string): Promise<void> {
     const urlPath = `/v3/pay/transactions/out-trade-no/${outTradeNo}/close`;
     await this.request('POST', urlPath, { mchid: this.mchId });
+  }
+
+  /** 退款回调地址（与支付回调分开，便于按事件分流） */
+  private get refundNotifyUrl(): string {
+    const base = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+    return `${base}/api/pay/wechat/refund-notify`;
+  }
+
+  /**
+   * 申请退款。支持部分退款（refundCents <= totalCents）。
+   * 微信按 out_refund_no 幂等：同一退款单号重复提交返回同一结果。
+   */
+  async refund(params: {
+    outTradeNo: string;
+    outRefundNo: string;
+    refundCents: number;
+    totalCents: number;
+    reason?: string;
+  }): Promise<any> {
+    const payload: any = {
+      out_trade_no: params.outTradeNo,
+      out_refund_no: params.outRefundNo,
+      notify_url: this.refundNotifyUrl,
+      amount: {
+        refund: params.refundCents,
+        total: params.totalCents,
+        currency: 'CNY',
+      },
+    };
+    if (params.reason) payload.reason = params.reason.slice(0, 80);
+    return this.request('POST', '/v3/refund/domestic/refunds', payload);
+  }
+
+  /** 查询退款（回调丢失时兜底核对） */
+  async queryRefund(outRefundNo: string): Promise<any> {
+    return this.request('GET', `/v3/refund/domestic/refunds/${outRefundNo}`);
   }
 
   /**

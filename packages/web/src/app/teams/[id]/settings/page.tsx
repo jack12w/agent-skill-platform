@@ -6,8 +6,8 @@ import Link from 'next/link';
 import useTranslation from '../../../../hooks/useTranslation';
 import { fetchTagGroups } from '../../../../lib/tag-groups';
 
-// 推荐会员价（对标知识星球个人星球）：月 ¥9 / 季 ¥29 / 年 ¥99
-const RECOMMENDED_PLAN = { monthly: 9, quarterly: 29, yearly: 99 };
+// 后端推荐价（与 platform_settings 种子一致）：月 ¥29 / 季 ¥79 / 年 ¥268
+const RECOMMENDED_PLAN = { monthly: 29, quarterly: 79, yearly: 268 };
 
 export default function TeamSettings({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -39,9 +39,15 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
       const tData = await res.json(); setTeam(tData); setForm({ name: tData.name ?? '', description: tData.description ?? '' }); setIsPublic(tData.is_public !== false);
       // 团队会员定价
       setPlanLoading(true);
-      fetch(`/api/pay/membership/plan?targetType=team&targetId=${encodeURIComponent(params.id)}`)
+      fetch(`/api/pay/membership/plan?targetType=team&targetId=${encodeURIComponent(params.id)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
         .then((r) => (r.ok ? r.json() : null))
         .then((p) => {
+          // 优先用后端 suggested 作为推荐价 fallback
+          const ref = p?.suggested
+            ? { monthly: Math.round(p.suggested.monthly / 100), quarterly: Math.round(p.suggested.quarterly / 100), yearly: Math.round(p.suggested.yearly / 100) }
+            : RECOMMENDED_PLAN;
           if (p?.hasPlan && p.plans) {
             setTeamPlan({
               monthly: String((p.plans.monthly || 0) / 100),
@@ -51,9 +57,9 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
           } else {
             // 未设置时默认填入推荐价，用户可修改后再保存
             setTeamPlan({
-              monthly: String(RECOMMENDED_PLAN.monthly),
-              quarterly: String(RECOMMENDED_PLAN.quarterly),
-              yearly: String(RECOMMENDED_PLAN.yearly),
+              monthly: String(ref.monthly),
+              quarterly: String(ref.quarterly),
+              yearly: String(ref.yearly),
             });
           }
         })

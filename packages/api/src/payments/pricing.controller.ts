@@ -123,12 +123,30 @@ export class PricingController {
     const memberIncluded =
       mode === 'member_only' || mode === 'both' ? true : Boolean(body?.member_included);
 
+    /*
+     * 单卖价下限校验。
+     * 之前只做 Math.max(0, …) 不校验下限，允许存下 pricing_mode='paid' 且 price_cents=0：
+     * 付费墙会照常拦截下载（402），但下单时金额为 0 会被微信直接拒绝（最低 1 分），
+     * 技能就此陷入「下载不了也买不了」的死锁。member_only 不走单卖，价格恒为 0。
+     */
+    const MIN_SELL_CENTS = 100; // ¥1，低于此额抽成取整为 0 且不具商业意义
+    const sellable = mode === 'paid' || mode === 'both';
+    if (sellable && priceCents < MIN_SELL_CENTS) {
+      throw new BadRequestException(
+        `单独售卖价不能低于 ${MIN_SELL_CENTS / 100} 元。若不想单独售卖，请选择「仅会员可下载」模式。`,
+      );
+    }
+    if (sellable && commercialCents > 0 && commercialCents < MIN_SELL_CENTS) {
+      throw new BadRequestException(`商用授权价不能低于 ${MIN_SELL_CENTS / 100} 元`);
+    }
+
     const pricing = this.pricingRepo.create({
       skill_id: skillId,
       pricing_mode: mode,
-      price_cents: mode === 'free' ? 0 : priceCents,
+      // member_only 不单卖，价格一律归零，避免残留旧价被误当作可购买
+      price_cents: sellable ? priceCents : 0,
       member_included: memberIncluded,
-      commercial_price_cents: mode === 'free' ? 0 : commercialCents,
+      commercial_price_cents: sellable ? commercialCents : 0,
       currency: 'CNY',
     });
 

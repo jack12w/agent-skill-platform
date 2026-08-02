@@ -25,6 +25,7 @@ import { EntitlementService } from './entitlement.service';
 import { BalanceService } from './balance.service';
 import { MembershipService } from './membership.service';
 import { OrdersService } from './orders.service';
+import { RefundService } from './refund.service';
 import { AdminPaymentsService } from './admin-payments.service';
 import { PaymentsController } from './payments.controller';
 import { AdminPaymentsController } from './admin-payments.controller';
@@ -42,9 +43,10 @@ const ENTITIES = [...PAYMENT_ENTITIES, User, Skill, Team];
     BalanceService,
     MembershipService,
     OrdersService,
+    RefundService,
     AdminPaymentsService,
   ],
   controllers: [PricingController, PaymentsController, AdminPaymentsController, WechatNotifyController],
-  exports: [EntitlementService, MembershipService, SettingsService, OrdersService],
+  exports: [EntitlementService, MembershipService, SettingsService, OrdersService, RefundService],
 })
 export class PaymentsModule {}

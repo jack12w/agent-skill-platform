@@ -6,9 +6,6 @@ import useTranslation from '../../../hooks/useTranslation';
 function getToken() { try { return localStorage.getItem('token'); } catch { return null; } }
 function getUserId() { try { return JSON.parse(localStorage.getItem('user') || 'null')?.id || null; } catch { return null; } }
 
-// 推荐会员价（对标知识星球个人星球）：月 ¥9 / 季 ¥29 / 年 ¥99
-const RECOMMENDED_PLAN = { monthly: 9, quarterly: 29, yearly: 99 };
-
 export default function HubPaySettingsPage() {
   const { t } = useTranslation();
   const [settings, setSettings] = useState<any>(null);
@@ -19,6 +16,8 @@ export default function HubPaySettingsPage() {
   const [myPlan, setMyPlan] = useState({ monthly: '', quarterly: '', yearly: '' });
   const [planLoading, setPlanLoading] = useState(true);
   const [savingPlan, setSavingPlan] = useState(false);
+  // 后端 suggested（分）→ 元，与 platform_settings/migration 种子一致
+  const [suggested, setSuggested] = useState({ monthly: 29, quarterly: 79, yearly: 268 });
 
   useEffect(() => {
     const token = getToken(); if (!token) return;
@@ -29,16 +28,25 @@ export default function HubPaySettingsPage() {
         setCommission(String((j.commissionRateBp || 0) / 100));
         setPayout({
           days: String(j.settlementDelayDays ?? 7),
-          min: String((j.withdrawMinCents ?? 1000) / 100),
+          min: String((j.withdrawMinCents ?? 2000) / 100),
         });
       })
       .catch(e => console.error(e));
-    // 载入个人会员定价
+    // 载入个人会员定价（需带 Authorization，否则后端拿不到 uid 做鉴权）
     const me = getUserId();
     if (me) {
-      fetch(`/api/pay/membership/plan?targetType=user&targetId=${encodeURIComponent(me)}`)
+      fetch(`/api/pay/membership/plan?targetType=user&targetId=${encodeURIComponent(me)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
         .then(r => r.ok ? r.json() : null)
         .then(p => {
+          if (p?.suggested) {
+            setSuggested({
+              monthly: Math.round(p.suggested.monthly / 100),
+              quarterly: Math.round(p.suggested.quarterly / 100),
+              yearly: Math.round(p.suggested.yearly / 100),
+            });
+          }
           if (p?.hasPlan && p.plans) {
             setMyPlan({
               monthly: String((p.plans.monthly || 0) / 100),
@@ -46,11 +54,11 @@ export default function HubPaySettingsPage() {
               yearly: String((p.plans.yearly || 0) / 100),
             });
           } else {
-            // 未设置时默认填入推荐价，用户可修改后再保存
+            // 未设置时默认填入后端推荐价，用户可修改后再保存
             setMyPlan({
-              monthly: String(RECOMMENDED_PLAN.monthly),
-              quarterly: String(RECOMMENDED_PLAN.quarterly),
-              yearly: String(RECOMMENDED_PLAN.yearly),
+              monthly: String(suggestedRef(p).monthly),
+              quarterly: String(suggestedRef(p).quarterly),
+              yearly: String(suggestedRef(p).yearly),
             });
           }
         })
@@ -59,7 +67,17 @@ export default function HubPaySettingsPage() {
     } else {
       setPlanLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 从接口返回提取 suggested（元），避免闭包陷阱
+  const suggestedRef = (p: any) => p?.suggested
+    ? {
+        monthly: Math.round(p.suggested.monthly / 100),
+        quarterly: Math.round(p.suggested.quarterly / 100),
+        yearly: Math.round(p.suggested.yearly / 100),
+      }
+    : suggested;
 
   const saveCommission = async () => {
     const token = getToken(); if (!token) return;
@@ -89,7 +107,7 @@ export default function HubPaySettingsPage() {
 
   const saveMyPlan = async () => {
     const token = getToken(); const me = getUserId(); if (!token || !me) return;
-    setMsg('');
+    setSavingPlan(true); setMsg('');
     const r = await fetch('/api/pay/membership/plan', {
       method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
@@ -100,6 +118,7 @@ export default function HubPaySettingsPage() {
         yearly_cents: Math.round(Number(myPlan.yearly || 0) * 100),
       }),
     });
+    setSavingPlan(false);
     setMsg(r.ok ? t('paySet.myPlanSaved') : '保存失败');
   };
 
@@ -155,9 +174,9 @@ export default function HubPaySettingsPage() {
         ) : (
           <>
             <div className="space-y-3">
-              <PriceRow label={t('admin.membershipPriceMonthly')} value={myPlan.monthly} placeholder={`推荐 ¥${RECOMMENDED_PLAN.monthly}`} onChange={v => setMyPlan(p => ({ ...p, monthly: v }))} />
-              <PriceRow label={t('admin.membershipPriceQuarterly')} value={myPlan.quarterly} placeholder={`推荐 ¥${RECOMMENDED_PLAN.quarterly}`} onChange={v => setMyPlan(p => ({ ...p, quarterly: v }))} />
-              <PriceRow label={t('admin.membershipPriceYearly')} value={myPlan.yearly} placeholder={`推荐 ¥${RECOMMENDED_PLAN.yearly}`} onChange={v => setMyPlan(p => ({ ...p, yearly: v }))} />
+              <PriceRow label={t('admin.membershipPriceMonthly')} value={myPlan.monthly} placeholder={`推荐 ¥${suggested.monthly}`} onChange={v => setMyPlan(p => ({ ...p, monthly: v }))} />
+              <PriceRow label={t('admin.membershipPriceQuarterly')} value={myPlan.quarterly} placeholder={`推荐 ¥${suggested.quarterly}`} onChange={v => setMyPlan(p => ({ ...p, quarterly: v }))} />
+              <PriceRow label={t('admin.membershipPriceYearly')} value={myPlan.yearly} placeholder={`推荐 ¥${suggested.yearly}`} onChange={v => setMyPlan(p => ({ ...p, yearly: v }))} />
             </div>
             <button onClick={saveMyPlan} disabled={savingPlan} className="mt-4 px-4 py-1.5 bg-brand-600 text-white text-sm rounded hover:bg-brand-700 disabled:opacity-50">{t('admin.saveSettings')}</button>
           </>

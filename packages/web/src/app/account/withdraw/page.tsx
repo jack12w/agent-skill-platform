@@ -12,7 +12,7 @@ export default function WithdrawPage() {
   const { t } = useTranslation();
   const [balance, setBalance] = useState<any>(null);
   const [wd, setWd] = useState<any>(null);
-  const [minCents, setMinCents] = useState(1000);
+  const [minCents, setMinCents] = useState(2000);
   const [wechatBound, setWechatBound] = useState(true);
   const [records, setRecords] = useState<any[]>([]);
   const [amount, setAmount] = useState('');

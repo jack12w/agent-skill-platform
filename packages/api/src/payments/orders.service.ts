@@ -68,6 +68,14 @@ export class OrdersService {
       const skill = await this.skillRepo.findOne({ where: { id: input.skillId } });
       if (!pricing || pricing.pricing_mode === 'free') throw new BadRequestException('该技能无需付费');
       total = Number(pricing.price_cents);
+      // 0 元订单必然被微信拒绝（最低 1 分），但付费墙已生效 → 技能会陷入
+      // 「下不了也买不了」的死锁。这里明确区分两种成因并给出可执行的提示。
+      if (!total || total <= 0) {
+        if (pricing.pricing_mode === 'member_only') {
+          throw new BadRequestException('该技能仅限订阅创作者会员后下载，不单独售卖');
+        }
+        throw new BadRequestException('该技能定价异常（0 元），请联系作者重新设置价格');
+      }
       description = `技能下载:${skill?.name || 'Skill'}`;
       item = {
         subject_type: 'skill',
@@ -227,29 +235,28 @@ export class OrdersService {
       this.logger.warn(`回调订单不存在: ${decrypted.out_trade_no}`);
       return { code: 'SUCCESS' };
     }
-    // 铁律③：幂等
-    if (payment.status === 'PAID') {
-      await this.logRepo.update(log.id, { processed: true });
-      return { code: 'SUCCESS' };
-    }
-    // 铁律②：金额比对
+    // 铁律②：金额比对（必须在标记已付之前）
     if (Number(decrypted.amount?.total) !== Number(payment.amount_cents)) {
       this.logger.error(`金额不一致: 微信 ${decrypted.amount?.total} vs 本地 ${payment.amount_cents}`);
       throw new BadRequestException('金额校验失败');
     }
 
-    payment.status = 'PAID';
-    payment.transaction_id = decrypted.transaction_id;
-    payment.paid_at = new Date();
-    payment.raw_notify = decrypted;
-    await this.payRepo.save(payment);
+    // 铁律③：幂等 —— 必须用原子 UPDATE 抢占。
+    // 微信回调与前端轮询触发的主动查单会并发进来，若只用 `if (status === 'PAID') return`
+    // 判断，两条路径可能同时读到 PENDING 并各自继续，导致创作者余额被重复入账。
+    const claimed = await this.markPaymentPaid(payment.id, decrypted.transaction_id, decrypted);
+    if (!claimed) {
+      await this.logRepo.update(log.id, { processed: true });
+      return { code: 'SUCCESS' };
+    }
 
     const order = await this.orderRepo.findOne({ where: { id: payment.order_id } });
     if (order) {
+      await this.orderRepo.update(
+        { id: order.id },
+        { status: 'PAID', paid_cents: payment.amount_cents, paid_at: new Date() },
+      );
       order.status = 'PAID';
-      order.paid_cents = payment.amount_cents;
-      order.paid_at = new Date();
-      await this.orderRepo.save(order);
       await this.deliver(order);
     }
 
@@ -257,47 +264,96 @@ export class OrdersService {
     return { code: 'SUCCESS' };
   }
 
-  /** 发货/记账（买断写权益+创作者余额；会员激活）。幂等。 */
-  private async deliver(order: Order) {
-    if (order.status === 'DELIVERED') return;
-    const items = await this.itemRepo.find({ where: { order_id: order.id } });
+  /**
+   * 原子地把一笔支付标记为 PAID。
+   * @returns true = 本次调用抢占成功（应继续发货）；false = 已被另一路处理过。
+   */
+  private async markPaymentPaid(paymentId: string, transactionId?: string, rawNotify?: any): Promise<boolean> {
+    const r = await this.payRepo
+      .createQueryBuilder()
+      .update(Payment)
+      .set({
+        status: 'PAID',
+        transaction_id: transactionId,
+        paid_at: new Date(),
+        ...(rawNotify ? { raw_notify: rawNotify } : {}),
+      })
+      .where('id = :id AND status <> :paid', { id: paymentId, paid: 'PAID' })
+      .execute();
+    return (r.affected ?? 0) > 0;
+  }
 
-    if (order.type === 'skill') {
-      for (const it of items) {
-        if (it.subject_id) {
-          await this.entitlement.grantPurchase(order.user_id, it.subject_id, order.id);
+  /**
+   * 发货/记账（买断写权益+创作者余额；会员激活）。
+   *
+   * 幂等由「原子抢占 DELIVERED 状态」保证：并发的回调与主动查单里，只有把
+   * status 从非 DELIVERED 改成 DELIVERED 的那一路 affected=1，其余直接返回。
+   * 此前 membership / creator_membership 分支把终态写成 PAID，导致哨兵
+   * `if (status === 'DELIVERED') return` 永远不成立 —— 重复回调会重复给创作者
+   * 入账、重复顺延会员到期时间。现在所有类型统一以 DELIVERED 收口。
+   */
+  private async deliver(order: Order) {
+    const claim = await this.orderRepo
+      .createQueryBuilder()
+      .update(Order)
+      .set({ status: 'DELIVERED' })
+      .where('id = :id AND status <> :delivered', { id: order.id, delivered: 'DELIVERED' })
+      .execute();
+    if (!(claim.affected ?? 0)) {
+      this.logger.warn(`订单 ${order.order_no} 已交付，跳过重复发货`);
+      return;
+    }
+
+    try {
+      const items = await this.itemRepo.find({ where: { order_id: order.id } });
+
+      if (order.type === 'skill') {
+        for (const it of items) {
+          if (it.subject_id) {
+            await this.entitlement.grantPurchase(order.user_id, it.subject_id, order.id);
+          }
+          if (it.seller_user_id && Number(it.seller_income_cents) > 0) {
+            await this.balance.credit(
+              it.seller_user_id,
+              Number(it.seller_income_cents),
+              'sale',
+              order.id,
+              `技能销售 ${order.order_no}`,
+            );
+          }
         }
-        if (it.seller_user_id && Number(it.seller_income_cents) > 0) {
-          await this.balance.credit(
-            it.seller_user_id,
-            Number(it.seller_income_cents),
-            'sale',
-            order.id,
-            `技能销售 ${order.order_no}`,
-          );
+      } else if (order.type === 'creator_membership') {
+        // 创作者会员：激活订阅 + 订阅费直接进创作者余额（取消全平台收益池均分）
+        const snap = items[0]?.snapshot as any;
+        const plan = snap?.plan || 'monthly';
+        const targetType = snap?.targetType;
+        const targetId = snap?.targetId;
+        await this.membership.activateCreatorSub(
+          order.user_id,
+          targetType,
+          targetId,
+          plan,
+          Number(items[0]?.unit_cents) || 0,
+          order.id,
+        );
+        const seller = items[0]?.seller_user_id;
+        const income = Number(items[0]?.seller_income_cents) || 0;
+        if (seller && income > 0) {
+          await this.balance.credit(seller, income, 'membership', order.id, `创作者会员 ${order.order_no}`);
         }
+      } else {
+        // 老全平台会员（过渡期保留，不参与分成）
+        const plan = (items[0]?.snapshot as any)?.plan || 'monthly';
+        await this.membership.activate(order.user_id, plan, order.id);
       }
       order.status = 'DELIVERED';
-    } else if (order.type === 'creator_membership') {
-      // 创作者会员：激活订阅 + 订阅费直接进创作者余额（取消全平台收益池均分）
-      const snap = items[0]?.snapshot as any;
-      const plan = snap?.plan || 'monthly';
-      const targetType = snap?.targetType;
-      const targetId = snap?.targetId;
-      await this.membership.activateCreatorSub(order.user_id, targetType, targetId, plan, Number(items[0]?.unit_cents) || 0, order.id);
-      const seller = items[0]?.seller_user_id;
-      const income = Number(items[0]?.seller_income_cents) || 0;
-      if (seller && income > 0) {
-        await this.balance.credit(seller, income, 'membership', order.id, `创作者会员 ${order.order_no}`);
-      }
-      order.status = 'PAID';
-    } else {
-      // 会员：激活；收益池在月末结算任务分配
-      const plan = (items[0]?.snapshot as any)?.plan || 'monthly';
-      await this.membership.activate(order.user_id, plan, order.id);
-      order.status = 'PAID';
+    } catch (e) {
+      // 发货失败必须回滚状态，否则订单会停在「已交付但实际没发货」的黑洞里，
+      // 且后续回调/查单都会被幂等哨兵挡掉，永远无法补发。
+      await this.orderRepo.update({ id: order.id }, { status: 'PAID' });
+      this.logger.error(`订单 ${order.order_no} 发货失败，已回滚为 PAID 等待重试`, e as any);
+      throw e;
     }
-    await this.orderRepo.save(order);
   }
 
   /** 前端轮询兜底：主动查单并同步 */
@@ -307,16 +363,23 @@ export class OrdersService {
       if (!payment || payment.status === 'PAID') return;
       const r = await this.wechat.queryOrder(outTradeNo);
       if (r?.trade_state === 'SUCCESS') {
-        payment.status = 'PAID';
-        payment.transaction_id = r.transaction_id;
-        payment.paid_at = new Date();
-        await this.payRepo.save(payment);
+        // 金额比对同样不能省：查单结果也可能与本地订单金额不符（如后台改价后的脏数据）
+        if (Number(r?.amount?.total) !== Number(payment.amount_cents)) {
+          this.logger.error(
+            `查单金额不一致: 微信 ${r?.amount?.total} vs 本地 ${payment.amount_cents}，拒绝发货`,
+          );
+          return;
+        }
+        // 与回调路径共用同一把原子锁，避免两边同时发货
+        const claimed = await this.markPaymentPaid(payment.id, r.transaction_id);
+        if (!claimed) return;
         const order = await this.orderRepo.findOne({ where: { id: payment.order_id } });
         if (order) {
+          await this.orderRepo.update(
+            { id: order.id },
+            { status: 'PAID', paid_cents: payment.amount_cents, paid_at: new Date() },
+          );
           order.status = 'PAID';
-          order.paid_cents = payment.amount_cents;
-          order.paid_at = new Date();
-          await this.orderRepo.save(order);
           await this.deliver(order);
         }
       } else if (r?.trade_state === 'CLOSED' || r?.trade_state === 'PAYERROR') {

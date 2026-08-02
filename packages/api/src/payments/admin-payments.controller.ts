@@ -16,6 +16,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { AdminGuard } from '../common/admin.guard';
 import { AdminPaymentsService } from './admin-payments.service';
 import { SettingsService } from './settings.service';
+import { RefundService } from './refund.service';
 
 @Controller('admin/pay')
 @UseGuards(AuthGuard, AdminGuard)
@@ -23,6 +24,7 @@ export class AdminPaymentsController {
   constructor(
     private readonly admin: AdminPaymentsService,
     private readonly settings: SettingsService,
+    private readonly refunds: RefundService,
   ) {}
 
   private uid(req: Request): string {
@@ -57,6 +59,27 @@ export class AdminPaymentsController {
   @Get('reconciliation')
   reconcile() {
     return this.admin.reconcile();
+  }
+
+  /**
+   * 发起退款（全额或部分）。退款成功后会自动回冲创作者余额、撤销权益/订阅。
+   * body: { orderNo, amountCents?, reason? }  amountCents 缺省=全额退
+   */
+  @Post('refunds')
+  async createRefund(@Body() body: any, @Req() req: Request) {
+    const orderNo = String(body?.orderNo || '').trim();
+    if (!orderNo) throw new BadRequestException('缺少 orderNo');
+    const amount = body?.amountCents == null || body?.amountCents === '' ? undefined : Number(body.amountCents);
+    if (amount !== undefined && (!Number.isFinite(amount) || amount <= 0)) {
+      throw new BadRequestException('退款金额必须为正整数（分）');
+    }
+    return this.refunds.createRefund(orderNo, amount, String(body?.reason || '管理员退款'), this.uid(req));
+  }
+
+  /** 退款单列表 */
+  @Get('refunds')
+  listRefunds(@Query('page') page = '1', @Query('size') size = '20', @Query('status') status?: string) {
+    return this.admin.listRefunds(Number(page), Number(size), status);
   }
 
   /** 交易设置：抽成比例 + 结算/提现规则 */

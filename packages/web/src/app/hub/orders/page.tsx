@@ -6,12 +6,23 @@ import useTranslation from '../../../hooks/useTranslation';
 function getToken() { try { return localStorage.getItem('token'); } catch { return null; } }
 function yuan(c: number) { return ((c || 0) / 100).toFixed(2); }
 
+const typeLabel = (tp: string) =>
+  ({
+    skill: '技能买断',
+    membership: 'Pro 会员',
+    creator_membership: '创作者会员',
+  } as Record<string, string>)[tp] || tp;
+
 export default function HubOrdersPage() {
   const { t } = useTranslation();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
+  const [refundTarget, setRefundTarget] = useState<any>(null);
+  const [refundAmt, setRefundAmt] = useState('');
+  const [refundReason, setRefundReason] = useState('');
+  const [refundMsg, setRefundMsg] = useState('');
 
   const fetchData = useCallback(async () => {
     const token = getToken(); if (!token) return;
@@ -27,7 +38,40 @@ export default function HubOrdersPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const doRefund = async () => {
+    const token = getToken(); if (!token || !refundTarget) return;
+    setRefundMsg('');
+    const body: any = { orderNo: refundTarget.order_no, reason: refundReason || '管理员退款' };
+    if (refundAmt) body.amountCents = Math.round(Number(refundAmt) * 100);
+    try {
+      const r = await fetch('/api/admin/pay/refunds', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) {
+        setRefundMsg(`退款已提交：${j.out_refund_no}（状态 ${j.status}）`);
+        setRefundTarget(null); setRefundAmt(''); setRefundReason('');
+        fetchData();
+      } else {
+        setRefundMsg(j.message || '退款失败');
+      }
+    } catch (e: any) {
+      setRefundMsg(e?.message || '网络异常');
+    }
+  };
+
   if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" /></div>;
+
+  const statusColor = (s: string) =>
+    ({
+      DELIVERED: 'bg-green-100 text-green-700',
+      PAID: 'bg-blue-100 text-blue-700',
+      PENDING_PAY: 'bg-amber-100 text-amber-700',
+      CLOSED: 'bg-neutral-200 text-neutral-600',
+      REFUNDED: 'bg-red-100 text-red-700',
+      PARTIAL_REFUNDED: 'bg-orange-100 text-orange-700',
+    } as Record<string, string>)[s] || 'bg-neutral-100 text-neutral-600';
 
   return (
     <div>
@@ -40,6 +84,7 @@ export default function HubOrdersPage() {
           <option value="DELIVERED">DELIVERED</option>
           <option value="CLOSED">CLOSED</option>
           <option value="REFUNDED">REFUNDED</option>
+          <option value="PARTIAL_REFUNDED">PARTIAL_REFUNDED</option>
         </select>
       </div>
       <div className="bg-white border rounded-xl overflow-hidden">
@@ -51,18 +96,41 @@ export default function HubOrdersPage() {
               <th className="px-4 py-3 text-center">{t('admin.thStatus')}</th>
               <th className="px-4 py-3 text-right">{t('admin.thAmount')}</th>
               <th className="px-4 py-3 text-left">下单时间</th>
+              <th className="px-4 py-3 text-center">操作</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
-            {(data?.items || []).map((o: any) => (
-              <tr key={o.id} className="hover:bg-neutral-100">
-                <td className="px-4 py-3 font-mono text-xs">{o.order_no}</td>
-                <td className="px-4 py-3">{o.type === 'membership' ? `会员·${o.items?.[0]?.snapshot?.plan || ''}` : '技能买断'}</td>
-                <td className="px-4 py-3 text-center"><span className="px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-600">{o.status}</span></td>
-                <td className="px-4 py-3 text-right font-medium">¥{yuan(o.total_cents)}</td>
-                <td className="px-4 py-3 text-neutral-500">{new Date(o.created_at).toLocaleString()}</td>
-              </tr>
-            ))}
+            {(data?.items || []).map((o: any) => {
+              const canRefund = ['PAID', 'DELIVERED', 'PARTIAL_REFUNDED'].includes(o.status) && Number(o.paid_cents) > 0;
+              const planInfo = o.items?.[0]?.snapshot?.plan;
+              return (
+                <tr key={o.id} className="hover:bg-neutral-100">
+                  <td className="px-4 py-3 font-mono text-xs">{o.order_no}</td>
+                  <td className="px-4 py-3">
+                    {typeLabel(o.type)}
+                    {planInfo && <span className="text-neutral-400 ml-1">·{planInfo}</span>}
+                    {Number(o.refunded_cents) > 0 && (
+                      <span className="ml-1 text-xs text-orange-500">已退¥{yuan(o.refunded_cents)}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`px-2 py-0.5 rounded-full text-xs ${statusColor(o.status)}`}>{o.status}</span>
+                  </td>
+                  <td className="px-4 py-3 text-right font-medium">¥{yuan(o.total_cents)}</td>
+                  <td className="px-4 py-3 text-neutral-500">{new Date(o.created_at).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-center">
+                    {canRefund ? (
+                      <button
+                        onClick={() => { setRefundTarget(o); setRefundAmt(''); setRefundReason(''); setRefundMsg(''); }}
+                        className="px-2 py-1 text-xs border border-red-300 text-red-600 rounded hover:bg-red-50"
+                      >退款</button>
+                    ) : (
+                      <span className="text-neutral-300 text-xs">—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -70,6 +138,31 @@ export default function HubOrdersPage() {
         <div className="flex justify-between mt-4 text-sm text-neutral-500">
           <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 border rounded disabled:opacity-30">{t('admin.prev')}</button>
           <button onClick={() => setPage(p => p + 1)} disabled={page * data.size >= data.total} className="px-3 py-1 border rounded disabled:opacity-30">{t('admin.next')}</button>
+        </div>
+      )}
+
+      {/* 退款弹窗 */}
+      {refundTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setRefundTarget(null)}>
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-bold mb-1">退款确认</h2>
+            <p className="text-sm text-neutral-500 mb-4">订单 {refundTarget.order_no}，实付 ¥{yuan(refundTarget.paid_cents)}</p>
+            {Number(refundTarget.refunded_cents) > 0 && (
+              <p className="text-xs text-orange-500 mb-2">该订单已退 ¥{yuan(refundTarget.refunded_cents)}，本次最多可退 ¥{yuan(Number(refundTarget.paid_cents) - Number(refundTarget.refunded_cents))}</p>
+            )}
+            <label className="block text-sm text-neutral-600 mb-1">退款金额（元，留空=全额退剩余可退）</label>
+            <input type="number" step="0.01" value={refundAmt} onChange={e => setRefundAmt(e.target.value)}
+              placeholder={`最多 ¥${yuan(Number(refundTarget.paid_cents) - Number(refundTarget.refunded_cents || 0))}`}
+              className="w-full px-3 py-2 text-sm border rounded-lg mb-3" />
+            <label className="block text-sm text-neutral-600 mb-1">退款原因</label>
+            <input type="text" value={refundReason} onChange={e => setRefundReason(e.target.value)}
+              placeholder="管理员退款" className="w-full px-3 py-2 text-sm border rounded-lg mb-4" />
+            {refundMsg && <p className="text-sm text-red-500 mb-3">{refundMsg}</p>}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setRefundTarget(null)} className="px-4 py-2 text-sm border rounded-lg">取消</button>
+              <button onClick={doRefund} className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700">确认退款</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

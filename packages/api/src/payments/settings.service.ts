@@ -58,8 +58,8 @@ export class SettingsService {
     return this.get<number>('settlement_delay_days', 7);
   }
 
-  /** 最低提现（分），默认 1000 = 10 元 */
+  /** 最低提现（分），默认 2000 = 20 元（与 0010 迁移种子一致） */
   async getWithdrawMinCents(): Promise<number> {
-    return this.get<number>('withdraw_min_cents', 1000);
+    return this.get<number>('withdraw_min_cents', 2000);
   }
 }

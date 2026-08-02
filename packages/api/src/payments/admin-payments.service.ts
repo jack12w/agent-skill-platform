@@ -5,9 +5,11 @@ import {
   Order,
   OrderItem,
   CreatorBalance,
+  BalanceTransaction,
   Withdrawal,
   WechatNotifyLog,
   CreatorSubscription,
+  Refund,
 } from './payments.entity';
 import { User } from '../auth/user.entity';
 import { Team } from '../teams/team.entity';
@@ -22,6 +24,8 @@ export class AdminPaymentsService {
     @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
     @InjectRepository(OrderItem) private readonly itemRepo: Repository<OrderItem>,
     @InjectRepository(CreatorBalance) private readonly balRepo: Repository<CreatorBalance>,
+    @InjectRepository(BalanceTransaction) private readonly txRepo: Repository<BalanceTransaction>,
+    @InjectRepository(Refund) private readonly refundRepo: Repository<Refund>,
     @InjectRepository(Withdrawal) private readonly wdRepo: Repository<Withdrawal>,
     @InjectRepository(WechatNotifyLog) private readonly logRepo: Repository<WechatNotifyLog>,
     @InjectRepository(CreatorSubscription) private readonly csRepo: Repository<CreatorSubscription>,
@@ -147,21 +151,122 @@ export class AdminPaymentsService {
     return wd;
   }
 
-  /** 对账：微信回调 vs 本地订单，标出卡住订单 */
+  async listRefunds(page: number, size: number, status?: string) {
+    const where: any = {};
+    if (status) where.status = status;
+    const r = await this.paginate(this.refundRepo, where, page, size, { id: 'DESC' } as any);
+    const orderIds = [...new Set((r.items as Refund[]).map((x) => x.order_id))];
+    const orders = orderIds.length ? await this.orderRepo.find({ where: { id: In(orderIds) } }) : [];
+    const map = new Map(orders.map((o) => [o.id, o]));
+    return {
+      ...r,
+      items: (r.items as Refund[]).map((x) => ({
+        ...x,
+        order_no: map.get(x.order_id)?.order_no || '',
+        order_type: map.get(x.order_id)?.type || '',
+      })),
+    };
+  }
+
+  /**
+   * 对账。原先只数了几个订单状态，回答不了"账对不上"这类问题。
+   * 现在按金额做三组勾稽，任何一组不平都会给出明确的 diff 与可疑单据。
+   */
   async reconcile() {
-    const paidOrders = await this.orderRepo.count({ where: { status: 'PAID' } });
-    const deliveredOrders = await this.orderRepo.count({ where: { status: 'DELIVERED' } });
-    const processedLogs = await this.logRepo.count({ where: { processed: true } });
+    const sum = async (repo: Repository<any>, col: string, alias: string, where?: string, params?: any) => {
+      let qb = repo.createQueryBuilder('t').select(`COALESCE(SUM(t.${col}),0)`, 'v');
+      if (where) qb = qb.where(where, params);
+      const row = await qb.getRawOne<{ v: string }>();
+      return Number(row?.v || 0);
+    };
+
+    // ── 1. 收入侧：订单实付 vs 已退款 ──
+    const grossPaidCents = await sum(this.orderRepo, 'paid_cents', 'v', "t.status IN ('PAID','DELIVERED','REFUNDED','PARTIAL_REFUNDED')");
+    const orderRefundedCents = await sum(this.orderRepo, 'refunded_cents', 'v');
+    const refundSuccessCents = await sum(this.refundRepo, 'amount_cents', 'v', "t.status = 'SUCCESS'");
+    const netRevenueCents = grossPaidCents - orderRefundedCents;
+
+    // 订单上记的退款额，必须等于退款单里成功的合计
+    const refundDiffCents = orderRefundedCents - refundSuccessCents;
+
+    // ── 2. 分成侧：应付创作者 vs 实际入账流水 ──
+    // 已交付订单里创作者应得合计（下单时就锁定的 seller_income_cents）
+    const payableRow = await this.itemRepo
+      .createQueryBuilder('i')
+      .innerJoin(Order, 'o', 'o.id = i.order_id')
+      .select('COALESCE(SUM(i.seller_income_cents),0)', 'v')
+      .where("o.status IN ('DELIVERED','REFUNDED','PARTIAL_REFUNDED')")
+      .andWhere('i.seller_user_id IS NOT NULL')
+      .getRawOne<{ v: string }>();
+    const payableCents = Number(payableRow?.v || 0);
+
+    const creditedCents = await sum(this.txRepo, 'amount_cents', 'v', "t.direction = 'in'");
+    const refundDeductCents = await sum(this.txRepo, 'amount_cents', 'v', "t.biz_type = 'refund_deduct'");
+    // 入账流水 - 退款扣回 应当等于「已交付订单应付分成 - 已退款部分对应的分成」
+    const settlementDiffCents = creditedCents - refundDeductCents - (payableCents - refundDeductCents);
+
+    // ── 3. 余额侧：账面 vs 流水 ──
+    const balanceAvailableCents = await sum(this.balRepo, 'available_cents', 'v');
+    const balanceFrozenCents = await sum(this.balRepo, 'frozen_cents', 'v');
+    const withdrawnCents = await sum(this.balRepo, 'total_withdrawn_cents', 'v');
+    // 账面（可用+冻结+已提）应等于（累计入账 - 退款扣回）
+    const balanceDiffCents =
+      balanceAvailableCents + balanceFrozenCents + withdrawnCents - (creditedCents - refundDeductCents);
+
+    // 平台留存 = 净收入 - 应付创作者（已扣退款）
+    const platformCommissionCents = netRevenueCents - (payableCents - refundDeductCents);
+
+    // ── 异常单据 ──
     const stuck = await this.orderRepo.find({
       where: { status: 'PENDING_PAY', expire_at: LessThan(new Date(Date.now() - 15 * 60_000)) },
+      take: 50,
     });
+    // 已付款但迟迟没交付（发货失败回滚会停在 PAID）
+    const undelivered = await this.orderRepo.find({
+      where: { status: 'PAID', paid_at: LessThan(new Date(Date.now() - 10 * 60_000)) },
+      take: 50,
+    });
+    const pendingRefunds = await this.refundRepo.count({ where: { status: 'PENDING' } });
+    const failedRefunds = await this.refundRepo.count({ where: { status: 'FAILED' } });
+    // 余额为负 = 退款把创作者账户扣穿，需要人工追讨
+    const negativeBalances = await this.balRepo.find({ where: { available_cents: LessThan(0) } as any, take: 50 });
+
+    const unprocessedLogs = await this.logRepo.count({ where: { processed: false } });
     const recentLogs = await this.logRepo.find({ order: { created_at: 'DESC' }, take: 20 });
+
+    const balanced = refundDiffCents === 0 && settlementDiffCents === 0 && balanceDiffCents === 0;
+
     return {
-      paidOrders,
-      deliveredOrders,
-      processedLogs,
-      stuckCount: stuck.length,
+      balanced,
+      amounts: {
+        grossPaidCents,
+        orderRefundedCents,
+        refundSuccessCents,
+        netRevenueCents,
+        payableCents,
+        creditedCents,
+        refundDeductCents,
+        platformCommissionCents,
+        balanceAvailableCents,
+        balanceFrozenCents,
+        withdrawnCents,
+      },
+      diffs: { refundDiffCents, settlementDiffCents, balanceDiffCents },
+      counts: {
+        paidOrders: await this.orderRepo.count({ where: { status: 'PAID' } }),
+        deliveredOrders: await this.orderRepo.count({ where: { status: 'DELIVERED' } }),
+        refundedOrders: await this.orderRepo.count({ where: { status: 'REFUNDED' } }),
+        processedLogs: await this.logRepo.count({ where: { processed: true } }),
+        unprocessedLogs,
+        pendingRefunds,
+        failedRefunds,
+        stuckCount: stuck.length,
+        undeliveredCount: undelivered.length,
+        negativeBalanceCount: negativeBalances.length,
+      },
       stuck: stuck.map((o) => ({ order_no: o.order_no, created_at: o.created_at })),
+      undelivered: undelivered.map((o) => ({ order_no: o.order_no, paid_at: o.paid_at, total_cents: o.total_cents })),
+      negativeBalances: negativeBalances.map((b) => ({ user_id: b.user_id, available_cents: b.available_cents })),
       recentLogs: recentLogs.map((l) => ({ id: l.id, event_type: l.event_type, processed: l.processed, created_at: l.created_at })),
     };
   }
