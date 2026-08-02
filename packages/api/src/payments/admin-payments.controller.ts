@@ -59,12 +59,11 @@ export class AdminPaymentsController {
     return this.admin.reconcile();
   }
 
-  /** 交易设置：抽成比例 + 会员价 */
+  /** 交易设置：抽成比例 + 结算/提现规则 */
   @Get('settings')
   async settings_get() {
     return {
       commissionRateBp: await this.settings.getCommissionBp(),
-      membershipPrices: await this.settings.getMembershipPrices(),
       settlementDelayDays: await this.settings.getSettlementDelayDays(),
       withdrawMinCents: await this.settings.getWithdrawMinCents(),
     };
@@ -75,19 +74,6 @@ export class AdminPaymentsController {
     const bp = Number(body.commissionRateBp);
     if (!bp || bp < 0 || bp > 3000) throw new BadRequestException('抽成比例异常（0~30%）');
     return this.settings.set('commission_rate_bp', bp);
-  }
-
-  @Put('settings/membership-prices')
-  async updateMembershipPrices(@Body() body: any) {
-    const prices = {
-      monthly: Number(body.monthly),
-      quarterly: Number(body.quarterly),
-      yearly: Number(body.yearly),
-    };
-    if (!prices.monthly || !prices.quarterly || !prices.yearly) {
-      throw new BadRequestException('会员价不完整');
-    }
-    return this.settings.set('membership_prices', prices);
   }
 
   /** 结算与提现：冻结期天数 + 最低提现金额 */
