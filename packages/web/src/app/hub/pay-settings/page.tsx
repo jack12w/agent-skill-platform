@@ -4,14 +4,18 @@ import { useEffect, useState } from 'react';
 import useTranslation from '../../../hooks/useTranslation';
 
 function getToken() { try { return localStorage.getItem('token'); } catch { return null; } }
+function getUserId() { try { return JSON.parse(localStorage.getItem('user') || 'null')?.id || null; } catch { return null; } }
 
 export default function HubPaySettingsPage() {
   const { t } = useTranslation();
   const [settings, setSettings] = useState<any>(null);
   const [commission, setCommission] = useState('');
-  const [prices, setPrices] = useState({ monthly: '', quarterly: '', yearly: '' });
   const [payout, setPayout] = useState({ days: '', min: '' });
   const [msg, setMsg] = useState('');
+  // ── 我的（个人创作者）会员定价 ──
+  const [myPlan, setMyPlan] = useState({ monthly: '', quarterly: '', yearly: '' });
+  const [planLoading, setPlanLoading] = useState(true);
+  const [savingPlan, setSavingPlan] = useState(false);
 
   useEffect(() => {
     const token = getToken(); if (!token) return;
@@ -20,17 +24,31 @@ export default function HubPaySettingsPage() {
       .then(j => {
         setSettings(j);
         setCommission(String((j.commissionRateBp || 0) / 100));
-        setPrices({
-          monthly: String((j.membershipPrices?.monthly || 0) / 100),
-          quarterly: String((j.membershipPrices?.quarterly || 0) / 100),
-          yearly: String((j.membershipPrices?.yearly || 0) / 100),
-        });
         setPayout({
           days: String(j.settlementDelayDays ?? 7),
           min: String((j.withdrawMinCents ?? 1000) / 100),
         });
       })
       .catch(e => console.error(e));
+    // 载入个人会员定价
+    const me = getUserId();
+    if (me) {
+      fetch(`/api/pay/membership/plan?targetType=user&targetId=${encodeURIComponent(me)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(p => {
+          if (p?.hasPlan && p.plans) {
+            setMyPlan({
+              monthly: String((p.plans.monthly || 0) / 100),
+              quarterly: String((p.plans.quarterly || 0) / 100),
+              yearly: String((p.plans.yearly || 0) / 100),
+            });
+          }
+        })
+        .catch(() => {})
+        .finally(() => setPlanLoading(false));
+    } else {
+      setPlanLoading(false);
+    }
   }, []);
 
   const saveCommission = async () => {
@@ -42,20 +60,6 @@ export default function HubPaySettingsPage() {
       body: JSON.stringify({ commissionRateBp: bp }),
     });
     setMsg(r.ok ? '抽成已保存' : '保存失败');
-  };
-
-  const savePrices = async () => {
-    const token = getToken(); if (!token) return;
-    setMsg('');
-    const r = await fetch('/api/admin/pay/settings/membership-prices', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        monthly: Math.round(Number(prices.monthly) * 100),
-        quarterly: Math.round(Number(prices.quarterly) * 100),
-        yearly: Math.round(Number(prices.yearly) * 100),
-      }),
-    });
-    setMsg(r.ok ? '会员价已保存' : '保存失败');
   };
 
   const savePayout = async () => {
@@ -71,6 +75,22 @@ export default function HubPaySettingsPage() {
     if (r.ok) { setMsg('结算设置已保存'); return; }
     const e = await r.json().catch(() => ({}));
     setMsg(e.message || '保存失败');
+  };
+
+  const saveMyPlan = async () => {
+    const token = getToken(); const me = getUserId(); if (!token || !me) return;
+    setMsg('');
+    const r = await fetch('/api/pay/membership/plan', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        targetType: 'user',
+        targetId: me,
+        monthly_cents: Math.round(Number(myPlan.monthly || 0) * 100),
+        quarterly_cents: Math.round(Number(myPlan.quarterly || 0) * 100),
+        yearly_cents: Math.round(Number(myPlan.yearly || 0) * 100),
+      }),
+    });
+    setMsg(r.ok ? t('paySet.myPlanSaved') : '保存失败');
   };
 
   if (!settings) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" /></div>;
@@ -117,13 +137,20 @@ export default function HubPaySettingsPage() {
       </div>
 
       <div className="bg-white border rounded-xl p-5 max-w-md">
-        <h2 className="text-sm font-medium text-neutral-700 mb-3">Pro 会员定价（元）</h2>
-        <div className="space-y-3">
-          <PriceRow label={t('admin.membershipPriceMonthly')} value={prices.monthly} onChange={v => setPrices(p => ({ ...p, monthly: v }))} />
-          <PriceRow label={t('admin.membershipPriceQuarterly')} value={prices.quarterly} onChange={v => setPrices(p => ({ ...p, quarterly: v }))} />
-          <PriceRow label={t('admin.membershipPriceYearly')} value={prices.yearly} onChange={v => setPrices(p => ({ ...p, yearly: v }))} />
-        </div>
-        <button onClick={savePrices} className="mt-4 px-4 py-1.5 bg-brand-600 text-white text-sm rounded hover:bg-brand-700">{t('admin.saveSettings')}</button>
+        <h2 className="text-sm font-medium text-neutral-700 mb-1">{t('paySet.myMembershipTitle')}</h2>
+        <p className="text-xs text-neutral-500 mb-3">{t('paySet.myMembershipHint')}</p>
+        {planLoading ? (
+          <div className="text-sm text-neutral-400">加载中…</div>
+        ) : (
+          <>
+            <div className="space-y-3">
+              <PriceRow label={t('admin.membershipPriceMonthly')} value={myPlan.monthly} onChange={v => setMyPlan(p => ({ ...p, monthly: v }))} />
+              <PriceRow label={t('admin.membershipPriceQuarterly')} value={myPlan.quarterly} onChange={v => setMyPlan(p => ({ ...p, quarterly: v }))} />
+              <PriceRow label={t('admin.membershipPriceYearly')} value={myPlan.yearly} onChange={v => setMyPlan(p => ({ ...p, yearly: v }))} />
+            </div>
+            <button onClick={saveMyPlan} disabled={savingPlan} className="mt-4 px-4 py-1.5 bg-brand-600 text-white text-sm rounded hover:bg-brand-700 disabled:opacity-50">{t('admin.saveSettings')}</button>
+          </>
+        )}
       </div>
     </div>
   );

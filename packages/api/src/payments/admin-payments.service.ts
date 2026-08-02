@@ -4,16 +4,16 @@ import { Repository, LessThan, MoreThan, In } from 'typeorm';
 import {
   Order,
   OrderItem,
-  Membership,
   CreatorBalance,
   Withdrawal,
   Settlement,
   WechatNotifyLog,
+  CreatorSubscription,
 } from './payments.entity';
 import { User } from '../auth/user.entity';
+import { Team } from '../teams/team.entity';
 import { WechatPayService } from './wechat-pay.service';
 import { BalanceService } from './balance.service';
-import { MembershipService } from './membership.service';
 
 @Injectable()
 export class AdminPaymentsService {
@@ -22,15 +22,15 @@ export class AdminPaymentsService {
   constructor(
     @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
     @InjectRepository(OrderItem) private readonly itemRepo: Repository<OrderItem>,
-    @InjectRepository(Membership) private readonly memberRepo: Repository<Membership>,
     @InjectRepository(CreatorBalance) private readonly balRepo: Repository<CreatorBalance>,
     @InjectRepository(Withdrawal) private readonly wdRepo: Repository<Withdrawal>,
     @InjectRepository(Settlement) private readonly settleRepo: Repository<Settlement>,
     @InjectRepository(WechatNotifyLog) private readonly logRepo: Repository<WechatNotifyLog>,
+    @InjectRepository(CreatorSubscription) private readonly csRepo: Repository<CreatorSubscription>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
+    @InjectRepository(Team) private readonly teamRepo: Repository<Team>,
     private readonly wechat: WechatPayService,
     private readonly balance: BalanceService,
-    private readonly membership: MembershipService,
   ) {}
 
   private async paginate<T>(repo: Repository<T>, where: any, page: number, size: number, order: any = { created_at: 'DESC' }) {
@@ -54,7 +54,29 @@ export class AdminPaymentsService {
   async listMemberships(page: number, size: number, status?: string) {
     const where: any = {};
     if (status) where.status = status;
-    return this.paginate(this.memberRepo, where, page, size, { started_at: 'DESC' });
+    const r = await this.paginate(this.csRepo, where, page, size, { started_at: 'DESC' });
+    const subs = r.items as CreatorSubscription[];
+    const subUserIds = [...new Set(subs.map((s) => s.user_id))];
+    const targetUserIds = [...new Set(subs.filter((s) => s.target_type === 'user').map((s) => s.target_id))];
+    const targetTeamIds = [...new Set(subs.filter((s) => s.target_type === 'team').map((s) => s.target_id))];
+    const [subUsers, targetUsers, targetTeams] = await Promise.all([
+      subUserIds.length ? this.userRepo.find({ where: { id: In(subUserIds) } }) : Promise.resolve([]),
+      targetUserIds.length ? this.userRepo.find({ where: { id: In(targetUserIds) } }) : Promise.resolve([]),
+      targetTeamIds.length ? this.teamRepo.find({ where: { id: In(targetTeamIds) } }) : Promise.resolve([]),
+    ]);
+    const subUserMap = new Map(subUsers.map((u) => [u.id, u]));
+    const targetUserMap = new Map(targetUsers.map((u) => [u.id, u]));
+    const targetTeamMap = new Map(targetTeams.map((t) => [t.id, t]));
+    const items = subs.map((s) => {
+      const targetName =
+        s.target_type === 'team'
+          ? (targetTeamMap.get(s.target_id) as any)?.name || s.target_id
+          : (targetUserMap.get(s.target_id) as any)?.name || (targetUserMap.get(s.target_id) as any)?.username || s.target_id;
+      const subscriberName =
+        (subUserMap.get(s.user_id) as any)?.name || (subUserMap.get(s.user_id) as any)?.username || s.user_id;
+      return { ...s, subscriber_name: subscriberName, target_name: targetName };
+    });
+    return { items, total: r.total, page, size };
   }
 
   /** 创作者余额列表（含邮箱） */
@@ -131,9 +153,9 @@ export class AdminPaymentsService {
     return this.paginate(this.settleRepo, {}, page, size, { period: 'DESC' });
   }
 
-  /** 运行某月会员收益池结算 */
+  /** 运行某月会员收益池结算（已取消：创作者会员订阅费在支付时直接进创作者余额） */
   async runSettlement(period: string) {
-    return this.membership.allocatePool(period);
+    return { skipped: true, reason: 'creator_membership_direct_settle', period };
   }
 
   /** 对账：微信回调 vs 本地订单，标出卡住订单 */

@@ -79,6 +79,8 @@ const en = {
     skillLostHint: 'This skill may have been deleted or is not yet published. Check out these trending skills.',
     skillRecommend: 'Recommended Skills',
     reviewBanner: 'This skill is under review and not yet public',
+    subscribeAuthor: 'Subscribe to author',
+    subscribedAuthor: 'Subscribed to author',
   },
   edit: {
     title: 'Edit Skill',
@@ -218,6 +220,9 @@ const en = {
     noSkillsHint: "Go to a skill's edit page and assign it to this team.",
     cannotLoad: 'Cannot load team',
     backToDashboardLink: 'Back to dashboard',
+    membershipTitle: 'Team Membership Pricing',
+    membershipHint: 'Set your team membership price. Subscribers can download all team skills for free during the subscription.',
+    membershipSaved: 'Team membership pricing saved',
   },
   avatar: {
     dashboard: 'Dashboard',
@@ -512,6 +517,16 @@ const en = {
     memberUntil: 'Valid until {date}',
     openMember: 'Subscribe / Renew',
     memberBenefits: 'Download all member-included skills for free. Your downloads also reward the skill authors.',
+  },
+  member: {
+    title: 'Subscribe',
+    empty: 'This creator has not set up a membership plan yet',
+    alreadySub: 'You are subscribed',
+  },
+  paySet: {
+    myMembershipTitle: 'My Membership Pricing',
+    myMembershipHint: 'Set your personal membership price. Subscribers can download all your skills for free during the subscription. Leave blank to disable a tier.',
+    myPlanSaved: 'Membership pricing saved',
   },
   help: {
     title: 'Help Center',

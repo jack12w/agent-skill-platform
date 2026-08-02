@@ -5,6 +5,7 @@ import Link from 'next/link';
 import useTranslation from '../../../hooks/useTranslation';
 import { setShareConfig, resetShareConfig } from '../../../lib/share';
 import SkillUpdateBadge from '../../components/SkillUpdateBadge';
+import MembershipModal from '../../components/MembershipModal';
 
 export default function UserProfile({ params }: { params: { username: string } }) {
   const { t } = useTranslation();
@@ -23,10 +24,10 @@ export default function UserProfile({ params }: { params: { username: string } }
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // ── 订阅相关 ──
+  // ── 创作者会员相关 ──
   const [subscriberCount, setSubscriberCount] = useState(0);
   const [subscribed, setSubscribed] = useState(false);
-  const [subLoading, setSubLoading] = useState(false);
+  const [memberModalOpen, setMemberModalOpen] = useState(false);
   const currentUserId = (() => {
     try { const u = JSON.parse(localStorage.getItem('user') || 'null'); return u?.id || null; } catch { return null; }
   })();
@@ -57,9 +58,9 @@ export default function UserProfile({ params }: { params: { username: string } }
         imgUrl: userData.avatar_url || undefined,
       });
 
-      // 订阅数 + 当前用户订阅状态
+      // 创作者会员订阅数 + 当前用户订阅状态
       try {
-        const countRes = await fetch(`/api/subscriptions/count?targetType=user&targetId=${encodeURIComponent(userData.id)}`);
+        const countRes = await fetch(`/api/pay/membership/subscribers/user/${encodeURIComponent(userData.id)}`);
         if (countRes.ok) {
           const c = await countRes.json();
           setSubscriberCount(c.count ?? 0);
@@ -67,7 +68,7 @@ export default function UserProfile({ params }: { params: { username: string } }
       } catch { /* ignore */ }
       if (currentUserId && currentUserId !== userData.id) {
         try {
-          const stRes = await fetch(`/api/subscriptions/status?targetType=user&targetId=${encodeURIComponent(userData.id)}`, {
+          const stRes = await fetch(`/api/pay/membership/subscribe/user/${encodeURIComponent(userData.id)}`, {
             headers: { Authorization: `Bearer ${token}` },
           });
           if (stRes.ok) {
@@ -119,25 +120,19 @@ export default function UserProfile({ params }: { params: { username: string } }
     return () => observer.disconnect();
   }, [hasMore, loadMore]);
 
-  const toggleSubscribe = async () => {
-    if (!currentUserId || !user) return;
-    setSubLoading(true);
+  const refreshMemberState = async () => {
+    if (!user) return;
     try {
       const token = localStorage.getItem('token') || '';
-      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
-      if (subscribed) {
-        const res = await fetch(`/api/subscriptions?targetType=user&targetId=${encodeURIComponent(user.id)}`, { method: 'DELETE', headers });
-        if (res.ok) { setSubscribed(false); setSubscriberCount((c) => Math.max(0, c - 1)); }
-      } else {
-        const res = await fetch('/api/subscriptions', {
-          method: 'POST',
-          headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ targetType: 'user', targetId: user.id }),
-        });
-        if (res.ok) { setSubscribed(true); setSubscriberCount((c) => c + 1); }
-      }
+      const [cRes, sRes] = await Promise.all([
+        fetch(`/api/pay/membership/subscribers/user/${encodeURIComponent(user.id)}`),
+        currentUserId && currentUserId !== user.id
+          ? fetch(`/api/pay/membership/subscribe/user/${encodeURIComponent(user.id)}`, { headers: { Authorization: `Bearer ${token}` } })
+          : Promise.resolve(null),
+      ]);
+      if (cRes.ok) setSubscriberCount((await cRes.json()).count ?? 0);
+      if (sRes?.ok) setSubscribed(!!(await sRes.json()).subscribed);
     } catch { /* ignore */ }
-    finally { setSubLoading(false); }
   };
 
   if (loading) {
@@ -188,8 +183,7 @@ export default function UserProfile({ params }: { params: { username: string } }
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-sm text-neutral-500">{subscriberCount} 人订阅</span>
                   <button
-                    onClick={toggleSubscribe}
-                    disabled={subLoading}
+                    onClick={() => setMemberModalOpen(true)}
                     className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition ${subscribed ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' : 'bg-brand-600 text-white hover:bg-brand-700'}`}
                   >
                     {subscribed ? (
@@ -340,6 +334,19 @@ export default function UserProfile({ params }: { params: { username: string } }
           </div>
         )}
       </section>
+
+      {memberModalOpen && user && (
+        <MembershipModal
+          targetType="user"
+          targetId={user.id}
+          targetName={user.name}
+          onClose={() => setMemberModalOpen(false)}
+          onPaid={() => {
+            setMemberModalOpen(false);
+            refreshMemberState();
+          }}
+        />
+      )}
     </div>
   );
 }

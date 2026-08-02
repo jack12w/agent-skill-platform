@@ -9,6 +9,7 @@ import { setShareConfig, resetShareConfig } from '../../../lib/share';
 import CommentSection from '../../components/CommentSection';
 import SkillUpdateBadge from '../../components/SkillUpdateBadge';
 import CheckoutModal from '../../components/CheckoutModal';
+import MembershipModal from '../../components/MembershipModal';
 
 function decodeUserId(): string | null {
   try {
@@ -41,6 +42,8 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   // ── 付费相关 ──
   const [pricing, setPricing] = useState<any>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [memberSubOpen, setMemberSubOpen] = useState(false);
+  const [authorSub, setAuthorSub] = useState<any>(null);
   const [pendingVersionId, setPendingVersionId] = useState<string | undefined>(undefined);
 
   useEffect(() => { setCurrentUserId(decodeUserId()); }, []);
@@ -76,6 +79,16 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
           .then((r) => (r.ok ? r.json() : null))
           .then((p) => { if (p?.pricing) setPricing(p.pricing); })
           .catch(() => {});
+        // 当前用户对该技能创作者的会员订阅状态
+        const uid = decodeUserId();
+        if (uid) {
+          const ownerType = data.owner_team_id ? 'team' : 'user';
+          const ownerId = data.owner_team_id || data.owner_user_id;
+          fetch(`/api/pay/membership/subscribe/${ownerType}/${ownerId}`, { headers: getAuthHeaders() })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((s) => { if (s) setAuthorSub(s); })
+            .catch(() => {});
+        }
       }
       catch (e: any) { setError(e.message || 'Failed to load skill'); }
       finally { setLoading(false); }
@@ -128,7 +141,12 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
         const info = await res.json().catch(() => ({} as any));
         if (info?.pricing) setPricing(info.pricing);
         setPendingVersionId(versionId);
-        setCheckoutOpen(true);
+        // 会员技能：引导订阅该创作者会员（订阅后整个创作者全部技能可下）
+        if (info?.pricing?.member_included && info?.owner) {
+          setMemberSubOpen(true);
+        } else {
+          setCheckoutOpen(true);
+        }
         return;
       }
       // ▲▲
@@ -204,6 +222,9 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   const tags: string[] = skill.tags ?? [];
   const ownerName = skill.owner_user?.name || 'Anonymous';
   const isOwner = !!currentUserId && currentUserId === skill.owner_user_id;
+  const authorTargetType = skill.owner_team_id ? 'team' : 'user';
+  const authorTargetId = skill.owner_team_id || skill.owner_user_id;
+  const authorTargetName = skill.owner_team_id ? skill.owner_team?.name : ownerName;
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
@@ -257,6 +278,19 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
                 )}
               </div>
             )}
+            {pricing?.member_included && !isOwner && !authorSub?.subscribed && (
+              <button
+                onClick={() => setMemberSubOpen(true)}
+                className="w-full mb-3 py-2.5 rounded-lg border border-brand-600 text-brand-600 font-medium hover:bg-brand-50"
+              >
+                {t('detail.subscribeAuthor')}
+              </button>
+            )}
+            {pricing?.member_included && authorSub?.subscribed && (
+              <div className="mb-3 text-center text-xs text-green-700 bg-green-50 rounded-lg py-2">
+                {t('detail.subscribedAuthor')}
+              </div>
+            )}
             <button onClick={() => handleDownload()} disabled={acting !== null || versions.length === 0} className="w-full py-3 bg-brand-600 text-white rounded-lg font-bold hover:bg-brand-700 mb-3 disabled:opacity-50 disabled:cursor-not-allowed">{acting === 'download' ? t('detail.downloading') : versions.length === 0 ? t('detail.noVersionYet') : `${t('detail.download')} v${versions.find((v) => v.id === skill.latest_version_id)?.version || versions[0]?.version || 'latest'}`}</button>
             <button onClick={handleLike} disabled={acting !== null} className="w-full py-3 border border-brand-600 text-brand-600 rounded-lg font-bold hover:bg-brand-50 disabled:opacity-50 disabled:cursor-not-allowed">{acting === 'like' ? t('detail.liking') : t('detail.likeSkill')}</button>
           </div>
@@ -278,6 +312,21 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
           onPaid={() => {
             setCheckoutOpen(false);
             // 支付成功后自动重试一次下载
+            handleDownload(pendingVersionId);
+          }}
+        />
+      )}
+
+      {memberSubOpen && (
+        <MembershipModal
+          targetType={authorTargetType}
+          targetId={authorTargetId}
+          targetName={authorTargetName}
+          onClose={() => setMemberSubOpen(false)}
+          onPaid={() => {
+            setMemberSubOpen(false);
+            setAuthorSub({ subscribed: true });
+            // 订阅成功后自动重试一次下载（创作者会员已覆盖本技能）
             handleDownload(pendingVersionId);
           }}
         />

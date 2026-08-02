@@ -79,6 +79,8 @@ const zh = {
     skillLostHint: '这个技能可能已被删除或尚未发布，看看这些热门技能吧',
     skillRecommend: '推荐技能',
     reviewBanner: '此技能正在审核中，暂未公开',
+    subscribeAuthor: '订阅作者会员',
+    subscribedAuthor: '已订阅作者会员',
   },
   edit: {
     title: '编辑技能',
@@ -218,6 +220,9 @@ const zh = {
     noSkillsHint: '前往技能编辑页将其关联到此团队。',
     cannotLoad: '无法加载团队信息',
     backToDashboardLink: '返回个人中心',
+    membershipTitle: '团队会员定价',
+    membershipHint: '设置团队会员订阅价格，订阅用户在有效期内可免费下载本团队的全部技能。',
+    membershipSaved: '团队会员定价已保存',
   },
   avatar: {
     dashboard: '个人中心',
@@ -514,6 +519,16 @@ const zh = {
     memberUntil: '有效期至 {date}',
     openMember: '开通 / 续费',
     memberBenefits: '会员期内可免费下载全部「会员包含」技能，你的下载还会为技能作者带来收益。',
+  },
+  member: {
+    title: '订阅',
+    empty: '该创作者暂未设置会员套餐',
+    alreadySub: '你已订阅',
+  },
+  paySet: {
+    myMembershipTitle: '我的会员定价',
+    myMembershipHint: '设置你的个人会员订阅价格，订阅用户在有效期内可免费下载你发布的全部技能。留空表示该档不开放。',
+    myPlanSaved: '会员定价已保存',
   },
   help: {
     title: '帮助中心',

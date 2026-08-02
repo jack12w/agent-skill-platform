@@ -9,9 +9,11 @@ import {
   WechatNotifyLog,
   SkillPricing,
   Settlement,
+  CreatorMembershipPlan,
 } from './payments.entity';
 import { Skill } from '../skills/skill.entity';
 import { User } from '../auth/user.entity';
+import { Team } from '../teams/team.entity';
 import { WechatPayService } from './wechat-pay.service';
 import { EntitlementService } from './entitlement.service';
 import { BalanceService } from './balance.service';
@@ -19,9 +21,11 @@ import { MembershipService } from './membership.service';
 import { SettingsService } from './settings.service';
 
 export interface CreateOrderInput {
-  type: 'skill' | 'membership';
+  type: 'skill' | 'membership' | 'creator_membership';
   skillId?: string;
   plan?: 'monthly' | 'quarterly' | 'yearly';
+  targetType?: 'user' | 'team';
+  targetId?: string;
   tradeType?: 'NATIVE' | 'JSAPI' | 'H5';
 }
 
@@ -38,6 +42,8 @@ export class OrdersService {
     @InjectRepository(SkillPricing) private readonly pricingRepo: Repository<SkillPricing>,
     @InjectRepository(Skill) private readonly skillRepo: Repository<Skill>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
+    @InjectRepository(Team) private readonly teamRepo: Repository<Team>,
+    @InjectRepository(CreatorMembershipPlan) private readonly planRepo: Repository<CreatorMembershipPlan>,
     @InjectRepository(Settlement) private readonly settleRepo: Repository<Settlement>,
     private readonly wechat: WechatPayService,
     private readonly entitlement: EntitlementService,
@@ -72,6 +78,36 @@ export class OrdersService {
         unit_cents: total,
         qty: 1,
         snapshot: { name: skill?.name, pricing_mode: pricing.pricing_mode },
+      };
+    } else if (input.type === 'creator_membership') {
+      // 创作者会员：价格由创作者自定（creator_membership_plans），订阅费直接进创作者余额
+      const { targetType, targetId, plan } = input;
+      if (!targetType || !targetId || !plan) throw new BadRequestException('缺少订阅目标或方案');
+      const planRow = await this.planRepo.findOne({ where: { target_type: targetType, target_id: targetId } });
+      const price = planRow ? Number((planRow as any)[`${plan}_cents`]) : 0;
+      if (!price || price <= 0) throw new BadRequestException('该创作者未开通此会员方案');
+      total = price;
+      // 卖家：user 目标是本人；team 目标是团队 owner
+      let sellerUserId: string | null = null;
+      let sellerName = '';
+      if (targetType === 'user') {
+        sellerUserId = targetId;
+        const u = await this.userRepo.findOne({ where: { id: targetId } });
+        sellerName = u?.name || '创作者';
+      } else {
+        const team = await this.teamRepo.findOne({ where: { id: targetId } });
+        sellerUserId = team?.owner_user_id || null;
+        sellerName = team?.name || '团队';
+      }
+      if (!sellerUserId) throw new BadRequestException('订阅目标不存在');
+      description = `会员-${sellerName}-${plan}`;
+      item = {
+        subject_type: 'creator_membership',
+        subject_id: targetId,
+        seller_user_id: sellerUserId,
+        unit_cents: total,
+        qty: 1,
+        snapshot: { targetType, targetId, plan },
       };
     } else {
       const plan = input.plan || 'monthly';
@@ -244,6 +280,19 @@ export class OrdersService {
         }
       }
       order.status = 'DELIVERED';
+    } else if (order.type === 'creator_membership') {
+      // 创作者会员：激活订阅 + 订阅费直接进创作者余额（取消全平台收益池均分）
+      const snap = items[0]?.snapshot as any;
+      const plan = snap?.plan || 'monthly';
+      const targetType = snap?.targetType;
+      const targetId = snap?.targetId;
+      await this.membership.activateCreatorSub(order.user_id, targetType, targetId, plan, Number(items[0]?.unit_cents) || 0, order.id);
+      const seller = items[0]?.seller_user_id;
+      const income = Number(items[0]?.seller_income_cents) || 0;
+      if (seller && income > 0) {
+        await this.balance.credit(seller, income, 'membership', order.id, `创作者会员 ${order.order_no}`);
+      }
+      order.status = 'PAID';
     } else {
       // 会员：激活；收益池在月末结算任务分配
       const plan = (items[0]?.snapshot as any)?.plan || 'monthly';

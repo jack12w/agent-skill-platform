@@ -1,24 +1,25 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, LessThanOrEqual } from 'typeorm';
-import { Membership, MembershipDownload, OrderItem, Settlement } from './payments.entity';
+import { Membership, CreatorSubscription } from './payments.entity';
 import { BalanceService } from './balance.service';
-import { EntitlementService } from './entitlement.service';
 import { SettingsService } from './settings.service';
 
 /**
- * 会员订阅 + 用户中心制收益池分配。
- * 用户中心制：每个会员的月费扣抽成后，均分给其本月去重下载的技能作者（上限 30）。
+ * 创作者会员制（替代原"全平台会员 + 收益池均分"）。
+ *
+ * - 用户订阅某个创作者（user/team）后，订阅期内可免费下载 TA 的全部技能（含更新）。
+ * - 订阅费在支付回调里直接记入创作者余额（扣平台抽成），不再做"月底均分给 ≤30 个创作者"。
+ * - 老的全局 memberships 仅作为过渡期访问凭证（已在迁移里免费续 1 个月），不再参与任何分成。
  */
 @Injectable()
 export class MembershipService {
+  private readonly logger = new Logger(MembershipService.name);
+
   constructor(
     @InjectRepository(Membership) private readonly memberRepo: Repository<Membership>,
-    @InjectRepository(MembershipDownload) private readonly dlRepo: Repository<MembershipDownload>,
-    @InjectRepository(OrderItem) private readonly itemRepo: Repository<OrderItem>,
-    @InjectRepository(Settlement) private readonly settleRepo: Repository<Settlement>,
+    @InjectRepository(CreatorSubscription) private readonly csRepo: Repository<CreatorSubscription>,
     private readonly balance: BalanceService,
-    private readonly entitlement: EntitlementService,
     private readonly settings: SettingsService,
   ) {}
 
@@ -26,6 +27,17 @@ export class MembershipService {
     return plan === 'yearly' ? 365 : plan === 'quarterly' ? 90 : 30;
   }
 
+  // ───────────────────────── 过渡期：老全局会员 ─────────────────────────
+
+  /** 老全局会员是否仍有效（过渡期免费访问用） */
+  async isLegacyActive(userId: string): Promise<boolean> {
+    const m = await this.memberRepo.findOne({
+      where: { user_id: userId, status: 'active', expires_at: MoreThan(new Date()) },
+    });
+    return !!m;
+  }
+
+  /** 老全局会员激活（过渡期仍保留的购买入口用；不再参与收益池） */
   async activate(userId: string, plan: string, orderId: string): Promise<Membership> {
     const existing = await this.memberRepo.findOne({
       where: { user_id: userId, status: 'active', expires_at: MoreThan(new Date()) },
@@ -43,79 +55,80 @@ export class MembershipService {
     );
   }
 
-  async isActive(userId: string): Promise<boolean> {
-    const m = await this.memberRepo.findOne({
-      where: { user_id: userId, status: 'active', expires_at: MoreThan(new Date()) },
-    });
-    return !!m;
+  async getMyLegacy(userId: string): Promise<Membership | null> {
+    return this.memberRepo.findOne({ where: { user_id: userId }, order: { started_at: 'DESC' } });
   }
 
-  async getMy(userId: string): Promise<Membership | null> {
-    return this.memberRepo.findOne({
-      where: { user_id: userId },
-      order: { started_at: 'DESC' },
+  // ───────────────────────── 创作者会员订阅 ─────────────────────────
+
+  /** 是否已订阅某创作者（有效期内） */
+  async isSubscribed(userId: string, targetType: string, targetId: string): Promise<boolean> {
+    if (!userId) return false;
+    const sub = await this.csRepo.findOne({
+      where: { user_id: userId, target_type: targetType, target_id: targetId, status: 'active', expires_at: MoreThan(new Date()) },
     });
+    return !!sub;
   }
 
-  /** 运行某月收益池分配（管理员手动触发；生产可接定时任务） */
-  async allocatePool(period: string): Promise<Settlement> {
-    const [y, m] = period.split('-').map(Number);
-    const periodStart = new Date(y, m - 1, 1);
-    const periodEnd = new Date(y, m, 1);
-
-    const members = await this.memberRepo
-      .createQueryBuilder('m')
-      .where('m.status = :s', { s: 'active' })
-      .andWhere('m.started_at <= :end', { end: periodEnd })
-      .andWhere('m.expires_at > :start', { start: periodStart })
-      .getMany();
-
-    let totalPool = 0;
-    let totalCreator = 0;
-    let totalPlatform = 0;
-
-    for (const mem of members) {
-      const item = await this.itemRepo.findOne({
-        where: { order_id: mem.order_id, subject_type: 'membership' },
-      });
-      const poolShare = item ? Number(item.seller_income_cents) : 0;
-      if (poolShare <= 0) continue;
-      totalPool += poolShare;
-
-      const downloads = await this.dlRepo
-        .createQueryBuilder('d')
-        .where('d.user_id = :uid', { uid: mem.user_id })
-        .andWhere('d.period = :p', { p: period })
-        .andWhere('d.counted = false')
-        .getMany();
-
-      const sellers = Array.from(
-        new Set(downloads.map((d) => d.seller_user_id).filter((s): s is string => !!s)),
-      ).slice(0, 30); // 单会员单周期有效下载上限 30
-
-      if (sellers.length === 0) {
-        totalPlatform += poolShare; // 未分配池归平台
-        continue;
-      }
-
-      const per = Math.floor(poolShare / sellers.length);
-      for (const sid of sellers) {
-        await this.balance.credit(sid, per, 'membership_share', mem.id, `会员收益池 ${period}`);
-        totalCreator += per;
-      }
-      totalPlatform += poolShare - per * sellers.length; // 余数归平台
-      await this.dlRepo.update({ user_id: mem.user_id, period }, { counted: true });
+  /** 激活/续费一个创作者会员订阅（幂等 upsert；已有效则顺延到期时间） */
+  async activateCreatorSub(
+    userId: string,
+    targetType: string,
+    targetId: string,
+    plan: string,
+    priceCents: number,
+    orderId: string,
+  ): Promise<CreatorSubscription> {
+    const existing = await this.csRepo.findOne({
+      where: { user_id: userId, target_type: targetType, target_id: targetId, status: 'active', expires_at: MoreThan(new Date()) },
+    });
+    const base = existing ? new Date(existing.expires_at) : new Date();
+    const expires = new Date(base.getTime() + this.durationDays(plan) * 86400_000);
+    if (existing) {
+      existing.expires_at = expires;
+      existing.plan = plan;
+      existing.price_cents = priceCents;
+      existing.order_id = orderId;
+      return this.csRepo.save(existing);
     }
+    return this.csRepo.save(
+      this.csRepo.create({
+        user_id: userId,
+        target_type: targetType,
+        target_id: targetId,
+        plan,
+        price_cents: priceCents,
+        status: 'active',
+        expires_at: expires,
+        order_id: orderId,
+      }),
+    );
+  }
 
-    const settlement = this.settleRepo.create({
-      period,
-      type: 'membership_pool',
-      total_cents: totalPool,
-      platform_cents: totalPlatform,
-      creator_cents: totalCreator,
-      status: 'EXECUTED',
-      executed_at: new Date(),
+  /** 我的全部有效创作者会员订阅 */
+  async getMySubs(userId: string): Promise<CreatorSubscription[]> {
+    return this.csRepo.find({
+      where: { user_id: userId, status: 'active', expires_at: MoreThan(new Date()) },
+      order: { expires_at: 'ASC' },
     });
-    return this.settleRepo.save(settlement);
+  }
+
+  /** 某创作者的有效订阅数（用于主页"X人订阅"） */
+  async subscriberCount(targetType: string, targetId: string): Promise<number> {
+    return this.csRepo.count({
+      where: { target_type: targetType, target_id: targetId, status: 'active', expires_at: MoreThan(new Date()) },
+    });
+  }
+
+  /** 标记过期订阅（定时任务可选调用；查询时已用 expires_at 过滤，非必需） */
+  async expireOverdue(): Promise<number> {
+    const overdue = await this.csRepo.find({
+      where: { status: 'active', expires_at: LessThanOrEqual(new Date()) },
+    });
+    for (const s of overdue) {
+      s.status = 'expired';
+      await this.csRepo.save(s);
+    }
+    return overdue.length;
   }
 }

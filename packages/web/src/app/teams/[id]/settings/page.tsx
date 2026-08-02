@@ -23,6 +23,10 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
   const [savingTags, setSavingTags] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
   const [togglingPublic, setTogglingPublic] = useState(false);
+  // ── 团队会员定价 ──
+  const [teamPlan, setTeamPlan] = useState<{ monthly: string; quarterly: string; yearly: string }>({ monthly: '', quarterly: '', yearly: '' });
+  const [planLoading, setPlanLoading] = useState(false);
+  const [savingPlan, setSavingPlan] = useState(false);
 
   const load = async () => {
     const token = localStorage.getItem('token'); if (!token) return router.push('/auth');
@@ -30,8 +34,44 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
       const res = await fetch(`/api/teams/${params.id}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.message || `HTTP ${res.status}`); }
       const tData = await res.json(); setTeam(tData); setForm({ name: tData.name ?? '', description: tData.description ?? '' }); setIsPublic(tData.is_public !== false);
+      // 团队会员定价
+      setPlanLoading(true);
+      fetch(`/api/pay/membership/plan?targetType=team&targetId=${encodeURIComponent(params.id)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((p) => {
+          if (p?.hasPlan && p.plans) {
+            setTeamPlan({
+              monthly: String((p.plans.monthly || 0) / 100),
+              quarterly: String((p.plans.quarterly || 0) / 100),
+              yearly: String((p.plans.yearly || 0) / 100),
+            });
+          }
+        })
+        .catch(() => {})
+        .finally(() => setPlanLoading(false));
     } catch (e: any) { setError(e.message || 'Load failed'); }
     finally { setLoading(false); }
+  };
+
+  const handleSavePlan = async () => {
+    const token = localStorage.getItem('token'); if (!token) return;
+    setSavingPlan(true);
+    try {
+      const res = await fetch('/api/pay/membership/plan', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          targetType: 'team',
+          targetId: params.id,
+          monthly_cents: Math.round(Number(teamPlan.monthly || 0) * 100),
+          quarterly_cents: Math.round(Number(teamPlan.quarterly || 0) * 100),
+          yearly_cents: Math.round(Number(teamPlan.yearly || 0) * 100),
+        }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || `HTTP ${res.status}`); }
+      alert(t('team.membershipSaved'));
+    } catch (err: any) { alert(t('team.saveFailed') + ': ' + err.message); }
+    finally { setSavingPlan(false); }
   };
   useEffect(() => { load(); }, [params.id]);
 
@@ -210,6 +250,26 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
           )
         )}
       </div>
+      {/* 团队会员定价 */}
+      {team.is_owner && (
+        <div className="mb-10 p-6 border rounded-xl bg-white">
+          <h2 className="text-xl font-bold mb-1">{t('team.membershipTitle')}</h2>
+          <p className="text-sm text-neutral-500 mb-4">{t('team.membershipHint')}</p>
+          {planLoading ? (
+            <div className="text-sm text-neutral-400">加载中…</div>
+          ) : (
+            <div className="space-y-3 max-w-md">
+              <PlanRow label={t('pay.planMonthly')} value={teamPlan.monthly} onChange={(v) => setTeamPlan((p) => ({ ...p, monthly: v }))} />
+              <PlanRow label={t('pay.planQuarterly')} value={teamPlan.quarterly} onChange={(v) => setTeamPlan((p) => ({ ...p, quarterly: v }))} />
+              <PlanRow label={t('pay.planYearly')} value={teamPlan.yearly} onChange={(v) => setTeamPlan((p) => ({ ...p, yearly: v }))} />
+              <button onClick={handleSavePlan} disabled={savingPlan}
+                className="mt-1 px-4 py-2 bg-brand-600 text-white text-sm rounded hover:bg-brand-700 disabled:opacity-50">
+                {savingPlan ? t('team.saving') : t('team.save')}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       <div className="mb-10"><h2 className="text-xl font-bold mb-4">{t('team.members')} ({members.length})</h2>
         <div className="space-y-2">{members.map((m: any) => (<div key={m.id} className="flex items-center justify-between p-3 border rounded-lg"><div><div className="font-medium">{m.user?.name || m.user?.email || m.user_id.slice(0, 8)}</div><div className="text-xs text-neutral-500">{m.user?.email}</div></div><span className="text-xs px-2 py-1 bg-neutral-100 rounded capitalize">{m.role}</span></div>))}</div>
       </div>
@@ -217,6 +277,19 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
         {skills.length === 0 ? (<div className="p-6 border border-dashed rounded-xl text-center text-neutral-500 text-sm">{t('team.noSkills')}<br /><span className="text-xs">{t('team.noSkillsHint')}</span></div>) : (
           <div className="space-y-3">{skills.map((s: any) => (<Link key={s.id} href={`/skills/${s.slug || s.id}`} className="block p-4 border rounded-xl hover:border-neutral-400 hover:bg-neutral-100 transition"><div className="flex items-center justify-between"><div><h3 className="font-bold">{s.name}</h3>{s.short_summary && <p className="text-sm text-neutral-500 mt-1">{s.short_summary}</p>}</div><div className="flex items-center gap-3 text-xs shrink-0 ml-4"><span className="flex items-center gap-1" title={t('detail.likes')}><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="#F43F5E"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg><span className="text-neutral-600">{s.stats?.likes_total ?? 0}</span></span><span className="flex items-center gap-1" title={t('detail.downloads')}><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#5C85FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span className="text-neutral-600">{s.stats?.downloads_total ?? 0}</span></span></div></div></Link>))}</div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function PlanRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm text-neutral-600">{label}</span>
+      <div className="flex items-center gap-1.5">
+        <span className="text-sm text-neutral-400">¥</span>
+        <input type="number" step="0.01" min="0" value={value} onChange={(e) => onChange(e.target.value)}
+          className="px-3 py-1.5 text-sm border rounded-lg w-32" placeholder="0" />
       </div>
     </div>
   );

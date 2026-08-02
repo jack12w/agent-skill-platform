@@ -4,23 +4,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import useTranslation from '../../hooks/useTranslation';
 
-type Tab = 'skill';
 type Plan = 'monthly' | 'quarterly' | 'yearly';
 
-interface Pricing {
-  pricing_mode: 'free' | 'paid' | 'subscription';
-  price_cents: number;
-  member_included: boolean;
-}
-
 interface Props {
-  skillId?: string;
-  skillName?: string;
-  /** 402 拦截时后端回传的定价快照，可省一次请求 */
-  initialPricing?: Pricing | null;
+  targetType: 'user' | 'team';
+  targetId: string;
+  targetName?: string;
   onClose: () => void;
-  /** 支付成功回调（用于自动重试下载） */
-  onPaid: () => void;
+  onPaid: (targetType: string, targetId: string) => void;
 }
 
 const yuan = (cents?: number | null) => ((Number(cents) || 0) / 100).toFixed(2);
@@ -34,16 +25,13 @@ function authHeaders(): Record<string, string> {
   }
 }
 
-export default function CheckoutModal({
-  skillId,
-  skillName,
-  initialPricing,
-  onClose,
-  onPaid,
-}: Props) {
+export default function MembershipModal({ targetType, targetId, targetName, onClose, onPaid }: Props) {
   const { t } = useTranslation();
-  const [pricing, setPricing] = useState<Pricing | null>(initialPricing || null);
+  const [plans, setPlans] = useState<Record<Plan, number> | null>(null);
+  const [hasPlan, setHasPlan] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [mySub, setMySub] = useState<any>(null);
+  const [plan, setPlan] = useState<Plan>('monthly');
   const [creating, setCreating] = useState(false);
   const [orderNo, setOrderNo] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
@@ -61,21 +49,26 @@ export default function CheckoutModal({
     tickRef.current = null;
   };
 
-  // 载入定价
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        if (skillId) {
-          const res = await fetch(`/api/pay/pricing/${skillId}`, { headers: authHeaders() });
-          if (res.ok) {
-            const data = await res.json();
-            if (!alive) return;
-            if (!initialPricing) setPricing(data.pricing);
-          }
+        const [planRes, subRes] = await Promise.all([
+          fetch(`/api/pay/membership/plan?targetType=${encodeURIComponent(targetType)}&targetId=${encodeURIComponent(targetId)}`, { headers: authHeaders() }),
+          fetch(`/api/pay/membership/subscribe/${encodeURIComponent(targetType)}/${encodeURIComponent(targetId)}`, { headers: authHeaders() }),
+        ]);
+        if (!alive) return;
+        if (planRes.ok) {
+          const p = await planRes.json();
+          setHasPlan(!!p.hasPlan);
+          setPlans(p.plans || null);
+        }
+        if (subRes.ok) {
+          const s = await subRes.json();
+          if (s.subscribed) setMySub(s);
         }
       } catch {
-        /* 静默 */
+        /* ignore */
       } finally {
         if (alive) setLoading(false);
       }
@@ -83,12 +76,10 @@ export default function CheckoutModal({
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [skillId]);
+  }, [targetType, targetId]);
 
   useEffect(() => () => clearTimers(), []);
 
-  // ESC 关闭
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -110,7 +101,7 @@ export default function CheckoutModal({
           if (data.status === 'PAID' || data.status === 'DELIVERED') {
             clearTimers();
             setPaid(true);
-            setTimeout(() => onPaid(), 1200);
+            setTimeout(() => onPaid(targetType, targetId), 1200);
           } else if (data.status === 'CLOSED') {
             clearTimers();
             setErr(t('pay.orderClosed'));
@@ -118,22 +109,25 @@ export default function CheckoutModal({
             setOrderNo(null);
           }
         } catch {
-          /* 网络抖动忽略，下一轮继续 */
+          /* ignore */
         }
       }, 3000);
     },
-    [onPaid, t],
+    [onPaid, targetType, targetId, t],
   );
 
   const createOrder = async () => {
+    if (!plans || !plans[plan]) {
+      setErr(t('member.empty'));
+      return;
+    }
     setErr(null);
     setCreating(true);
     try {
-      const body: any = { type: 'skill', skillId, tradeType: 'NATIVE' };
-      const res = await fetch('/api/pay/orders', {
+      const res = await fetch('/api/pay/membership/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ targetType, targetId, plan, tradeType: 'NATIVE' }),
       });
       if (res.status === 401) {
         setErr(t('pay.loginExpired'));
@@ -170,7 +164,12 @@ export default function CheckoutModal({
     setErr(null);
   };
 
-  const amount = pricing?.price_cents || 0;
+  const planLabel: Record<Plan, string> = {
+    monthly: t('pay.planMonthly'),
+    quarterly: t('pay.planQuarterly'),
+    yearly: t('pay.planYearly'),
+  };
+  const amount = plans ? plans[plan] : 0;
   const mmss = `${String(Math.floor(left / 60)).padStart(2, '0')}:${String(left % 60).padStart(2, '0')}`;
 
   return (
@@ -179,9 +178,11 @@ export default function CheckoutModal({
         className="w-full max-w-md rounded-2xl bg-white shadow-xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 头部 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100">
-          <h3 className="text-lg font-semibold">{t('pay.title')}</h3>
+          <h3 className="text-lg font-semibold">
+            {t('member.title')}
+            {targetName ? <span className="ml-1 text-brand-600">{targetName}</span> : null}
+          </h3>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 text-xl leading-none">
             ×
           </button>
@@ -197,16 +198,45 @@ export default function CheckoutModal({
           <div className="px-6 py-5">
             {loading ? (
               <div className="py-10 text-center text-sm text-neutral-400">{t('pay.loading')}</div>
+            ) : !hasPlan || !plans ? (
+              <div className="py-10 text-center text-sm text-neutral-500">
+                <div className="text-4xl mb-3">🔒</div>
+                {t('member.empty')}
+              </div>
             ) : (
               <>
-                <div className="mb-4">
-                  <div className="text-sm text-neutral-500 mb-1">{t('pay.subject')}</div>
-                  <div className="font-medium truncate">{skillName || t('pay.skillDefault')}</div>
-                  {pricing?.member_included && (
-                    <div className="mt-2 text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-                      {t('pay.memberTip')}
-                    </div>
-                  )}
+                {mySub?.subscribed && (
+                  <div className="mb-4 text-xs text-green-700 bg-green-50 rounded-lg px-3 py-2">
+                    {t('member.alreadySub')}：{planLabel[mySub.plan as Plan] ?? mySub.plan} ·{' '}
+                    {new Date(mySub.expires_at).toLocaleDateString()}
+                  </div>
+                )}
+                <div className="mb-4 space-y-2">
+                  {(['monthly', 'quarterly', 'yearly'] as Plan[]).map((p) => {
+                    const disabled = !plans[p];
+                    return (
+                      <button
+                        key={p}
+                        disabled={disabled}
+                        onClick={() => {
+                          resetOrder();
+                          setPlan(p);
+                        }}
+                        className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-left ${
+                          disabled
+                            ? 'border-neutral-100 text-neutral-300 cursor-not-allowed'
+                            : plan === p
+                            ? 'border-brand-600 bg-brand-50'
+                            : 'border-neutral-200 hover:bg-neutral-50'
+                        }`}
+                      >
+                        <span className="text-sm font-medium">{planLabel[p]}</span>
+                        <span className={`text-sm font-semibold ${disabled ? 'text-neutral-300' : 'text-brand-700'}`}>
+                          {disabled ? '—' : `¥${yuan(plans[p])}`}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <div className="flex items-baseline justify-between mb-4">
@@ -241,9 +271,7 @@ export default function CheckoutModal({
                   </button>
                 )}
 
-                <p className="mt-4 text-[11px] leading-relaxed text-neutral-400 text-center">
-                  {t('pay.legal')}
-                </p>
+                <p className="mt-4 text-[11px] leading-relaxed text-neutral-400 text-center">{t('pay.legal')}</p>
               </>
             )}
           </div>

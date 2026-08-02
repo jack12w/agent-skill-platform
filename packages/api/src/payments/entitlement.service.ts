@@ -1,14 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, IsNull } from 'typeorm';
-import { SkillPricing, Entitlement, Membership, MembershipDownload, Order } from './payments.entity';
+import { SkillPricing, Entitlement, Membership } from './payments.entity';
 import { Skill } from '../skills/skill.entity';
 import { PaymentRequiredException } from './payment-exceptions';
 import { SettingsService } from './settings.service';
+import { MembershipService } from './membership.service';
 
 /**
  * 权益校验 —— 付费墙在 skills.service.ts getDownloadUrl() 的唯一收敛点调用。
- * 放行条件（任一满足）：免费 / 管理员 / 作者本人 / 已购权益有效 / 有效会员且技能会员可下。
+ * 放行条件（任一满足）：免费 / 管理员 / 作者本人 / 已购权益有效 /
+ *   有效创作者会员（订阅了该技能所属 user/team）且技能会员可下 / 过渡期老全局会员。
  */
 @Injectable()
 export class EntitlementService {
@@ -18,8 +20,8 @@ export class EntitlementService {
     @InjectRepository(SkillPricing) private readonly pricingRepo: Repository<SkillPricing>,
     @InjectRepository(Entitlement) private readonly entRepo: Repository<Entitlement>,
     @InjectRepository(Membership) private readonly memberRepo: Repository<Membership>,
-    @InjectRepository(MembershipDownload) private readonly dlRepo: Repository<MembershipDownload>,
     private readonly settings: SettingsService,
+    private readonly membership: MembershipService,
   ) {}
 
   async assertCanDownload(skill: Skill, userId?: string, isAdmin = false): Promise<void> {
@@ -52,13 +54,17 @@ export class EntitlementService {
         .getOne();
       if (owned) return;
 
-      // 5. 有效会员 + 技能会员可下
+      // 5. 会员可下：过渡期老全局会员 或 已订阅该技能所属创作者
       if (pricing.member_included) {
-        const member = await this.memberRepo.findOne({
+        const legacy = await this.memberRepo.findOne({
           where: { user_id: userId, status: 'active', expires_at: MoreThan(new Date()) },
         });
-        if (member) {
-          await this.recordMembershipDownload(userId, skill.id, skill.owner_user_id);
+        if (legacy) return;
+
+        // 技能归属：team 优先，否则 user
+        const targetType = skill.owner_team_id ? 'team' : 'user';
+        const targetId = skill.owner_team_id || skill.owner_user_id;
+        if (targetId && (await this.membership.isSubscribed(userId, targetType, targetId))) {
           return;
         }
       }
@@ -66,12 +72,16 @@ export class EntitlementService {
 
     // 未授权 → 抛 402 + 定价信息，前端据此唤起收银台
     const membershipPrices = await this.settings.getMembershipPrices();
-    // 字段名与 GET /pay/pricing/:skillId 保持一致（snake_case），前端可直接复用
     throw new PaymentRequiredException({
       skill_id: skill.id,
       pricing_mode: pricing.pricing_mode,
       price_cents: pricing.price_cents,
       member_included: pricing.member_included,
+      // 创作者会员场景下，详情页用以下信息引导用户订阅作者
+      owner: {
+        target_type: skill.owner_team_id ? 'team' : 'user',
+        target_id: skill.owner_team_id || skill.owner_user_id,
+      },
       membership: membershipPrices,
     });
   }
@@ -84,25 +94,5 @@ export class EntitlementService {
       .values({ user_id, skill_id, source: 'purchase', license, order_id })
       .orUpdate(['source', 'license', 'order_id', 'granted_at'], ['user_id', 'skill_id', 'license'])
       .execute();
-  }
-
-  /** 记录会员下载（收益池去重：同一用户×同一技能×同一周期只记一条） */
-  private async recordMembershipDownload(user_id: string, skill_id: string, seller_user_id?: string) {
-    const period = this.periodOf(new Date());
-    try {
-      await this.dlRepo
-        .createQueryBuilder()
-        .insert()
-        .values({ user_id, skill_id, seller_user_id, period, counted: false })
-        .orIgnore()
-        .execute();
-    } catch (e: any) {
-      // 统计写入失败不应阻断会员的正常下载，仅告警
-      this.logger.warn(`会员下载记录写入失败 user=${user_id} skill=${skill_id}: ${e?.message}`);
-    }
-  }
-
-  periodOf(d: Date): string {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   }
 }

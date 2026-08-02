@@ -554,6 +554,84 @@ export class ApiCall {
 }
 
 /** 实体类数组（供 TypeOrmModule.forFeature 使用） */
+/**
+ * 创作者会员定价（每个 user / team 一套月/季/年三档价格，由创作者自行设置）。
+ * 替代原"全平台统一会员价"。未设置的创作者不对外提供会员订阅。
+ */
+@Entity('creator_membership_plans')
+@Index(['target_type', 'target_id'], { unique: true })
+export class CreatorMembershipPlan {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column() // user | team
+  target_type: string;
+
+  @Index()
+  @Column({ type: 'uuid' })
+  target_id: string;
+
+  @Column({ type: 'int', default: 0 }) // 0 = 该档未开通
+  monthly_cents: number;
+
+  @Column({ type: 'int', default: 0 })
+  quarterly_cents: number;
+
+  @Column({ type: 'int', default: 0 })
+  yearly_cents: number;
+
+  @Column({ default: 'CNY' })
+  currency: string;
+
+  @CreateDateColumn({ type: 'timestamptz' })
+  created_at: Date;
+
+  @UpdateDateColumn({ type: 'timestamptz' })
+  updated_at: Date;
+}
+
+/**
+ * 创作者会员订阅（用户订阅某个创作者 user/team 的会员）。
+ * 一个订阅者对一个目标同时只有一条有效记录（续费则顺延 expires_at）。
+ */
+@Entity('creator_subscriptions')
+@Index(['user_id', 'target_type', 'target_id'], { unique: true })
+export class CreatorSubscription {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Index()
+  @Column({ type: 'uuid' })
+  user_id: string; // 订阅者
+
+  @Column() // user | team
+  target_type: string;
+
+  @Column({ type: 'uuid' })
+  target_id: string; // 创作者 user_id 或 team_id
+
+  @Column() // monthly | quarterly | yearly
+  plan: string;
+
+  @Column({ type: 'int' })
+  price_cents: number;
+
+  @Column({ default: 'CNY' })
+  currency: string;
+
+  @Column({ default: 'active' }) // active | expired | cancelled
+  status: string;
+
+  @CreateDateColumn({ type: 'timestamptz' })
+  started_at: Date;
+
+  @Column({ type: 'timestamptz' })
+  expires_at: Date;
+
+  @Column({ type: 'uuid', nullable: true })
+  order_id: string;
+}
+
 export const PAYMENT_ENTITIES = [
   PlatformSetting,
   SkillPricing,
@@ -565,6 +643,8 @@ export const PAYMENT_ENTITIES = [
   Entitlement,
   Membership,
   MembershipDownload,
+  CreatorMembershipPlan,
+  CreatorSubscription,
   CreatorBalance,
   BalanceTransaction,
   Withdrawal,

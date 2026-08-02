@@ -43,8 +43,10 @@ export default function HubMembershipsPage() {
         <table className="w-full text-sm">
           <thead className="bg-neutral-100 text-neutral-500 text-xs uppercase">
             <tr>
-              <th className="px-4 py-3 text-left">{t('admin.thUser')}</th>
+              <th className="px-4 py-3 text-left">订阅用户</th>
+              <th className="px-4 py-3 text-left">创作者</th>
               <th className="px-4 py-3 text-left">{t('admin.thPlan')}</th>
+              <th className="px-4 py-3 text-right">金额</th>
               <th className="px-4 py-3 text-center">{t('admin.thStatus')}</th>
               <th className="px-4 py-3 text-left">开始</th>
               <th className="px-4 py-3 text-left">到期</th>
@@ -53,8 +55,10 @@ export default function HubMembershipsPage() {
           <tbody className="divide-y divide-neutral-100">
             {(data?.items || []).map((m: any) => (
               <tr key={m.id} className="hover:bg-neutral-100">
-                <td className="px-4 py-3 font-mono text-xs">{m.user_id}</td>
+                <td className="px-4 py-3">{m.subscriber_name}</td>
+                <td className="px-4 py-3">{m.target_type === 'team' ? `团队：${m.target_name}` : m.target_name}</td>
                 <td className="px-4 py-3">{m.plan}</td>
+                <td className="px-4 py-3 text-right">¥{((m.price_cents || 0) / 100).toFixed(2)}</td>
                 <td className="px-4 py-3 text-center"><span className="px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-600">{m.status}</span></td>
                 <td className="px-4 py-3 text-neutral-500">{new Date(m.started_at).toLocaleDateString()}</td>
                 <td className="px-4 py-3 text-neutral-500">{new Date(m.expires_at).toLocaleDateString()}</td>

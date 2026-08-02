@@ -6,6 +6,7 @@ import Link from 'next/link';
 import useTranslation from '../../../hooks/useTranslation';
 import { setShareConfig, resetShareConfig } from '../../../lib/share';
 import SkillUpdateBadge from '../../components/SkillUpdateBadge';
+import MembershipModal from '../../components/MembershipModal';
 
 export default function TeamShowcase({ params }: { params: { id: string } }) {
   const { t } = useTranslation();
@@ -17,10 +18,10 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
   const [isOwner, setIsOwner] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
 
-  // ── 订阅相关 ──
+  // ── 创作者会员相关 ──
   const [subscriberCount, setSubscriberCount] = useState(0);
   const [subscribed, setSubscribed] = useState(false);
-  const [subLoading, setSubLoading] = useState(false);
+  const [memberModalOpen, setMemberModalOpen] = useState(false);
   const currentUserId = (() => {
     try { const u = JSON.parse(localStorage.getItem('user') || 'null'); return u?.id || null; } catch { return null; }
   })();
@@ -49,9 +50,9 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
       });
       setIsOwner(data.is_owner);
 
-      // 订阅数 + 当前用户订阅状态
+      // 创作者会员订阅数 + 当前用户订阅状态
       try {
-        const countRes = await fetch(`/api/subscriptions/count?targetType=team&targetId=${encodeURIComponent(params.id)}`);
+        const countRes = await fetch(`/api/pay/membership/subscribers/team/${encodeURIComponent(params.id)}`);
         if (countRes.ok) {
           const c = await countRes.json();
           setSubscriberCount(c.count ?? 0);
@@ -60,7 +61,7 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
       const me = currentUserId;
       if (me && !data.is_owner) {
         try {
-          const stRes = await fetch(`/api/subscriptions/status?targetType=team&targetId=${encodeURIComponent(params.id)}`, {
+          const stRes = await fetch(`/api/pay/membership/subscribe/team/${encodeURIComponent(params.id)}`, {
             headers: { Authorization: `Bearer ${token}` },
           });
           if (stRes.ok) {
@@ -96,25 +97,19 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
     return () => window.removeEventListener('focus', handleFocus);
   }, [params.id]);
 
-  const toggleSubscribe = async () => {
-    if (!currentUserId || !team) return;
-    setSubLoading(true);
+  const refreshMemberState = async () => {
+    if (!team) return;
     try {
-      const tk = localStorage.getItem('token') || '';
-      const headers: Record<string, string> = { Authorization: `Bearer ${tk}` };
-      if (subscribed) {
-        const res = await fetch(`/api/subscriptions?targetType=team&targetId=${encodeURIComponent(params.id)}`, { method: 'DELETE', headers });
-        if (res.ok) { setSubscribed(false); setSubscriberCount((c) => Math.max(0, c - 1)); }
-      } else {
-        const res = await fetch('/api/subscriptions', {
-          method: 'POST',
-          headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ targetType: 'team', targetId: params.id }),
-        });
-        if (res.ok) { setSubscribed(true); setSubscriberCount((c) => c + 1); }
-      }
+      const token = localStorage.getItem('token') || '';
+      const [cRes, sRes] = await Promise.all([
+        fetch(`/api/pay/membership/subscribers/team/${encodeURIComponent(params.id)}`),
+        !isOwner
+          ? fetch(`/api/pay/membership/subscribe/team/${encodeURIComponent(params.id)}`, { headers: { Authorization: `Bearer ${token}` } })
+          : Promise.resolve(null),
+      ]);
+      if (cRes.ok) setSubscriberCount((await cRes.json()).count ?? 0);
+      if (sRes?.ok) setSubscribed(!!(await sRes.json()).subscribed);
     } catch { /* ignore */ }
-    finally { setSubLoading(false); }
   };
 
   if (loading) {
@@ -198,8 +193,7 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
           <div className="flex items-center gap-3 shrink-0">
             {currentUserId && !isOwner && (
               <button
-                onClick={toggleSubscribe}
-                disabled={subLoading}
+                onClick={() => setMemberModalOpen(true)}
                 className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition ${subscribed ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' : 'bg-brand-600 text-white hover:bg-brand-700'}`}
               >
                 {subscribed ? (
@@ -350,6 +344,19 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
           </div>
         )}
       </section>
+
+      {memberModalOpen && team && (
+        <MembershipModal
+          targetType="team"
+          targetId={params.id}
+          targetName={team.name}
+          onClose={() => setMemberModalOpen(false)}
+          onPaid={() => {
+            setMemberModalOpen(false);
+            refreshMemberState();
+          }}
+        />
+      )}
     </div>
   );
 }
