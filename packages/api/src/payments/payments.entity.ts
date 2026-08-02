@@ -5,6 +5,7 @@ import {
   Column,
   Index,
   CreateDateColumn,
+  UpdateDateColumn,
   VersionColumn,
   ManyToOne,
   JoinColumn,
@@ -62,7 +63,7 @@ export class SkillPricing {
   @Column({ default: 'CNY' })
   currency: string;
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @UpdateDateColumn({ type: 'timestamptz' })
   updated_at: Date;
 }
 

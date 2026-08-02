@@ -6,6 +6,7 @@ import useTranslation from '../../hooks/useTranslation';
 
 const MENU = [
   { key: 'quickstart' },
+  { key: 'pricing' },
   { key: 'about' },
   { key: 'contact' },
   { key: 'feedback' },
@@ -58,6 +59,7 @@ export default function HelpCenterPage() {
 
   const menuLabels: Record<string, string> = {
     quickstart: t('help.quickstart'),
+    pricing: t('help.pricing'),
     about: t('help.about'),
     contact: t('help.contact'),
     feedback: t('help.feedback'),
@@ -161,6 +163,37 @@ tags: [搜索, 数据分析]
                 <a href="https://github.com/jack12w/agent-skill-platform" target="_blank" rel="noopener noreferrer" className="text-brand-600 hover:underline mx-1">GitHub</a>
                 。欢迎贡献代码或提交 Issue。
               </p>
+            </div>
+          )}
+
+          {active === 'pricing' && (
+            <div className="prose prose-sm max-w-none">
+              <h1 className="text-2xl font-bold mb-2">{t('help.pTitle')}</h1>
+              <p className="text-neutral-500 text-sm mb-6">{t('help.pDesc')}</p>
+
+              <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.pFreeVsPaid')}</h2>
+              <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pFreeVsPaidDesc')}</p>
+
+              <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.pHowSetPrice')}</h2>
+              <ol className="list-decimal pl-5 mt-2 space-y-1 text-neutral-600 text-sm leading-relaxed">
+                <li><strong>{t('help.pHsTitle1')}</strong>：{t('help.pHsDesc1')}</li>
+                <li><strong>{t('help.pHsTitle2')}</strong>：{t('help.pHsDesc2')}</li>
+                <li><strong>{t('help.pHsTitle3')}</strong>：{t('help.pHsDesc3')}</li>
+              </ol>
+
+              <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.pModeExplain')}</h2>
+              <ul className="list-disc pl-5 mt-2 space-y-1 text-neutral-600 text-sm leading-relaxed">
+                <li>{t('help.pModeFree')}</li>
+                <li>{t('help.pModePaid')}</li>
+                <li>{t('help.pModeMember')}</li>
+                <li>{t('help.pModeBoth')}</li>
+              </ul>
+
+              <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.pVsAdmin')}</h2>
+              <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pVsAdminDesc')}</p>
+
+              <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.pRefund')}</h2>
+              <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pRefundDesc')}</p>
             </div>
           )}
 

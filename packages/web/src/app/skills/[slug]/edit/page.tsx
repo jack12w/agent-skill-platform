@@ -36,6 +36,7 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
   const [versionNotes, setVersionNotes] = useState('');
   const [form, setForm] = useState({ name: '', content_md: '', tags: '', cover_url: '', owner_team_id: '' });
   const [myTeams, setMyTeams] = useState<any[]>([]);
+  const [pricing, setPricing] = useState<{ pricing_mode: string; price_cents: number | string; member_included: boolean; commercial_price_cents: number | string }>({ pricing_mode: 'free', price_cents: 0, member_included: false, commercial_price_cents: 0 });
 
   useEffect(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -49,6 +50,21 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
         setSkill(s); setForm({ name: s.name ?? '', content_md: s.content_md ?? '', tags: (s.tags ?? []).filter((t: string) => t !== '社区').join(', '), cover_url: s.cover_url ?? '', owner_team_id: s.owner_team_id ?? '' });
         if (vRes.ok) setVersions(await vRes.json());
         if (tRes.ok) setMyTeams(await tRes.json());
+        // 载入现行定价（公开接口，失败不影响页面）
+        try {
+          const pResp = await fetch(`/api/pay/pricing/${s.id}`);
+          if (pResp.ok) {
+            const pj = await pResp.json();
+            if (pj.pricing) {
+              setPricing({
+                pricing_mode: pj.pricing.pricing_mode || 'free',
+                price_cents: Math.round((Number(pj.pricing.price_cents) || 0) / 100),
+                member_included: Boolean(pj.pricing.member_included),
+                commercial_price_cents: Math.round((Number(pj.pricing.commercial_price_cents) || 0) / 100),
+              });
+            }
+          }
+        } catch {}
       } catch (e: any) { setError(e.message || 'Load failed'); }
       finally { setLoading(false); }
     }; load();
@@ -73,6 +89,23 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
       const payload = { name: form.name.trim(), content_md: form.content_md, cover_url: form.cover_url, tags, owner_team_id: form.owner_team_id || null };
       const res = await fetch(`/api/skills/${skill.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
       if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.message || `HTTP ${res.status}`); }
+      // 保存定价（与技能信息一起提交，失败仅告警不阻断）
+      try {
+        const pr = await fetch(`/api/pay/pricing/${skill.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            pricing_mode: pricing.pricing_mode,
+            price_cents: Math.max(0, Math.round((Number(pricing.price_cents) || 0) * 100)),
+            member_included: pricing.member_included,
+            commercial_price_cents: Math.max(0, Math.round((Number(pricing.commercial_price_cents) || 0) * 100)),
+          }),
+        });
+        if (!pr.ok) {
+          const e = await pr.json().catch(() => ({}));
+          console.warn('pricing save failed:', e.message);
+        }
+      } catch (e: any) { console.warn('pricing save error:', e?.message); }
       router.push(`/skills/${skill.slug || skill.id}`);
     } catch (err: any) { alert(t('edit.saveFailed') + ': ' + err.message); }
     finally { setSaving(false); }
@@ -136,6 +169,78 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
         <div className="space-y-2 mb-4">{versions.length === 0 && <p className="text-neutral-500 text-sm">No versions yet.</p>}
           {versions.map((v) => { const isLatest = skill.latest_version_id === v.id; return (<div key={v.id} className="p-3 bg-neutral-100 rounded-lg"><div className="flex items-center justify-between"><div><span className="font-mono font-medium">v{v.version}</span><span className="text-xs text-neutral-500 ml-3">{v.size ? `${(v.size / 1024).toFixed(1)} KB · ` : ''}{new Date(v.created_at).toLocaleString()}</span></div><div className="flex items-center gap-2">{isLatest && <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded">{t('detail.latest')}</span>}{!isLatest && <button type="button" onClick={() => handleDeleteVersion(v.id, v.version)} className="text-xs px-2 py-1 border border-red-300 text-red-600 rounded hover:bg-red-50">{t('edit.deleteVersion')}</button>}</div></div>{v.notes && <p className="text-xs text-neutral-500 mt-1 ml-1">{v.notes}</p>}</div>); })}
         </div>
+      </div>
+
+      {/* ── 付费设置 ── */}
+      <div className="mb-10 p-5 sm:p-6 border rounded-xl bg-white">
+        <h2 className="text-xl font-bold mb-1">{t('edit.pricingTitle')}</h2>
+        <p className="text-xs text-neutral-500 mb-4">{t('edit.pricingDesc')}</p>
+
+        {/* 收费模式 */}
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          {([
+            { key: 'free', label: t('edit.modeFree'), desc: t('edit.modeFreeDesc') },
+            { key: 'paid', label: t('edit.modePaid'), desc: t('edit.modePaidDesc') },
+            { key: 'member_only', label: t('edit.modeMember'), desc: t('edit.modeMemberDesc') },
+            { key: 'both', label: t('edit.modeBoth'), desc: t('edit.modeBothDesc') },
+          ] as const).map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              onClick={() => setPricing((p) => ({ ...p, pricing_mode: m.key, member_included: m.key === 'member_only' || m.key === 'both' ? true : p.member_included }))}
+              className={`text-left px-3 py-2.5 rounded-lg border transition-all ${
+                pricing.pricing_mode === m.key
+                  ? 'border-brand-600 bg-brand-50'
+                  : 'border-neutral-200 hover:bg-neutral-50'
+              }`}
+            >
+              <div className="text-sm font-medium">{m.label}</div>
+              <div className="text-[11px] text-neutral-500 mt-0.5 leading-snug">{m.desc}</div>
+            </button>
+          ))}
+        </div>
+
+        {pricing.pricing_mode === 'paid' || pricing.pricing_mode === 'both' ? (
+          <div className="space-y-4">
+            <Field label={t('edit.priceLabel')}>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={pricing.price_cents}
+                onChange={(e) => setPricing((p) => ({ ...p, price_cents: e.target.value }))}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder={t('edit.pricePlaceholder')}
+              />
+            </Field>
+            <Field label={t('edit.commercialLabel')}>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={pricing.commercial_price_cents}
+                onChange={(e) => setPricing((p) => ({ ...p, commercial_price_cents: e.target.value }))}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder={t('edit.commercialPlaceholder')}
+              />
+              <span className="block text-xs text-neutral-500 mt-1">{t('edit.commercialHint')}</span>
+            </Field>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={pricing.pricing_mode === 'both' ? true : pricing.member_included}
+                disabled={pricing.pricing_mode === 'both'}
+                onChange={(e) => setPricing((p) => ({ ...p, member_included: e.target.checked }))}
+                className="w-4 h-4"
+              />
+              <span className="text-sm text-neutral-700">{t('edit.memberIncluded')}</span>
+            </label>
+          </div>
+        ) : pricing.pricing_mode === 'member_only' ? (
+          <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">{t('edit.modeMemberNote')}</p>
+        ) : (
+          <p className="text-xs text-neutral-500">{t('edit.modeFreeNote')}</p>
+        )}
       </div>
 
       {/* ── 编辑信息表单 ── */}
