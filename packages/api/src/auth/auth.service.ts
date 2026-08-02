@@ -292,10 +292,24 @@ export class AuthService {
     const wechatUser = await userRes.json();
 
     // 3. 查找或创建用户
+    // 优先按 openid 查找；但 openid 随微信应用(appid)不同而变化，若未命中再用 unionid 兜底，
+    // 避免同一微信用户在网站应用/公众号等不同入口登录时分裂成多个账号（各自 role 不同，
+    // 典型表现：邮箱登录是 admin，微信登录却落到 role='user' 的小号）。
     let user = await this.userRepository.findOne({
       where: { wechat_openid: openid },
       select: ['id', 'email', 'name', 'avatar_url', 'wechat_openid', 'wechat_unionid', 'role'],
     });
+    if (!user && unionid) {
+      user = await this.userRepository.findOne({
+        where: { wechat_unionid: unionid },
+        select: ['id', 'email', 'name', 'avatar_url', 'wechat_openid', 'wechat_unionid', 'role'],
+      });
+      // 命中但 openid 不同（多应用导致）→ 同步为最新 openid，防止下次又按旧 openid 分裂
+      if (user && user.wechat_openid !== openid) {
+        user.wechat_openid = openid;
+        await this.userRepository.save(user);
+      }
+    }
     if (!user) {
       user = this.userRepository.create({
         email: null,
@@ -413,8 +427,11 @@ export class AuthService {
     );
     const wechatUser = await userRes.json();
 
-    // 冲突检查：该 openid 已落在其他账号
-    const conflict = await this.userRepository.findOne({ where: { wechat_openid: openid } });
+    // 冲突检查：该微信已落在其他账号（openid 或 unionid 兜底，多应用 openid 不一致时仍能识别同一微信）
+    let conflict = await this.userRepository.findOne({ where: { wechat_openid: openid } });
+    if (!conflict && unionid) {
+      conflict = await this.userRepository.findOne({ where: { wechat_unionid: unionid } });
+    }
     if (conflict && conflict.id !== userId) {
       // 已绑在无邮箱的微信小号 → 合并进当前(邮箱)账号；已绑在有邮箱的真实账号 → 拒绝
       if (conflict.email) throw new BadRequestException('该微信已绑定其他账号');
