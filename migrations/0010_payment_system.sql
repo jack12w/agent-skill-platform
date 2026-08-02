@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS platform_settings (
 INSERT INTO platform_settings (key, value) VALUES
   ('commission_rate_bp',    '1000'::jsonb),                                  -- 平台抽成 10%
   ('settlement_delay_days', '7'::jsonb),                                     -- 结算冻结期
-  ('withdraw_min_cents',    '1000'::jsonb),                                  -- 最低提现 10 元
+  ('withdraw_min_cents',    '2000'::jsonb),                                  -- 最低提现 20 元
   ('membership_prices',     '{"monthly":2900,"quarterly":7900,"yearly":26800}'::jsonb)  -- 月/季/年（分）
 ON CONFLICT (key) DO NOTHING;
 

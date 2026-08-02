@@ -58,6 +58,9 @@ services:
       - WECHAT_APPSECRET=${WECHAT_APPSECRET}
       # 微信登录总开关：后端 assertWechatLoginEnabled() 读取，不传则微信链路永远被拒
       - WECHAT_LOGIN_ENABLED=${WECHAT_LOGIN_ENABLED:-false}
+      # 管理员引导白名单：逗号分隔用户 ID（users.id 的 UUID）；AdminGuard 优先于数据库 role 判定。
+      # 写进受 git 跟踪的 compose，避免 git pull 覆盖本地改动导致管理员丢失；无需先部署 0010 即可生效。
+      - ADMIN_USER_IDS=${ADMIN_USER_IDS}
       # 微信登录回调域名：getWechatAuthUrl 优先使用，不传则 fallback 到 PUBLIC_BASE_URL（可用但不稳妥）
       - WECHAT_REDIRECT_URI=${WECHAT_REDIRECT_URI}
       # 微信公众号 JS-SDK（分享）专用凭证：与网站应用登录 WECHAT_APPID 是两套，必须独立配置
