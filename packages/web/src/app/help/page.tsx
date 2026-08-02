@@ -195,6 +195,32 @@ tags: [搜索, 数据分析]
               <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.pVsAdmin')}</h2>
               <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pVsAdminDesc')}</p>
 
+              <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.pEarnTitle')}</h2>
+              <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pEarnDesc')}</p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mt-3">
+                <div className="border rounded-xl p-4">
+                  <div className="w-7 h-7 rounded-full bg-brand-600 text-white text-sm flex items-center justify-center mb-2">1</div>
+                  <div className="font-medium text-sm">{t('help.pEarnS1')}</div>
+                  <p className="text-xs text-neutral-600 mt-1 leading-relaxed">{t('help.pEarnD1')}</p>
+                </div>
+                <div className="border rounded-xl p-4">
+                  <div className="w-7 h-7 rounded-full bg-brand-600 text-white text-sm flex items-center justify-center mb-2">2</div>
+                  <div className="font-medium text-sm">{t('help.pEarnS2')}</div>
+                  <p className="text-xs text-neutral-600 mt-1 leading-relaxed">{t('help.pEarnD2')}</p>
+                </div>
+                <div className="border rounded-xl p-4">
+                  <div className="w-7 h-7 rounded-full bg-brand-600 text-white text-sm flex items-center justify-center mb-2">3</div>
+                  <div className="font-medium text-sm">{t('help.pEarnS3')}</div>
+                  <p className="text-xs text-neutral-600 mt-1 leading-relaxed">{t('help.pEarnD3')}</p>
+                </div>
+                <div className="border rounded-xl p-4">
+                  <div className="w-7 h-7 rounded-full bg-brand-600 text-white text-sm flex items-center justify-center mb-2">4</div>
+                  <div className="font-medium text-sm">{t('help.pEarnS4')}</div>
+                  <p className="text-xs text-neutral-600 mt-1 leading-relaxed">{t('help.pEarnD4')}</p>
+                </div>
+              </div>
+              <p className="text-xs text-neutral-500 mt-3 leading-relaxed">{t('help.pEarnNote')}</p>
+
               <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.pRefund')}</h2>
               <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pRefundDesc')}</p>
             </div>
