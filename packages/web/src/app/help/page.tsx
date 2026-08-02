@@ -221,6 +221,10 @@ tags: [搜索, 数据分析]
               </div>
               <p className="text-xs text-neutral-500 mt-3 leading-relaxed">{t('help.pEarnNote')}</p>
 
+              <div className="mt-4 p-3 rounded-lg bg-neutral-50 border">
+                <a href="/agreement" className="text-sm text-brand-600 hover:underline font-medium">{t('agreement.termsLink')}</a>
+              </div>
+
               <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.pRefund')}</h2>
               <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pRefundDesc')}</p>
             </div>

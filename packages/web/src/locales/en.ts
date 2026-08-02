@@ -642,6 +642,27 @@ const en = {
     copyFailed: 'Copy failed, please copy manually',
     openInWechat: 'Open in WeChat to use the share feature',
   },
+  agreement: {
+    title: 'Terms of Service & Subscription Agreement',
+    updated: 'Last updated: 2026-08-02',
+    intro: 'This agreement applies to all paid activities on SkillDepot, including one-time skill purchases (paid download) and creator membership subscriptions. By completing a payment, you are deemed to have read, understood, and agreed to all the terms below.',
+    s1Title: '1. Service Description',
+    s1Body: 'SkillDepot is an AI Agent skill marketplace where creators publish skills and set prices. After payment you obtain a usage right to the purchased skill — a permanent download right for one-time purchase, or a within-subscription download right for membership — which does not transfer the skill\'s intellectual property.',
+    s2Title: '2. Payment & Membership',
+    s2Body: 'A skill can be set as Free, Paid Download, Members Only, or Paid + Member Free. A creator membership means "subscribing to that specific creator": during the subscription you can download all of that creator\'s "member-included" skills for free (including future updates). Both membership fees and one-time fees are paid via WeChat Pay.',
+    s3Title: '3. Platform Commission',
+    s3Body: 'The platform charges an agreed commission ratio per transaction (configured by the admin). After deducting the commission, the remainder is credited to the creator\'s balance. The exact commission ratio is as published by the platform at the time of the transaction.',
+    s4Title: '4. Refund Policy',
+    s4Body: 'Digital goods are non-refundable once delivered, except for quality issues. For anomalies such as duplicate charges or not receiving the item, file a dispute in "My Orders" or contact support.',
+    s5Title: '5. Subscription Period & Renewal',
+    s5Body: 'A membership is effective for the monthly / quarterly / yearly tier you choose, and the free-download benefit stops automatically at expiry. The platform does not auto-renew by default; to continue, re-subscribe after expiry.',
+    s6Title: '6. Creator Earnings & Withdrawal',
+    s6Body: 'A creator\'s one-time shares and membership fees, after commission deduction and the settlement hold, can be withdrawn to WeChat in "My Earnings"; the minimum withdrawal is set by the platform.',
+    s7Title: '7. Liability & Disputes',
+    s7Body: 'Skill content is the creator\'s own responsibility; the platform only provides transaction matching and technical support. Disputes over skill quality or copyright are resolved by the creator and the user through negotiation; if that fails, they may submit to platform mediation.',
+    viewTerms: 'View full Terms of Service',
+    termsLink: 'View the full Terms of Service & Subscription Agreement',
+  },
 };
 
 export default en;

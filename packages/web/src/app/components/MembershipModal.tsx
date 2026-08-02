@@ -271,7 +271,9 @@ export default function MembershipModal({ targetType, targetId, targetName, onCl
                   </button>
                 )}
 
-                <p className="mt-4 text-[11px] leading-relaxed text-neutral-400 text-center">{t('pay.legal')}</p>
+                <p className="mt-4 text-[11px] leading-relaxed text-neutral-400 text-center">
+                  {t('pay.legal')} <a href="/agreement" className="text-brand-500 hover:underline">{t('agreement.viewTerms')}</a>
+                </p>
               </>
             )}
           </div>
