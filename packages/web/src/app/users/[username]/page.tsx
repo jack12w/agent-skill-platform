@@ -28,6 +28,11 @@ export default function UserProfile({ params }: { params: { username: string } }
   const [subscriberCount, setSubscriberCount] = useState(0);
   const [subscribed, setSubscribed] = useState(false);
   const [memberModalOpen, setMemberModalOpen] = useState(false);
+  // 无付费套餐时的「免费关注」状态
+  const [hasPlan, setHasPlan] = useState(false);
+  const [freeSub, setFreeSub] = useState(false);
+  const [freeSubCount, setFreeSubCount] = useState(0);
+  const [followBusy, setFollowBusy] = useState(false);
   const currentUserId = (() => {
     try { const u = JSON.parse(localStorage.getItem('user') || 'null'); return u?.id || null; } catch { return null; }
   })();
@@ -58,22 +63,44 @@ export default function UserProfile({ params }: { params: { username: string } }
         imgUrl: userData.avatar_url || undefined,
       });
 
-      // 创作者会员订阅数 + 当前用户订阅状态
+      // 创作者是否设置了付费会员套餐（公开接口，未登录也可读）
+      let planHas = false;
       try {
-        const countRes = await fetch(`/api/pay/membership/subscribers/user/${encodeURIComponent(userData.id)}`);
-        if (countRes.ok) {
-          const c = await countRes.json();
-          setSubscriberCount(c.count ?? 0);
+        const planRes = await fetch(`/api/pay/creator-plan?targetType=user&targetId=${encodeURIComponent(userData.id)}`);
+        if (planRes.ok) {
+          const p = await planRes.json();
+          planHas = !!p.hasPlan;
+          setHasPlan(planHas);
         }
       } catch { /* ignore */ }
+
+      // 订阅数：有套餐 → 付费会员数；无套餐 → 免费关注数
+      try {
+        const countUrl = planHas
+          ? `/api/pay/membership/subscribers/user/${encodeURIComponent(userData.id)}`
+          : `/api/subscriptions/count?targetType=user&targetId=${encodeURIComponent(userData.id)}`;
+        const countRes = await fetch(countUrl);
+        if (countRes.ok) {
+          const c = await countRes.json();
+          if (planHas) setSubscriberCount(c.count ?? 0);
+          else setFreeSubCount(c.count ?? 0);
+        }
+      } catch { /* ignore */ }
+
+      // 当前用户订阅状态（仅登录且非本人）
       if (currentUserId && currentUserId !== userData.id) {
         try {
-          const stRes = await fetch(`/api/pay/membership/subscribe/user/${encodeURIComponent(userData.id)}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
+          const stRes = planHas
+            ? await fetch(`/api/pay/membership/subscribe/user/${encodeURIComponent(userData.id)}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              })
+            : await fetch(`/api/subscriptions/status?targetType=user&targetId=${encodeURIComponent(userData.id)}`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
           if (stRes.ok) {
             const st = await stRes.json();
-            setSubscribed(!!st.subscribed);
+            if (planHas) setSubscribed(!!st.subscribed);
+            else setFreeSub(!!st.subscribed);
           }
         } catch { /* ignore */ }
       }
@@ -135,6 +162,45 @@ export default function UserProfile({ params }: { params: { username: string } }
     } catch { /* ignore */ }
   };
 
+  // 无付费套餐时：免费关注 / 取消关注（POST / DELETE /api/subscriptions）
+  const toggleFollow = async () => {
+    if (followBusy || !user) return;
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    setFollowBusy(true);
+    try {
+      if (freeSub) {
+        const res = await fetch(`/api/subscriptions?targetType=user&targetId=${encodeURIComponent(user.id)}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          setFreeSub(false);
+          setFreeSubCount((c) => Math.max(0, c - 1));
+        }
+      } else {
+        const res = await fetch('/api/subscriptions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ targetType: 'user', targetId: user.id }),
+        });
+        if (res.ok) {
+          setFreeSub(true);
+          setFreeSubCount((c) => c + 1);
+        }
+      }
+    } catch { /* ignore */ }
+    finally {
+      setFollowBusy(false);
+    }
+  };
+
+  // 订阅按钮点击：有套餐 → 打开付费弹窗；无套餐 → 免费关注
+  const handleSubscribeClick = () => {
+    if (hasPlan) setMemberModalOpen(true);
+    else toggleFollow();
+  };
+
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 text-center text-neutral-500">
@@ -156,6 +222,10 @@ export default function UserProfile({ params }: { params: { username: string } }
   }
 
   if (!user) return null;
+
+  // 统一订阅展示状态：有套餐看付费会员；无套餐看免费关注
+  const isSub = hasPlan ? subscribed : freeSub;
+  const subCount = hasPlan ? subscriberCount : freeSubCount;
 
   const displayedSkills = activeTag
     ? skills.filter((s: any) => (s.tags ?? []).includes(activeTag))
@@ -181,12 +251,12 @@ export default function UserProfile({ params }: { params: { username: string } }
               <h1 className="text-2xl sm:text-4xl font-bold text-neutral-900 truncate">{user.name}</h1>
               {currentUserId && currentUserId !== user.id ? (
                 <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-sm text-neutral-500">{subscriberCount} 人订阅</span>
+                  <span className="text-sm text-neutral-500">{subCount} 人订阅</span>
                   <button
-                    onClick={() => setMemberModalOpen(true)}
-                    className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition ${subscribed ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' : 'bg-brand-600 text-white hover:bg-brand-700'}`}
+                    onClick={handleSubscribeClick}
+                    className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition ${isSub ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' : 'bg-brand-600 text-white hover:bg-brand-700'}`}
                   >
-                    {subscribed ? (
+                    {isSub ? (
                       <>
                         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 006 0h-6z" /></svg>
                         已订阅
@@ -200,7 +270,7 @@ export default function UserProfile({ params }: { params: { username: string } }
                   </button>
                 </div>
               ) : (
-                <span className="text-sm text-neutral-500 shrink-0">{subscriberCount} 人订阅</span>
+                <span className="text-sm text-neutral-500 shrink-0">{subCount} 人订阅</span>
               )}
             </div>
             {user.bio && (

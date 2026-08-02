@@ -3,6 +3,7 @@ import {
   Get,
   Put,
   Param,
+  Query,
   Body,
   UseGuards,
   Request,
@@ -12,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { SkillPricing } from './payments.entity';
+import { SkillPricing, CreatorMembershipPlan } from './payments.entity';
 import { Skill } from '../skills/skill.entity';
 import { SettingsService } from './settings.service';
 import { AuthGuard } from '../auth/auth.guard';
@@ -31,6 +32,7 @@ export class PricingController {
   constructor(
     @InjectRepository(SkillPricing) private readonly pricingRepo: Repository<SkillPricing>,
     @InjectRepository(Skill) private readonly skillRepo: Repository<Skill>,
+    @InjectRepository(CreatorMembershipPlan) private readonly planRepo: Repository<CreatorMembershipPlan>,
     private readonly settings: SettingsService,
   ) {}
 
@@ -61,6 +63,32 @@ export class PricingController {
   @Get('membership-prices')
   async membershipPrices() {
     return this.settings.getMembershipPrices();
+  }
+
+  /**
+   * 某创作者 / 团队是否设置了付费会员套餐（公开，未登录可读）。
+   * 前端据此决定「订阅」按钮行为：无套餐→免费关注（POST /api/subscriptions）；
+   * 有套餐→打开付费会员弹窗（须支付成功才订阅成功）。
+   */
+  @Get('creator-plan')
+  async creatorPlan(@Query('targetType') targetType: string, @Query('targetId') targetId: string) {
+    if (!targetType || !targetId) throw new BadRequestException('缺少 targetType / targetId');
+    const plan = await this.planRepo.findOne({ where: { target_type: targetType, target_id: targetId } });
+    const suggested = await this.settings.getMembershipPrices();
+    if (!plan) {
+      return { hasPlan: false, plans: null, suggested, targetType, targetId };
+    }
+    return {
+      hasPlan: true,
+      plans: {
+        monthly: Number(plan.monthly_cents) || 0,
+        quarterly: Number(plan.quarterly_cents) || 0,
+        yearly: Number(plan.yearly_cents) || 0,
+      },
+      suggested,
+      targetType,
+      targetId,
+    };
   }
 
   /**
