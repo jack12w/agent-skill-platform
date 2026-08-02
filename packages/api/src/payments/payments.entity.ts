@@ -303,29 +303,6 @@ export class Membership {
   order_id: string;
 }
 
-/** 会员下载记录（收益池去重：一个会员×一个技能×一个周期只计 1 次） */
-@Entity('membership_downloads')
-@Index(['user_id', 'skill_id', 'period'], { unique: true })
-export class MembershipDownload {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
-  @Column({ type: 'uuid' })
-  user_id: string;
-
-  @Column({ type: 'uuid' })
-  skill_id: string;
-
-  @Column({ type: 'uuid', nullable: true })
-  seller_user_id: string;
-
-  @Column() // YYYY-MM
-  period: string;
-
-  @Column({ default: false })
-  counted: boolean;
-}
-
 /** 创作者余额 */
 @Entity('creator_balances')
 export class CreatorBalance {
@@ -430,129 +407,6 @@ export class Withdrawal {
   fail_reason: string;
 }
 
-/** 结算快照（含会员收益池） */
-@Entity('settlements')
-export class Settlement {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
-  @Index()
-  @Column() // YYYY-MM
-  period: string;
-
-  @Column() // membership_pool|order_settle
-  type: string;
-
-  @Column({ type: 'bigint', default: 0, transformer: bigintTransformer })
-  total_cents: number;
-
-  @Column({ type: 'bigint', default: 0, transformer: bigintTransformer })
-  platform_cents: number;
-
-  @Column({ type: 'bigint', default: 0, transformer: bigintTransformer })
-  creator_cents: number;
-
-  @Column({ type: 'jsonb', nullable: true })
-  detail: any;
-
-  @Column({ default: 'PENDING' }) // PENDING|REVIEWING|EXECUTED
-  status: string;
-
-  @Column({ type: 'timestamptz', nullable: true })
-  executed_at: Date;
-
-  @Column({ type: 'uuid', nullable: true })
-  executed_by: string;
-}
-
-/** 服务交易托管（B 类预留，本期不使用） */
-@Entity('service_orders')
-export class ServiceOrder {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
-  @Column({ type: 'uuid' })
-  order_id: string;
-
-  @Column({ type: 'uuid', nullable: true })
-  provider_user_id: string;
-
-  @Column() // consult|dev|project
-  service_type: string;
-
-  @Column({ type: 'text', nullable: true })
-  requirement: string;
-
-  @Column({ type: 'bigint', default: 0, transformer: bigintTransformer })
-  quote_cents: number;
-
-  @Column({ default: 'held' }) // held|released|refunded
-  escrow_status: string;
-
-  @Column({ type: 'jsonb', nullable: true })
-  milestone: any;
-
-  @Column({ type: 'timestamptz', nullable: true })
-  delivered_at: Date;
-
-  @Column({ type: 'timestamptz', nullable: true })
-  confirmed_at: Date;
-
-  @Column({ type: 'timestamptz', nullable: true })
-  auto_confirm_at: Date;
-
-  @Column({ nullable: true })
-  dispute_status: string;
-}
-
-/** 技能 API 化托管（D 类预留，本期不使用） */
-@Entity('skill_manifests')
-export class SkillManifest {
-  @PrimaryColumn({ type: 'uuid' })
-  skill_id: string;
-
-  @Column({ type: 'text', nullable: true })
-  instructions: string;
-
-  @Column({ type: 'text', nullable: true })
-  prompt: string;
-
-  @Column({ type: 'jsonb', nullable: true })
-  params: any;
-
-  @Column({ type: 'jsonb', nullable: true })
-  examples: any;
-
-  @Column({ nullable: true })
-  version: string;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  updated_at: Date;
-}
-
-/** API 调用计量（D 类预留，本期不使用） */
-@Entity('api_calls')
-export class ApiCall {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
-  @Index()
-  @Column({ type: 'uuid' })
-  skill_id: string;
-
-  @Column({ type: 'uuid', nullable: true })
-  caller_user_id: string;
-
-  @Column({ type: 'uuid', nullable: true })
-  token_id: string;
-
-  @CreateDateColumn({ type: 'timestamptz' })
-  called_at: Date;
-
-  @Column({ type: 'bigint', default: 0, transformer: bigintTransformer })
-  billed_cents: number;
-}
-
 /** 实体类数组（供 TypeOrmModule.forFeature 使用） */
 /**
  * 创作者会员定价（每个 user / team 一套月/季/年三档价格，由创作者自行设置）。
@@ -642,14 +496,9 @@ export const PAYMENT_ENTITIES = [
   WechatNotifyLog,
   Entitlement,
   Membership,
-  MembershipDownload,
   CreatorMembershipPlan,
   CreatorSubscription,
   CreatorBalance,
   BalanceTransaction,
   Withdrawal,
-  Settlement,
-  ServiceOrder,
-  SkillManifest,
-  ApiCall,
 ];

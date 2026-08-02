@@ -54,17 +54,6 @@ export class AdminPaymentsController {
     return this.admin.approveWithdrawal(id, this.uid(req));
   }
 
-  @Get('settlements')
-  listSettlements(@Query('page') page = '1', @Query('size') size = '20') {
-    return this.admin.listSettlements(Number(page), Number(size));
-  }
-
-  @Post('settlements/run')
-  runSettlement(@Query('period') period: string) {
-    if (!period || !/^\d{4}-\d{2}$/.test(period)) throw new Error('period 格式应为 YYYY-MM');
-    return this.admin.runSettlement(period);
-  }
-
   @Get('reconciliation')
   reconcile() {
     return this.admin.reconcile();

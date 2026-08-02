@@ -8,7 +8,6 @@ import {
   Refund,
   WechatNotifyLog,
   SkillPricing,
-  Settlement,
   CreatorMembershipPlan,
 } from './payments.entity';
 import { Skill } from '../skills/skill.entity';
@@ -44,7 +43,6 @@ export class OrdersService {
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(Team) private readonly teamRepo: Repository<Team>,
     @InjectRepository(CreatorMembershipPlan) private readonly planRepo: Repository<CreatorMembershipPlan>,
-    @InjectRepository(Settlement) private readonly settleRepo: Repository<Settlement>,
     private readonly wechat: WechatPayService,
     private readonly entitlement: EntitlementService,
     private readonly balance: BalanceService,

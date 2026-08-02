@@ -6,7 +6,6 @@ import {
   OrderItem,
   CreatorBalance,
   Withdrawal,
-  Settlement,
   WechatNotifyLog,
   CreatorSubscription,
 } from './payments.entity';
@@ -24,7 +23,6 @@ export class AdminPaymentsService {
     @InjectRepository(OrderItem) private readonly itemRepo: Repository<OrderItem>,
     @InjectRepository(CreatorBalance) private readonly balRepo: Repository<CreatorBalance>,
     @InjectRepository(Withdrawal) private readonly wdRepo: Repository<Withdrawal>,
-    @InjectRepository(Settlement) private readonly settleRepo: Repository<Settlement>,
     @InjectRepository(WechatNotifyLog) private readonly logRepo: Repository<WechatNotifyLog>,
     @InjectRepository(CreatorSubscription) private readonly csRepo: Repository<CreatorSubscription>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
@@ -147,15 +145,6 @@ export class AdminPaymentsService {
       this.logger.error('提现打款失败', e);
     }
     return wd;
-  }
-
-  async listSettlements(page: number, size: number) {
-    return this.paginate(this.settleRepo, {}, page, size, { period: 'DESC' });
-  }
-
-  /** 运行某月会员收益池结算（已取消：创作者会员订阅费在支付时直接进创作者余额） */
-  async runSettlement(period: string) {
-    return { skipped: true, reason: 'creator_membership_direct_settle', period };
   }
 
   /** 对账：微信回调 vs 本地订单，标出卡住订单 */

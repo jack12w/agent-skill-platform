@@ -12,14 +12,9 @@ import {
   WechatNotifyLog,
   Entitlement,
   Membership,
-  MembershipDownload,
   CreatorBalance,
   BalanceTransaction,
   Withdrawal,
-  Settlement,
-  ServiceOrder,
-  SkillManifest,
-  ApiCall,
 } from './payments.entity';
 import { User } from '../auth/user.entity';
 import { Skill } from '../skills/skill.entity';
