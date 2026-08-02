@@ -189,6 +189,9 @@ tags: [搜索, 数据分析]
                 <li>{t('help.pModeBoth')}</li>
               </ul>
 
+              <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.pCreatorMember')}</h2>
+              <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pCreatorMemberDesc')}</p>
+
               <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.pVsAdmin')}</h2>
               <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pVsAdminDesc')}</p>
 
