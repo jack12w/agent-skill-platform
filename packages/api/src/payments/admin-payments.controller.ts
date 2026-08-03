@@ -82,6 +82,12 @@ export class AdminPaymentsController {
     return this.admin.listRefunds(Number(page), Number(size), status);
   }
 
+  /** 微信回调原始日志（支付/退款通知，排障用） */
+  @Get('notify-logs')
+  listNotifyLogs(@Query('page') page = '1', @Query('size') size = '20', @Query('eventType') eventType?: string) {
+    return this.admin.listNotifyLogs(Number(page), Number(size), eventType);
+  }
+
   /** 交易设置：抽成比例 + 结算/提现规则 */
   @Get('settings')
   async settings_get() {

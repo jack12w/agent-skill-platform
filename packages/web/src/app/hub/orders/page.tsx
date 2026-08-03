@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Fragment } from 'react';
 import useTranslation from '../../../hooks/useTranslation';
 
 function getToken() { try { return localStorage.getItem('token'); } catch { return null; } }
@@ -15,6 +15,7 @@ const typeLabel = (tp: string) =>
 
 export default function HubOrdersPage() {
   const { t } = useTranslation();
+  const [tab, setTab] = useState<'orders' | 'logs'>('orders');
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('');
@@ -23,6 +24,11 @@ export default function HubOrdersPage() {
   const [refundAmt, setRefundAmt] = useState('');
   const [refundReason, setRefundReason] = useState('');
   const [refundMsg, setRefundMsg] = useState('');
+  // ── 微信回调日志 ──
+  const [logs, setLogs] = useState<any>(null);
+  const [logsPage, setLogsPage] = useState(1);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [expandedLog, setExpandedLog] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     const token = getToken(); if (!token) return;
@@ -36,7 +42,18 @@ export default function HubOrdersPage() {
     setLoading(false);
   }, [page, status]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const fetchLogs = useCallback(async () => {
+    const token = getToken(); if (!token) return;
+    setLogsLoading(true);
+    try {
+      const r = await fetch(`/api/admin/pay/notify-logs?page=${logsPage}&size=20`, { headers: { Authorization: `Bearer ${token}` } });
+      setLogs(await r.json());
+    } catch (e) { console.error(e); }
+    setLogsLoading(false);
+  }, [logsPage]);
+
+  useEffect(() => { if (tab === 'orders') fetchData(); }, [fetchData, tab]);
+  useEffect(() => { if (tab === 'logs') fetchLogs(); }, [fetchLogs, tab]);
 
   const doRefund = async () => {
     const token = getToken(); if (!token || !refundTarget) return;
@@ -61,7 +78,7 @@ export default function HubOrdersPage() {
     }
   };
 
-  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" /></div>;
+  if (tab === 'orders' && loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" /></div>;
 
   const statusColor = (s: string) =>
     ({
@@ -76,6 +93,77 @@ export default function HubOrdersPage() {
   return (
     <div>
       <h1 className="text-xl font-bold text-neutral-900 mb-4">{t('admin.orders')}</h1>
+
+      {/* Tab 切换：订单 / 回调日志 */}
+      <div className="flex gap-2 mb-4">
+        {(['orders', 'logs'] as const).map((k) => (
+          <button key={k} onClick={() => setTab(k)}
+            className={`px-3 py-1.5 text-sm rounded-lg border ${tab === k ? 'border-brand-600 bg-brand-50 text-brand-700 font-medium' : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'}`}>
+            {k === 'orders' ? '订单列表' : '微信回调日志'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'logs' ? (
+        logsLoading ? (
+          <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" /></div>
+        ) : (
+          <>
+            <div className="bg-white border rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-100 text-neutral-500 text-xs uppercase">
+                  <tr>
+                    <th className="px-4 py-3 text-left">事件类型</th>
+                    <th className="px-4 py-3 text-left">资源 ID</th>
+                    <th className="px-4 py-3 text-center">已处理</th>
+                    <th className="px-4 py-3 text-left">时间</th>
+                    <th className="px-4 py-3 text-center">报文</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {(logs?.items || []).map((l: any) => (
+                    <Fragment key={l.id}>
+                      <tr className="hover:bg-neutral-100">
+                        <td className="px-4 py-3 font-mono text-xs">{l.event_type || '-'}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{l.resource_id || '-'}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-xs ${l.processed ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {l.processed ? '是' : '否'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-neutral-500 text-xs">{new Date(l.created_at).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-center">
+                          <button onClick={() => setExpandedLog(expandedLog === l.id ? null : l.id)}
+                            className="px-2 py-1 text-xs border rounded hover:bg-neutral-50">
+                            {expandedLog === l.id ? '收起' : '查看'}
+                          </button>
+                        </td>
+                      </tr>
+                      {expandedLog === l.id && (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-3 bg-neutral-50">
+                            <pre className="text-xs whitespace-pre-wrap break-all max-h-64 overflow-y-auto">{l.raw_body}</pre>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+              {(logs?.items || []).length === 0 && (
+                <div className="py-12 text-center text-neutral-400 text-sm">暂无回调日志</div>
+              )}
+            </div>
+            {logs && logs.total > logs.size && (
+              <div className="flex justify-between mt-4 text-sm text-neutral-500">
+                <button onClick={() => setLogsPage(p => Math.max(1, p - 1))} disabled={logsPage === 1} className="px-3 py-1 border rounded disabled:opacity-30">{t('admin.prev')}</button>
+                <button onClick={() => setLogsPage(p => p + 1)} disabled={logsPage * logs.size >= logs.total} className="px-3 py-1 border rounded disabled:opacity-30">{t('admin.next')}</button>
+              </div>
+            )}
+          </>
+        )
+      ) : (
+      <>
       <div className="flex items-center gap-3 mb-4">
         <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} className="px-3 py-1.5 text-sm border rounded-lg">
           <option value="">{t('admin.allStatus')}</option>
@@ -139,6 +227,8 @@ export default function HubOrdersPage() {
           <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 border rounded disabled:opacity-30">{t('admin.prev')}</button>
           <button onClick={() => setPage(p => p + 1)} disabled={page * data.size >= data.total} className="px-3 py-1 border rounded disabled:opacity-30">{t('admin.next')}</button>
         </div>
+      )}
+      </>
       )}
 
       {/* 退款弹窗 */}

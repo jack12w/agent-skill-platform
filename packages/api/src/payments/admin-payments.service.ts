@@ -169,6 +169,16 @@ export class AdminPaymentsService {
   }
 
   /**
+   * 微信回调原始日志（支付 + 退款通知）。排障用：
+   * 回调失败/验签失败时管理员需要看到微信发来的原始报文与处理状态。
+   */
+  async listNotifyLogs(page: number, size: number, eventType?: string) {
+    const where: any = {};
+    if (eventType) where.event_type = eventType;
+    return this.paginate(this.logRepo, where, page, size, { created_at: 'DESC' });
+  }
+
+  /**
    * 对账。原先只数了几个订单状态，回答不了"账对不上"这类问题。
    * 现在按金额做三组勾稽，任何一组不平都会给出明确的 diff 与可疑单据。
    */
