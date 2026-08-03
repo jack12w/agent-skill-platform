@@ -35,6 +35,15 @@ const MENU = [
   { key: 'pay-settings', label: 'admin.paySettings', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0c-1.11 0-2.08-.402-2.599-1M12 16v1m3-9v2m0 4v2' },
 ];
 
+// hub 页面全局样式：
+// - body overflow hidden：页面级不滚动，滚动只发生在 hub 内容区
+// - overscroll-behavior none：禁止滚到底后的橡皮筋/scroll chaining。
+//   根布局有 fixed 定位的 aurora 渐变背景层，旧代码滚到底继续滚会触发页面橡皮筋位移，
+//   视口底部露出极光渐变 → 用户看到"底部弹出一条渐变通栏"。
+// - body:has([data-hub]) main min-height 0：覆盖根布局 main 的 min-h-screen，
+//   否则 body 总比视口高出一个 NavBar 高度，hub 容器下方存在透明区可透出渐变。
+const HUB_STYLE = `body { overflow: hidden; } html, body { overscroll-behavior: none; } footer { display: none !important; } body:has([data-hub]) main { min-height: 0 !important; }`;
+
 export default function HubLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -52,16 +61,18 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
     setLoaded(true);
   }, [router]);
 
-  if (!loaded) return <style>{`body { overflow: hidden; } footer { display: none !important; }`}</style>;
-  if (!authorized) return <style>{`body { overflow: hidden; } footer { display: none !important; }`}</style>;
+  if (!loaded) return <style>{HUB_STYLE}</style>;
+  if (!authorized) return <style>{HUB_STYLE}</style>;
 
   const activeKey = pathname === '/hub' ? 'stats' : pathname.split('/hub/')[1]?.split('/')[0] || 'stats';
 
   return (
     <>
       <meta name="robots" content="noindex, nofollow" />
-      <style>{`body { overflow: hidden; } footer { display: none !important; }`}</style>
-      <div className="flex h-[calc(100dvh-3.5rem)] md:h-[calc(100dvh-75px)] overflow-hidden" data-hub="">
+      <style>{HUB_STYLE}</style>
+      {/* 容器高度 = 视口 - NavBar 实际高度（NavBar 由内容撑开：移动端 p-4+logo h-8+border=65px，桌面 p-6+logo h-9+border=85px）。
+          旧值 56px/75px 与实际不符，底部会留白透出 aurora 渐变背景。NavBar 尺寸改动时需同步此处。 */}
+      <div className="flex h-[calc(100dvh-65px)] md:h-[calc(100dvh-85px)] overflow-hidden" data-hub="">
       {/* Sidebar */}
       <aside className="w-52 bg-white border-r border-neutral-200 shrink-0 hidden md:flex md:flex-col h-full relative">
         <div className="px-4 py-4 border-b border-neutral-100 shrink-0">
@@ -114,8 +125,8 @@ export default function HubLayout({ children }: { children: React.ReactNode }) {
         ))}
       </div>
 
-      {/* Content */}
-      <main className="flex-1 bg-neutral-100 p-4 md:p-6 pb-16 md:pb-6 overflow-auto">
+      {/* Content（overscroll-contain：滚到底后不再向页面传递滚动/橡皮筋） */}
+      <main className="flex-1 bg-neutral-100 p-4 md:p-6 pb-16 md:pb-6 overflow-auto overscroll-contain">
         {children}
       </main>
     </div>

@@ -23,6 +23,25 @@ function getToken() {
   try { return localStorage.getItem('token'); } catch { return null; }
 }
 
+// chart.js 单例加载器：全页面只注入一次 script，两个图表共用。
+// 旧实现把加载放在第一个图表的 effect 里、第二个图表直接读 window.Chart，
+// analytics 接口若先于 CDN 返回，window.Chart 尚未就绪就直接 return，
+// 之后再无触发机会 → 第二个折线图偶发不渲染（切换页面后缓存命中才"恢复"）。
+let chartJsPromise: Promise<any> | null = null;
+function loadChartJs(): Promise<any> {
+  if ((window as any).Chart) return Promise.resolve((window as any).Chart);
+  if (!chartJsPromise) {
+    chartJsPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+      s.onload = () => resolve((window as any).Chart);
+      s.onerror = () => { chartJsPromise = null; reject(new Error('chart.js load failed')); };
+      document.head.appendChild(s);
+    });
+  }
+  return chartJsPromise;
+}
+
 export default function HubPage() {
   const { t } = useTranslation();
   const [stats, setStats] = useState<Stats | null>(null);
@@ -51,66 +70,77 @@ export default function HubPage() {
   // Render chart when stats load
   useEffect(() => {
     if (!stats?.trends?.length) return;
+    let cancelled = false;
 
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
-    script.onload = () => {
-      const Chart = (window as any).Chart;
-      if (!Chart || !chartRef.current) return;
+    loadChartJs()
+      .then((Chart) => {
+        if (cancelled || !Chart || !chartRef.current) return;
+        if (chartInstanceRef.current) chartInstanceRef.current.destroy();
 
-      if (chartInstanceRef.current) chartInstanceRef.current.destroy();
+        const labels = stats.trends.map(d => d.date.slice(5)); // MM-DD
+        const likes = stats.trends.map(d => Number(d.likes) || 0);
+        const downloads = stats.trends.map(d => Number(d.downloads) || 0);
 
-      const labels = stats.trends.map(d => d.date.slice(5)); // MM-DD
-      const likes = stats.trends.map(d => Number(d.likes) || 0);
-      const downloads = stats.trends.map(d => Number(d.downloads) || 0);
+        chartInstanceRef.current = new Chart(chartRef.current, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              { label: t('detail.likes') || 'Likes', data: likes, borderColor: '#3366FF', backgroundColor: 'rgba(51,102,255,0.1)', fill: true, tension: 0.3 },
+              { label: t('detail.downloads') || 'Downloads', data: downloads, borderColor: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)', fill: true, tension: 0.3 },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: true, position: 'bottom' as const } },
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+          },
+        });
+      })
+      .catch(() => {});
 
-      chartInstanceRef.current = new Chart(chartRef.current, {
-        type: 'line',
-        data: {
-          labels,
-          datasets: [
-            { label: t('detail.likes') || 'Likes', data: likes, borderColor: '#3366FF', backgroundColor: 'rgba(51,102,255,0.1)', fill: true, tension: 0.3 },
-            { label: t('detail.downloads') || 'Downloads', data: downloads, borderColor: '#10B981', backgroundColor: 'rgba(16,185,129,0.1)', fill: true, tension: 0.3 },
-          ],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: true, position: 'bottom' as const } },
-          scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
-        },
-      });
-    };
-    document.head.appendChild(script);
-
-    return () => { if (script.parentNode) script.parentNode.removeChild(script); };
+    return () => { cancelled = true; };
   }, [stats, t]);
 
-  // Analytics chart
+  // Analytics chart（同样走单例 loader，不再依赖 window.Chart 的加载时序）
   useEffect(() => {
     if (!analytics?.trends?.length) return;
-    const Chart = (window as any).Chart;
-    if (!Chart || !analyticsChartRef.current) return;
-    if (analyticsChartInstRef.current) analyticsChartInstRef.current.destroy();
+    let cancelled = false;
 
-    const labels = analytics.trends.map(d => d.date.slice(5));
-    analyticsChartInstRef.current = new Chart(analyticsChartRef.current, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          { label: 'PV', data: analytics.trends.map(d => Number(d.count) || 0), borderColor: '#8B5CF6', backgroundColor: 'rgba(139,92,246,0.1)', fill: true, tension: 0.3 },
-          { label: 'UV', data: analytics.trends.map(d => Number(d.uv) || 0), borderColor: '#F59E0B', backgroundColor: 'rgba(245,158,11,0.1)', fill: true, tension: 0.3 },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: true, position: 'bottom' as const } },
-        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
-      },
-    });
+    loadChartJs()
+      .then((Chart) => {
+        if (cancelled || !Chart || !analyticsChartRef.current) return;
+        if (analyticsChartInstRef.current) analyticsChartInstRef.current.destroy();
+
+        const labels = analytics.trends.map(d => d.date.slice(5));
+        analyticsChartInstRef.current = new Chart(analyticsChartRef.current, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              { label: 'PV', data: analytics.trends.map(d => Number(d.count) || 0), borderColor: '#8B5CF6', backgroundColor: 'rgba(139,92,246,0.1)', fill: true, tension: 0.3 },
+              { label: 'UV', data: analytics.trends.map(d => Number(d.uv) || 0), borderColor: '#F59E0B', backgroundColor: 'rgba(245,158,11,0.1)', fill: true, tension: 0.3 },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: true, position: 'bottom' as const } },
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+          },
+        });
+      })
+      .catch(() => {});
+
+    return () => { cancelled = true; };
   }, [analytics]);
+
+  // 组件卸载时销毁图表实例，避免泄漏
+  useEffect(() => () => {
+    chartInstanceRef.current?.destroy();
+    analyticsChartInstRef.current?.destroy();
+  }, []);
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" /></div>;
   if (error) return <div className="flex items-center justify-center h-64"><p className="text-red-500 text-sm">{error}</p></div>;
