@@ -69,8 +69,8 @@ export default function HubUsersPage() {
         {msg && <span className="text-xs text-green-600">{msg}</span>}
       </div>
 
-      <div className="bg-white border rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-white border rounded-xl overflow-x-auto">
+        <table className="w-full text-sm min-w-[720px]">
           <thead className="bg-neutral-100 text-neutral-500 text-xs uppercase">
             <tr><th className="px-4 py-3 text-left">{t('admin.thName')}</th><th className="px-4 py-3 text-left">{t('admin.thEmail')}</th><th className="px-4 py-3 text-center">{t('admin.thRole')}</th><th className="px-4 py-3 text-left">{t('admin.thRegistered')}</th><th className="px-4 py-3 text-left">{t('admin.thLastSeen')}</th><th className="px-4 py-3 text-right">{t('admin.thActions')}</th></tr>
           </thead>

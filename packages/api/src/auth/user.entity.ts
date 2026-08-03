@@ -42,9 +42,11 @@ export class User {
   created_at: Date;
 
   // 最近一次活跃时间：PresenceMiddleware 在任意带有效 token 的请求时节流更新（5 分钟粒度）。
-  // 管理端用户列表"最近访问"列 + 7/30/90/180/365 天活跃数统计基于此列。
+  // 管理端用户列表"最近访问"列 + 7/30/90/180/365 天活跃数统计基于此列（QueryBuilder 显式 select 读取）。
   // NULL = 迁移前注册且之后从未活跃（或从未登录使用过）。
-  @Column({ type: 'timestamptz', nullable: true })
+  // select:false 是关键降级设计：未跑迁移 0013 时，登录/注册/个人中心等默认查询不引用本列，
+  // 业务接口不受影响；仅管理端用户列表（显式 select）会报错。
+  @Column({ type: 'timestamptz', nullable: true, select: false })
   last_seen_at: Date;
 
   @UpdateDateColumn()
