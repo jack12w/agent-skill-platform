@@ -220,7 +220,7 @@ curl -s https://skills.rehomi.com/api/admin/pay/reconcile \
 | 帮助中心-付费与订阅 | https://skills.rehomi.com/help | 显示创作者会员制说明，推荐价 ¥29/¥79/¥268 |
 | 付费服务条款 | https://skills.rehomi.com/agreement | 正常加载 |
 | 用户订单页 | https://skills.rehomi.com/account/orders | 正常加载（登录后） |
-| 管理后台-订单 | https://skills.rehomi.com/hub/orders | 显示退款按钮 |
+| 管理后台-订单 | https://skills.rehomi.com/hub/orders | 显示退款按钮；「微信回调日志」Tab 可查回调原始报文（排障入口） |
 | 管理后台-交易设置 | https://skills.rehomi.com/hub/pay-settings | 抽成10%、冻结7天、最低提现¥20 |
 | 管理后台-对账 | https://skills.rehomi.com/hub/reconciliation | balanced=true |
 
