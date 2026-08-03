@@ -140,6 +140,26 @@ export class PricingController {
       throw new BadRequestException(`商用授权价不能低于 ${MIN_SELL_CENTS / 100} 元`);
     }
 
+    /*
+     * 会员依赖模式防呆：member_only / both 依赖创作者会员套餐，
+     * 若未设置套餐则用户无法订阅 → 技能变死路（无人可下载）。
+     * 此处强制校验，引导创作者先去交易设置配置会员价。
+     */
+    if (mode === 'member_only' || mode === 'both') {
+      const targetType = skill.owner_team_id ? 'team' : 'user';
+      const targetId = skill.owner_team_id || skill.owner_user_id;
+      if (targetId) {
+        const plan = await this.planRepo.findOne({
+          where: { target_type: targetType, target_id: targetId },
+        });
+        if (!plan) {
+          throw new BadRequestException(
+            '尚未设置会员套餐，无法使用「会员专属」或「付费+会员免费」模式。请先在交易设置中配置会员定价。',
+          );
+        }
+      }
+    }
+
     const pricing = this.pricingRepo.create({
       skill_id: skillId,
       pricing_mode: mode,

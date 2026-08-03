@@ -37,6 +37,7 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
   const [form, setForm] = useState({ name: '', content_md: '', tags: '', cover_url: '', owner_team_id: '' });
   const [myTeams, setMyTeams] = useState<any[]>([]);
   const [pricing, setPricing] = useState<{ pricing_mode: string; price_cents: number | string; member_included: boolean; commercial_price_cents: number | string }>({ pricing_mode: 'free', price_cents: 0, member_included: false, commercial_price_cents: 0 });
+  const [hasMembershipPlan, setHasMembershipPlan] = useState(false);
 
   useEffect(() => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -63,6 +64,16 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
                 commercial_price_cents: Math.round((Number(pj.pricing.commercial_price_cents) || 0) / 100),
               });
             }
+          }
+        } catch {}
+        // 查创作者是否有会员套餐（决定 member_only / both 模式是否可用）
+        try {
+          const tType = s.owner_team_id ? 'team' : 'user';
+          const tId = s.owner_team_id || s.owner_user_id;
+          const cpResp = await fetch(`/api/pay/creator-plan?targetType=${tType}&targetId=${encodeURIComponent(tId)}`);
+          if (cpResp.ok) {
+            const cp = await cpResp.json();
+            setHasMembershipPlan(!!cp?.hasPlan);
           }
         } catch {}
       } catch (e: any) { setError(e.message || 'Load failed'); }
@@ -103,7 +114,7 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
         });
         if (!pr.ok) {
           const e = await pr.json().catch(() => ({}));
-          console.warn('pricing save failed:', e.message);
+          alert(t('edit.pricingSaveFailed') + ': ' + (e.message || `HTTP ${pr.status}`));
         }
       } catch (e: any) { console.warn('pricing save error:', e?.message); }
       router.push(`/skills/${skill.slug || skill.id}`);
@@ -183,22 +194,40 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
             { key: 'paid', label: t('edit.modePaid'), desc: t('edit.modePaidDesc') },
             { key: 'member_only', label: t('edit.modeMember'), desc: t('edit.modeMemberDesc') },
             { key: 'both', label: t('edit.modeBoth'), desc: t('edit.modeBothDesc') },
-          ] as const).map((m) => (
-            <button
-              key={m.key}
-              type="button"
-              onClick={() => setPricing((p) => ({ ...p, pricing_mode: m.key, member_included: m.key === 'member_only' || m.key === 'both' ? true : p.member_included }))}
-              className={`text-left px-3 py-2.5 rounded-lg border transition-all ${
-                pricing.pricing_mode === m.key
-                  ? 'border-brand-600 bg-brand-50'
-                  : 'border-neutral-200 hover:bg-neutral-50'
-              }`}
-            >
-              <div className="text-sm font-medium">{m.label}</div>
-              <div className="text-[11px] text-neutral-500 mt-0.5 leading-snug">{m.desc}</div>
-            </button>
-          ))}
+          ] as const).map((m) => {
+            const needsPlan = m.key === 'member_only' || m.key === 'both';
+            const blocked = needsPlan && !hasMembershipPlan;
+            return (
+              <button
+                key={m.key}
+                type="button"
+                disabled={blocked}
+                onClick={() => {
+                  if (blocked) return;
+                  setPricing((p) => ({ ...p, pricing_mode: m.key, member_included: m.key === 'member_only' || m.key === 'both' ? true : p.member_included }));
+                }}
+                className={`text-left px-3 py-2.5 rounded-lg border transition-all ${
+                  blocked
+                    ? 'border-neutral-200 bg-neutral-50 opacity-60 cursor-not-allowed'
+                    : pricing.pricing_mode === m.key
+                    ? 'border-brand-600 bg-brand-50'
+                    : 'border-neutral-200 hover:bg-neutral-50'
+                }`}
+              >
+                <div className="text-sm font-medium">
+                  {m.label}
+                  {blocked && <span className="ml-1 text-[10px] text-amber-600">需先设套餐</span>}
+                </div>
+                <div className="text-[11px] text-neutral-500 mt-0.5 leading-snug">{m.desc}</div>
+              </button>
+            );
+          })}
         </div>
+        {!hasMembershipPlan && (
+          <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mb-4">
+            {t('edit.noPlanWarning')}
+          </p>
+        )}
 
         {pricing.pricing_mode === 'paid' || pricing.pricing_mode === 'both' ? (
           <div className="space-y-4">
