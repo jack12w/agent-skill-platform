@@ -51,7 +51,7 @@ git log --oneline -3
 ## 三、执行数据库迁移（关键！顺序不能错）
 
 > **注意**：`synchronize=false`，部署命令不会自动跑迁移。必须手动执行。
-> **顺序**：0010 → 0011 → 0012，不能跳序。
+> **顺序**：0010 → 0011 → 0012 → 0013，不能跳序（0013 与前三个无依赖，但建议一并执行）。
 
 ### 3.1 获取正确的数据库用户名和库名
 
@@ -84,6 +84,15 @@ docker exec -i agent_platform_db psql -U "$DBUSER" -d "$DBNAME" < migrations/001
 ```bash
 docker exec -i agent_platform_db psql -U "$DBUSER" -d "$DBNAME" < migrations/0012_drop_redundant_tables.sql
 ```
+
+### 3.4b 执行迁移 0013 — 用户活跃追踪（last_seen_at）
+
+```bash
+docker exec -i agent_platform_db psql -U "$DBUSER" -d "$DBNAME" < migrations/0013_user_last_seen.sql
+```
+
+> 给用户表加 `last_seen_at` 列 + 索引，支撑管理端用户列表的"最近访问"列和 7/30/90/180/365 天活跃数统计。
+> **注意**：未跑 0013 时管理端用户列表接口会报错（select 引用新列），其余功能不受影响。
 
 ### 3.5 验证表结构
 

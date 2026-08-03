@@ -208,12 +208,25 @@ export class AdminService {
   async listUsers(query: { page?: number; size?: number; search?: string }) {
     const { page = 1, size = 20, search } = query;
     const qb = this.userRepo.createQueryBuilder('u')
-      .select(['u.id', 'u.email', 'u.name', 'u.role', 'u.created_at'])
+      .select(['u.id', 'u.email', 'u.name', 'u.role', 'u.created_at', 'u.last_seen_at'])
       .orderBy('u.created_at', 'DESC')
       .take(size).skip((page - 1) * size);
     if (search) qb.andWhere('(u.name ILIKE :q OR u.email ILIKE :q)', { q: `%${search}%` });
     const [items, total] = await qb.getManyAndCount();
-    return { items, total, page, size };
+
+    // 5 档活跃用户数（last_seen_at 由 PresenceMiddleware 节流维护；单次条件聚合查询）
+    const rows = await this.userRepo.query(`
+      SELECT
+        COUNT(*) FILTER (WHERE last_seen_at >= now() - interval '7 days')::int   AS d7,
+        COUNT(*) FILTER (WHERE last_seen_at >= now() - interval '30 days')::int  AS d30,
+        COUNT(*) FILTER (WHERE last_seen_at >= now() - interval '90 days')::int  AS d90,
+        COUNT(*) FILTER (WHERE last_seen_at >= now() - interval '180 days')::int AS d180,
+        COUNT(*) FILTER (WHERE last_seen_at >= now() - interval '365 days')::int AS d365
+      FROM users
+    `);
+    const activeUsers = rows?.[0] || { d7: 0, d30: 0, d90: 0, d180: 0, d365: 0 };
+
+    return { items, total, page, size, activeUsers };
   }
 
   async updateUser(id: string, data: { role?: string }) {

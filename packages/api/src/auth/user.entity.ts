@@ -41,6 +41,12 @@ export class User {
   @CreateDateColumn()
   created_at: Date;
 
+  // 最近一次活跃时间：PresenceMiddleware 在任意带有效 token 的请求时节流更新（5 分钟粒度）。
+  // 管理端用户列表"最近访问"列 + 7/30/90/180/365 天活跃数统计基于此列。
+  // NULL = 迁移前注册且之后从未活跃（或从未登录使用过）。
+  @Column({ type: 'timestamptz', nullable: true })
+  last_seen_at: Date;
+
   @UpdateDateColumn()
   updated_at: Date;
 }

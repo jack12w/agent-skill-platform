@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { SkillsModule } from './skills/skills.module';
@@ -27,6 +27,7 @@ import { Feedback } from './common/feedback.entity';
 import { PublicTagGroupsController } from './common/public-tag-groups.controller';
 import { AnalyticsController } from './common/analytics.controller';
 import { FeedbackController } from './common/feedback.controller';
+import { PresenceMiddleware } from './common/presence.middleware';
 
 @Module({
   imports: [
@@ -68,4 +69,10 @@ import { FeedbackController } from './common/feedback.controller';
   controllers: [HealthController, AdminController, PublicTagGroupsController, AnalyticsController, FeedbackController],
   providers: [AdminService, AdminGuard],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    // 全局用户活跃追踪：任何带有效 token 的请求节流更新 users.last_seen_at。
+    // JwtModule 在 AuthModule 注册为 global，JwtService 此处可直接注入。
+    consumer.apply(PresenceMiddleware).forRoutes('*');
+  }
+}
