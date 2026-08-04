@@ -145,7 +145,13 @@ export class AdminPaymentsService implements OnModuleInit {
     try {
       await this.balance.freeze(wd.user_id, Number(wd.amount_cents));
     } catch (e: any) {
-      await this.failWithdrawal(wd, e?.message || '余额不足，冻结失败');
+      // freeze 在扣减前即抛错（余额不足），该笔从未成功冻结。仅标记失败、**禁止解冻**，
+      // 否则会错误地释放同一用户其他单子已冻结的金额、把 frozen 扣成负数、凭空增加可用余额
+      // （资金安全 HIGH：用户可在退款穿底后借提现审批的误解冻薅走平台资金）。
+      await this.wdRepo.update(
+        { id: wd.id },
+        { status: 'FAILED', fail_reason: (e?.message || '余额不足，冻结失败').slice(0, 200) } as any,
+      );
       return (await this.wdRepo.findOne({ where: { id } }))!;
     }
 
