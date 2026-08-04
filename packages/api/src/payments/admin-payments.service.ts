@@ -329,8 +329,40 @@ export class AdminPaymentsService implements OnModuleInit {
 
     const creditedCents = await sum(this.txRepo, 'amount_cents', 'v', "t.direction = 'in'");
     const refundDeductCents = await sum(this.txRepo, 'amount_cents', 'v', "t.biz_type = 'refund_deduct'");
-    // 入账流水 - 退款扣回 应当等于「已交付订单应付分成 - 已退款部分对应的分成」
-    const settlementDiffCents = creditedCents - refundDeductCents - (payableCents - refundDeductCents);
+
+    // 期望退款扣回：遍历每个 SUCCESS 退款，按所属订单 item 的分成比例回算应扣创作者的金额。
+    // 旧公式 `credited - refundDeduct - (payable - refundDeduct)` 把退款项代数抵消，
+    // 等价于 `credited - payable`，退款侧完全未被校验，且 HIGH-2（多次退款漏扣）会被掩盖。
+    // 这里显式算出 expectedRefundDeduct，与流水里实际扣回的 refundDeductCents 勾稽。
+    const successRefunds = await this.refundRepo.find({ where: { status: 'SUCCESS' } });
+    const orderIds = [...new Set(successRefunds.map((r) => r.order_id))];
+    const ordersMap = new Map(
+      (orderIds.length ? await this.orderRepo.find({ where: { id: In(orderIds) } }) : []).map((o) => [o.id, o]),
+    );
+    const itemsByOrder = new Map<string, typeof successRefunds>();
+    if (orderIds.length) {
+      const allItems = await this.itemRepo.find({ where: { order_id: In(orderIds) } });
+      for (const it of allItems) {
+        const arr = itemsByOrder.get(it.order_id) || [];
+        arr.push(it as any);
+        itemsByOrder.set(it.order_id, arr);
+      }
+    }
+    let expectedRefundDeduct = 0;
+    for (const rf of successRefunds) {
+      const o = ordersMap.get(rf.order_id);
+      if (!o) continue;
+      const paid = Number(o.paid_cents || 0) || 1;
+      const ratio = Number(rf.amount_cents) / paid;
+      for (const it of itemsByOrder.get(rf.order_id) || []) {
+        const income = Number((it as any).seller_income_cents || 0);
+        if ((it as any).seller_user_id && income > 0) {
+          expectedRefundDeduct += Math.round(income * ratio);
+        }
+      }
+    }
+    // 入账流水 - 实际退款扣回 应当等于「已交付订单应付分成 - 期望退款扣回」
+    const settlementDiffCents = creditedCents - refundDeductCents - (payableCents - expectedRefundDeduct);
 
     // ── 3. 余额侧：账面 vs 流水 ──
     const balanceAvailableCents = await sum(this.balRepo, 'available_cents', 'v');
@@ -373,6 +405,7 @@ export class AdminPaymentsService implements OnModuleInit {
         payableCents,
         creditedCents,
         refundDeductCents,
+        expectedRefundDeductCents: expectedRefundDeduct,
         platformCommissionCents,
         balanceAvailableCents,
         balanceFrozenCents,

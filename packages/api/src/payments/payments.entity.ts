@@ -344,7 +344,7 @@ export class BalanceTransaction {
   @Column({ type: 'bigint', default: 0, transformer: bigintTransformer })
   balance_after_cents: number;
 
-  @Column() // sale|membership_share|refund_deduct|withdraw|adjust
+  @Column() // sale|membership|refund_deduct|withdraw|adjust
   biz_type: string;
 
   @Column({ type: 'uuid', nullable: true })

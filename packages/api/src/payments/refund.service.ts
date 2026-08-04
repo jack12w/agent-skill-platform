@@ -195,7 +195,8 @@ export class RefundService {
    * 退款成功后的冲正。
    *
    * 设计原则（与 deliver 一致）：**各步骤幂等**，SUCCESS 标记放在最后作为结果标记，
-   * 而非前置闸门。debitForRefund 已按 (ref_id) 去重；权益/订阅撤销为幂等写操作；
+   * 而非前置闸门。debitForRefund 以退款单 id 为幂等键（见下方调用）；
+   * 权益/订阅撤销为幂等写操作；
    * refunded_cents 由「该订单所有 SUCCESS 退款聚合 + 本次金额」计算得出（非累加），
    * 因此重复调用不会产生重复冲正或重复累加。
    *
@@ -217,14 +218,16 @@ export class RefundService {
     const paid = Number(order.paid_cents || 0) || 1;
     const ratio = Number(refund.amount_cents) / paid;
 
-    // 1. 回冲创作者余额（按比例扣减当初入账的分成；debitForRefund 按 ref_id 去重）
+    // 1. 回冲创作者余额（按比例扣减当初入账的分成）。
+    //    ref_id 必须用「退款单 id」而非订单 id：同一订单多次（部分）退款时，
+    //    每笔退款才能拿到独立幂等键，否则后续退款的扣回会被唯一索引吞掉 → 创作者少扣（HIGH-2）。
     for (const it of items) {
       const income = Number(it.seller_income_cents || 0);
       if (it.seller_user_id && income > 0) {
         const back = Math.round(income * ratio);
         if (back > 0) {
-          await this.balance.debitForRefund(it.seller_user_id, back, order.id);
-          this.logger.log(`退款冲正：创作者 ${it.seller_user_id} 扣回 ${back} 分（订单 ${order.order_no}）`);
+          await this.balance.debitForRefund(it.seller_user_id, back, refund.id);
+          this.logger.log(`退款冲正：创作者 ${it.seller_user_id} 扣回 ${back} 分（退款单 ${refund.out_refund_no}）`);
         }
       }
     }

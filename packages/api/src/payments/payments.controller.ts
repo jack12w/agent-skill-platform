@@ -223,7 +223,18 @@ export class PaymentsController {
       real_name: body.realName || (user as any).real_name || null,
       out_bill_no: outBillNo,
     });
-    return this.wdRepo.save(wd);
+    const saved = await this.wdRepo.save(wd);
+
+    // 并发兜底：上方按「可提额度」校验时，两步之间若另一笔申请同时插入，
+    // 待审占用会发生并发绕过。插入后重算一次（此时 pending 已含本次），
+    // 若扣掉冻结收入后仍不足以覆盖全部待审占用，则撤销本次，避免超额占用。
+    // 审批时的 freeze 仍是最终防线（冻结不足直接失败），此处仅消除"并发产生失败单"的体验问题。
+    const recheck = await this.balance.getWithdrawableInfo(uid);
+    if (recheck.availableCents - recheck.frozenIncomeCents - recheck.pendingWithdrawCents < 0) {
+      await this.wdRepo.remove(saved);
+      throw new BadRequestException('提现额度不足或存在并发申请，请刷新后重试');
+    }
+    return saved;
   }
 
   /** 我的提现记录 */

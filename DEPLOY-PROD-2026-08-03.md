@@ -99,9 +99,9 @@ ff72dc1 fix(hub): 数据总览折线图偶发不渲染 + 底部滚动弹出渐�
 ## 四、数据库迁移（顺序不能错）
 
 > **背景**：`synchronize=false`，部署命令**不会**自动跑迁移，必须手动执行。
-> **顺序**：0010 → 0011 → 0013 → 0014（0012 仅旧环境需要，见 4.4）。
+> **顺序**：0010 → 0011 → 0013 → 0014 → 0015（0012 仅旧环境需要，见 4.4）。
 > **硬依赖**：0011 和 0013 未执行就重建容器，会导致接口报错（详见各节）。
-> **0014 幂等**：给 `balance_transactions` 加 `(ref_id, biz_type, direction)` 部分唯一索引（ref_id 非空），杜绝并发双入账；`CREATE UNIQUE INDEX IF NOT EXISTS` 可安全重复执行。
+> **0014 / 0015 幂等**：给 `balance_transactions` 加部分唯一索引（ref_id 非空）杜绝并发双入账。0015 在 0014 基础上**补入 `user_id` 维度**（0014 漏了 user_id，会导致同订单多 item 同卖家、或同订单多次退款时跨卖家/跨退款碰撞漏记）。`DROP/CREATE UNIQUE INDEX IF EXISTS` 均可安全重复执行——即便 0014 已跑过，0015 也会把它重建为含 user_id 的版本。
 
 ### 4.1 获取正确的数据库用户名和库名
 
@@ -162,7 +162,19 @@ users 表加 `last_seen_at` 列 + 索引，支撑管理端"最近访问"列和 5
 docker exec -i agent_platform_db psql -U "$DBUSER" -d "$DBNAME" < migrations/0014_balance_tx_idempotent.sql
 ```
 
-给 `balance_transactions` 加部分唯一索引 `uq_balance_tx_ref (ref_id, biz_type, direction) WHERE ref_id IS NOT NULL`。这是并发双入账的**数据库层兜底**：`credit`（创作者分成入账）/ `debitForRefund`（退款冲正）已按 ref_id 先查后插去重，但查插之间存在竞争窗口，本索引把幂等保证下沉到 DB，彻底杜绝"微信回调 + 前端轮询"并发同时给创作者入账两次。代码层已 try/catch 吞掉 `23505` 唯一冲突错误，视为幂等成功。
+给 `balance_transactions` 加部分唯一索引 `(ref_id, biz_type, direction) WHERE ref_id IS NOT NULL`。这是并发双入账的**数据库层兜底**：`credit`（创作者分成入账）/ `debitForRefund`（退款冲正）已按 ref_id 先查后插去重，但查插之间存在竞争窗口，本索引把幂等保证下沉到 DB，彻底杜绝"微信回调 + 前端轮询"并发同时给创作者入账两次。代码层已 try/catch 吞掉 `23505` 唯一冲突错误，视为幂等成功。
+
+### 4.5c 迁移 0015 — 幂等索引补 user_id 维度（**本次部署必须跑**）
+
+```bash
+docker exec -i agent_platform_db psql -U "$DBUSER" -d "$DBNAME" < migrations/0015_balance_tx_idempotent_user_scoped.sql
+```
+
+⚠️ **为什么必须有这一步**：0014 的索引定义**漏了 `user_id`** 列。这会导致两个资金漏洞：
+- 同一订单含多个 item、且由同一卖家出售时，后续 item 的入账 `(ref_id=order.id, biz_type='sale')` 与首个 item 唯一碰撞被吞掉 → 该卖家**少记收入**；
+- 同一订单发生多次（部分）退款时，后续退款的扣回 `(ref_id=order.id, biz_type='refund_deduct')` 与首次退款碰撞 → 创作者**少扣、平台多付**。
+
+0015 把索引重建为 `(user_id, ref_id, biz_type, direction) WHERE ref_id IS NOT NULL`，组合更具体（只会减少碰撞，不会与既有数据冲突）。配套代码改动：`credit`/`debitForRefund` 已从"先 increment 后 insert"改为"先原子 `INSERT ... ON CONFLICT DO NOTHING RETURNING` 再 increment"，从根上消除并发双入账；`deliver` 的入账 ref_id 改为 `order.id:item.id`、`finalizeRefund` 的扣回 ref_id 改为退款单 id，确保同订单多 item / 多次退款各自拿到独立幂等键。
 
 ### 4.6 验证迁移结果
 

@@ -48,21 +48,28 @@ export class BalanceService {
       .execute();
   }
 
-  /** 入账（收入）。按 (ref_id, biz_type, direction=in) 幂等：重复调用只入账一次。 */
+  /**
+   * 入账（收入）。**先原子插入流水、再调整余额**——这是并发安全的关键。
+   *
+   * 旧实现先把余额 increment 再 insert 流水，唯一索引只能拦住"重复 insert"，
+   * 拦不住已经发生的重复 increment：微信回调发货与前端轮询发货并发进入同一订单时，
+   * 两路都通过了"先查后插"的非原子判重，各自 increment 一次 → 余额双倍入账（HIGH-1）。
+   *
+   * 新实现：用 `INSERT ... ON CONFLICT DO NOTHING RETURNING id` 做原子门控（唯一索引
+   * (user_id, ref_id, biz_type, direction) WHERE ref_id IS NOT NULL 兜底层）。
+   * RETURNING 仅对真正插入的行返回，冲突则为空数组 → 视为幂等成功、**不**调整余额。
+   * 只有流水真正落库的那一路才 increment，从根上消除并发双入账。
+   *
+   * 无 ref_id 的调用（如提现 withdraw 走 completeWithdraw）无法幂等，保留原有直接入账逻辑。
+   */
   async credit(user_id: string, amount_cents: number, biz_type: string, ref_id?: string, remark?: string) {
     if (amount_cents <= 0) return;
-    if (ref_id) {
-      const dup = await this.txRepo.findOne({ where: { ref_id, biz_type, direction: 'in' } as any });
-      if (dup) {
-        this.logger.log(`credit 幂等跳过（已入账 ref_id=${ref_id} biz=${biz_type}）`);
-        return;
-      }
-    }
     await this.ensure(user_id);
-    await this.balRepo.increment({ user_id }, 'available_cents', amount_cents);
-    await this.balRepo.increment({ user_id }, 'total_earned_cents', amount_cents);
-    const bal = await this.balRepo.findOne({ where: { user_id } });
-    try {
+
+    if (!ref_id) {
+      await this.balRepo.increment({ user_id }, 'available_cents', amount_cents);
+      await this.balRepo.increment({ user_id }, 'total_earned_cents', amount_cents);
+      const bal = await this.balRepo.findOne({ where: { user_id } });
       await this.txRepo.insert({
         user_id,
         direction: 'in',
@@ -72,14 +79,29 @@ export class BalanceService {
         ref_id,
         remark,
       } as any);
-    } catch (e: any) {
-      // 并发双插被 0014 唯一索引挡下（pg 23505）：视为幂等成功，跳过。
-      if (e?.code === '23505') {
-        this.logger.log(`credit 唯一冲突，幂等跳过（ref_id=${ref_id} biz=${biz_type}）`);
-        return;
-      }
-      throw e;
+      return;
     }
+
+    const inserted = await this.txRepo.query(
+      `INSERT INTO balance_transactions (id, user_id, direction, amount_cents, balance_after_cents, biz_type, ref_id, remark, created_at)
+       VALUES (gen_random_uuid(), $1, 'in', $2, 0, $3, $4, $5, NOW())
+       ON CONFLICT (user_id, ref_id, biz_type, direction) WHERE ref_id IS NOT NULL DO NOTHING
+       RETURNING id`,
+      [user_id, amount_cents, biz_type, ref_id, remark ?? null],
+    );
+    if (!Array.isArray(inserted) || inserted.length === 0) {
+      this.logger.log(`credit 幂等跳过（已入账 ref_id=${ref_id} biz=${biz_type}）`);
+      return;
+    }
+
+    // 仅当流水真正插入时才调整余额——并发双调用的另一路走到这里时 inserted 为空，跳过。
+    await this.balRepo.increment({ user_id }, 'available_cents', amount_cents);
+    await this.balRepo.increment({ user_id }, 'total_earned_cents', amount_cents);
+    const bal = await this.balRepo.findOne({ where: { user_id } });
+    await this.txRepo.update(
+      { user_id, ref_id, biz_type, direction: 'in' } as any,
+      { balance_after_cents: bal?.available_cents ?? amount_cents },
+    );
   }
 
   /** 提现：冻结（available → frozen） */
@@ -112,20 +134,20 @@ export class BalanceService {
     await this.balRepo.increment({ user_id }, 'frozen_cents', -amount_cents);
   }
 
-  /** 退款扣减（可能为负挂账）。按 (ref_id, biz_type=refund_deduct, direction=out) 幂等。 */
+  /**
+   * 退款扣减（可能为负挂账）。与 credit 同源的原子门控：先 INSERT ... ON CONFLICT DO NOTHING
+   * RETURNING，仅真正插入的那一路才 decrement 余额。
+   *
+   * 注意调用方必须把 ref_id 传**退款单 id**（而非订单 id）——同一订单的多次部分退款
+   * 才能各自拿到独立幂等键，否则第二次起的扣回会被唯一索引吞掉 → 创作者少扣（HIGH-2）。
+   */
   async debitForRefund(user_id: string, amount_cents: number, ref_id?: string) {
     await this.ensure(user_id);
-    if (ref_id) {
-      const dup = await this.txRepo.findOne({ where: { ref_id, biz_type: 'refund_deduct', direction: 'out' } as any });
-      if (dup) {
-        this.logger.log(`debitForRefund 幂等跳过（已扣回 ref_id=${ref_id}）`);
-        return;
-      }
-    }
-    await this.balRepo.increment({ user_id }, 'available_cents', -amount_cents);
-    await this.balRepo.increment({ user_id }, 'total_earned_cents', -amount_cents);
-    const bal = await this.balRepo.findOne({ where: { user_id } });
-    try {
+
+    if (!ref_id) {
+      await this.balRepo.increment({ user_id }, 'available_cents', -amount_cents);
+      await this.balRepo.increment({ user_id }, 'total_earned_cents', -amount_cents);
+      const bal = await this.balRepo.findOne({ where: { user_id } });
       await this.txRepo.insert({
         user_id,
         direction: 'out',
@@ -134,13 +156,28 @@ export class BalanceService {
         biz_type: 'refund_deduct',
         ref_id,
       } as any);
-    } catch (e: any) {
-      if (e?.code === '23505') {
-        this.logger.log(`debitForRefund 唯一冲突，幂等跳过（ref_id=${ref_id}）`);
-        return;
-      }
-      throw e;
+      return;
     }
+
+    const inserted = await this.txRepo.query(
+      `INSERT INTO balance_transactions (id, user_id, direction, amount_cents, balance_after_cents, biz_type, ref_id, created_at)
+       VALUES (gen_random_uuid(), $1, 'out', $2, 0, 'refund_deduct', $3, NOW())
+       ON CONFLICT (user_id, ref_id, biz_type, direction) WHERE ref_id IS NOT NULL DO NOTHING
+       RETURNING id`,
+      [user_id, amount_cents, ref_id],
+    );
+    if (!Array.isArray(inserted) || inserted.length === 0) {
+      this.logger.log(`debitForRefund 幂等跳过（已扣回 ref_id=${ref_id}）`);
+      return;
+    }
+
+    await this.balRepo.increment({ user_id }, 'available_cents', -amount_cents);
+    await this.balRepo.increment({ user_id }, 'total_earned_cents', -amount_cents);
+    const bal = await this.balRepo.findOne({ where: { user_id } });
+    await this.txRepo.update(
+      { user_id, ref_id, biz_type: 'refund_deduct', direction: 'out' } as any,
+      { balance_after_cents: bal?.available_cents ?? -amount_cents },
+    );
   }
 
   /* ============ 可提现额度（结算冻结期，无定时任务） ============ */

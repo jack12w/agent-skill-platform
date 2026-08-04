@@ -347,7 +347,8 @@ export class OrdersService implements OnModuleInit {
    * 或上次部分失败后微信重发回调 / 前端轮询触发 syncFromWechat 自愈）。
    * 正确性由「步骤幂等」保证，而非前置抢占：
    *   - grantPurchase 用 orUpdate upsert（同 user+skill+license 不重复）
-   *   - balance.credit 按 (ref_id, biz_type) 去重，重复调用只入账一次
+   *   - balance.credit 按 (user_id, ref_id, biz_type, direction) 原子去重，
+   *     重复调用只入账一次（ref_id 为 order.id:item.id，避免同订单多 item 同卖家碰撞）
    *   - activate / activateCreatorSub 查已存在→顺延，天然幂等
    * 最终标记 DELIVERED 放在「所有步骤成功之后」，作为结果标记而非前置闸门。
    * 若某步骤抛异常：不回滚（订单保持非 DELIVERED），直接抛出，由下一次
@@ -363,11 +364,13 @@ export class OrdersService implements OnModuleInit {
           await this.entitlement.grantPurchase(order.user_id, it.subject_id, order.id);
         }
         if (it.seller_user_id && Number(it.seller_income_cents) > 0) {
+          // ref_id 用 order.id:item.id：同一个订单可能含多个 item、甚至多个 item 属同一卖家，
+          // 用纯 order.id 会让后序 item 的入账与首个碰撞被索引吞掉 → 卖家少记收入（HIGH-1 同源）。
           await this.balance.credit(
             it.seller_user_id,
             Number(it.seller_income_cents),
             'sale',
-            order.id,
+            `${order.id}:${it.id}`,
             `技能销售 ${order.order_no}`,
           );
         }
@@ -389,7 +392,7 @@ export class OrdersService implements OnModuleInit {
       const seller = items[0]?.seller_user_id;
       const income = Number(items[0]?.seller_income_cents) || 0;
       if (seller && income > 0) {
-        await this.balance.credit(seller, income, 'membership', order.id, `创作者会员 ${order.order_no}`);
+        await this.balance.credit(seller, income, 'membership', `${order.id}:${items[0]?.id}`, `创作者会员 ${order.order_no}`);
       }
     } else {
       // 老全平台会员（过渡期保留，不参与分成）
