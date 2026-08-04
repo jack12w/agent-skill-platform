@@ -104,35 +104,32 @@ export class BalanceService {
     );
   }
 
-  /** 提现：冻结（available → frozen） */
+  /**
+   * 提现：冻结（available → frozen）。
+   *
+   * 原子条件递减：单条 UPDATE 内校验可用余额充足并扣减，杜绝「先读余额再 increment 减」的
+   * TOCTOU 竞态——否则同一用户若并发审批多笔提现，两路可能都读到充足余额、各自递减，
+   * 导致余额透支为负（用户可提取超过实得）。
+   * 注：提现额度（结算冻结期 + 待审占用）的更上层校验在 createWithdrawal/getWithdrawableInfo，
+   * 此处仅保证「不会把 available 扣成负数」。
+   */
   async freeze(user_id: string, amount_cents: number) {
-    const bal = await this.balRepo.findOne({ where: { user_id } });
-    if (!bal || bal.available_cents < amount_cents) {
+    const rows = await this.balRepo.query(
+      `UPDATE creator_balances SET available_cents = available_cents - $1, frozen_cents = frozen_cents + $1
+       WHERE user_id = $2 AND available_cents >= $1
+       RETURNING user_id`,
+      [Number(amount_cents), user_id],
+    );
+    if (!Array.isArray(rows) || rows.length === 0) {
       throw new BadRequestException('余额不足');
     }
-    await this.balRepo.increment({ user_id }, 'available_cents', -amount_cents);
-    await this.balRepo.increment({ user_id }, 'frozen_cents', amount_cents);
   }
 
-  /** 提现成功：冻结释放并计入已提现 */
-  async completeWithdraw(user_id: string, amount_cents: number) {
-    await this.balRepo.increment({ user_id }, 'frozen_cents', -amount_cents);
-    await this.balRepo.increment({ user_id }, 'total_withdrawn_cents', amount_cents);
-    const bal = await this.balRepo.findOne({ where: { user_id } });
-    await this.txRepo.insert({
-      user_id,
-      direction: 'out',
-      amount_cents,
-      balance_after_cents: bal?.available_cents ?? 0,
-      biz_type: 'withdraw',
-    } as any);
-  }
-
-  /** 提现失败：解冻回可用 */
-  async unfreeze(user_id: string, amount_cents: number) {
-    await this.balRepo.increment({ user_id }, 'available_cents', amount_cents);
-    await this.balRepo.increment({ user_id }, 'frozen_cents', -amount_cents);
-  }
+  /**
+   * 提现成功/失败的余额核销与解冻已内联进 AdminPaymentsService 的 DB 事务
+   * （completeWithdrawal/failWithdrawal），本类不再单独提供 completeWithdraw/unfreeze，
+   * 避免「状态翻转」与「余额变动」分两步执行带来的极端崩溃残留（见 LOW-1）。
+   */
 
   /**
    * 退款扣减（可能为负挂账）。与 credit 同源的原子门控：先 INSERT ... ON CONFLICT DO NOTHING

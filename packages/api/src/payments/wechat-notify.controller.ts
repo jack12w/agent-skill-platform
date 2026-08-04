@@ -54,9 +54,9 @@ export class WechatNotifyController {
   @HttpCode(200)
   async transferNotify(@Req() req: Request) {
     const { rawBody, headers } = this.extract(req);
-    const sig = headers['wechatpay-signature'];
-    const ts = headers['wechatpay-timestamp'];
-    const nonce = headers['wechatpay-nonce'];
+    const sig = headers['wechatpay-signature'] || headers['Wechatpay-Signature'];
+    const ts = headers['wechatpay-timestamp'] || headers['Wechatpay-Timestamp'];
+    const nonce = headers['wechatpay-nonce'] || headers['Wechatpay-Nonce'];
     if (!this.wechat.verifySignature(ts, nonce, rawBody, sig)) {
       throw new BadRequestException('签名验证失败');
     }
