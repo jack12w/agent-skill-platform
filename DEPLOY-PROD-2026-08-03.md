@@ -237,7 +237,7 @@ WECHAT_PAY_PLATFORM_CERT="-----BEGIN CERTIFICATE-----\nMII...\n-----END CERTIFIC
 
 ## 六、微信商户后台配置
 
-登录 pay.weixin.qq.com，完成两项配置：
+登录 pay.weixin.qq.com，完成三项配置：
 
 1. **支付回调地址**（产品中心 → Native 支付 → 开发配置）：
    ```
@@ -247,6 +247,10 @@ WECHAT_PAY_PLATFORM_CERT="-----BEGIN CERTIFICATE-----\nMII...\n-----END CERTIFIC
    ```
    https://skills.rehomi.com/api/pay/wechat/refund-notify
    ```
+3. **商家转账到零钱**（产品中心 → 商家转账到零钱 → 开通）：
+   - 这是创作者**提现自动打款**的依赖，不开通则审批提现会报错
+   - 使用场景：**佣金报酬（transfer_scene_id=1373）**，需在商户平台维护收款用户列表（或按页面指引设置免密额度）
+   - 转账结果回调地址**无需手工配置**：代码创建转账单时已随单携带 `notify_url`（`https://skills.rehomi.com/api/pay/wechat/transfer-notify`）
 
 确认：Native 支付产品已签约开通；公众号 appid 已在「AppID账号管理」绑定。
 
@@ -361,6 +365,18 @@ curl -s -H "Authorization: Bearer $TOKEN" https://skills.rehomi.com/api/admin/pa
    - 创作者余额等额回冲
    - 订单状态变为「已退款」，下载权限被撤销
    - 对账接口仍 `balanced: true`
+4. **提现测试**（需先完成第六节第 3 项「商家转账到零钱」开通）：
+   - 等结算冻结期过后（默认 7 天；测试可临时在 hub/交易设置把冻结期改为 0 天，测完改回）
+   - 创作者在「我的钱包」申请提现（≥ 最低提现额，默认 ¥20；测试可临时调低）
+   - 管理员在 hub/withdrawals 点「审批打款」→ 观察：
+     - 状态变为 `PAID`（即时到账）或 `PROCESSING`（已受理，微信确认中，回调/定时查单会自动收口为 PAID）
+     - 创作者微信零钱到账；余额流水有 withdraw 记录
+   - 若显示 `FAILED`：按 fail_reason 排查（多为转账产品未开通/收款人未维护/商户号余额不足）
+
+### 8.7 超时关单验证
+
+创建一个订单不支付，等 16 分钟后：该订单应自动变为「已关闭」（每分钟定时清扫），
+且 API 日志无 `定时关单失败` 告警。前端收银台轮询会显示"订单已关闭"。
 
 ---
 
@@ -417,3 +433,9 @@ A：正常。`last_seen_at` 从部署后开始累积，用户下次登录使用�
 
 **Q11：微信轮换平台证书后回调验签全部失败？**
 A：微信支付会定期轮换平台证书（通常提前邮件/站内信通知，约一年一次）。当前实现用 `WECHAT_PAY_PLATFORM_CERT` 单个证书验签（fail-closed），微信换证后旧证书验签必失败 → 回调全拒 → 支付入账中断。**处理**：重新下载新平台证书（CertificateDownloader 工具或 `/v3/certificates` 接口），更新 `.env.production` 的 `WECHAT_PAY_PLATFORM_CERT`，然后 `up -d --force-recreate api` 即可恢复。轮换期间微信支付会自动重试回调（最多 15 次/3 天），恢复后历史回调会补发，不会丢账。
+
+**Q12：提现单一直显示 PROCESSING（打款中）？**
+A：商家转账是异步接口，PROCESSING = 微信已受理、等待到账确认。正常几秒到几分钟内由转账回调（transfer-notify）自动收口为 PAID；若回调延迟，系统每 2 分钟定时查单兜底。**长时间（>30 分钟）不消失**：到微信商户平台「商家转账到零钱」查看该单实际状态（常见原因：收款人未维护/商户号可用余额不足导致转账挂单）。微信侧最终失败时系统会自动标 FAILED 并把余额退回创作者。
+
+**Q13：审批提现提示"该提现单已被处理"？**
+A：并发保护（原子抢占），说明该单已被审批过或正在处理中。刷新页面查看最新状态即可，不是故障。

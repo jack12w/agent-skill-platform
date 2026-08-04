@@ -34,7 +34,12 @@ export default function HubWithdrawalsPage() {
     try {
       const r = await fetch(`/api/admin/pay/withdrawals/${id}/approve`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}` } });
       const j = await r.json();
-      setMsg(j.status === 'PAID' ? '已打款' : (j.status === 'FAILED' ? `打款失败:${j.fail_reason || ''}` : j.status));
+      setMsg(
+        j.status === 'PAID' ? '已打款'
+        : j.status === 'FAILED' ? `打款失败:${j.fail_reason || ''}`
+        : j.status === 'PROCESSING' ? '已受理，打款中（等待微信确认）'
+        : (j.message || j.status),
+      );
     } catch (e: any) { setMsg(e?.message || '操作失败'); }
     fetchData();
   };
@@ -49,6 +54,7 @@ export default function HubWithdrawalsPage() {
           <option value="">{t('admin.allStatus')}</option>
           <option value="PENDING">PENDING</option>
           <option value="REVIEWING">REVIEWING</option>
+          <option value="PROCESSING">PROCESSING</option>
           <option value="PAID">PAID</option>
           <option value="FAILED">FAILED</option>
           <option value="CANCELLED">CANCELLED</option>

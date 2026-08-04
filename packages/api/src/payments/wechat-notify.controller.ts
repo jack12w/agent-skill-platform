@@ -1,7 +1,9 @@
-import { Controller, Post, Req, HttpCode } from '@nestjs/common';
+import { Controller, Post, Req, HttpCode, BadRequestException } from '@nestjs/common';
 import { Request } from 'express';
 import { OrdersService } from './orders.service';
 import { RefundService } from './refund.service';
+import { AdminPaymentsService } from './admin-payments.service';
+import { WechatPayService } from './wechat-pay.service';
 
 /**
  * 微信异步回调。故意不挂 AuthGuard（微信无法带 Bearer）。
@@ -12,6 +14,8 @@ export class WechatNotifyController {
   constructor(
     private readonly orders: OrdersService,
     private readonly refunds: RefundService,
+    private readonly adminPayments: AdminPaymentsService,
+    private readonly wechat: WechatPayService,
   ) {}
 
   private extract(req: Request): { rawBody: string; headers: Record<string, string> } {
@@ -40,5 +44,25 @@ export class WechatNotifyController {
   async refundNotify(@Req() req: Request) {
     const { rawBody, headers } = this.extract(req);
     return this.refunds.handleRefundNotify(rawBody, headers);
+  }
+
+  /**
+   * 商家转账结果通知（提现打款终态：SUCCESS / FAIL / CANCELLED）。
+   * 地址随转账单创建时的 notify_url 携带，无需商户后台配置。
+   */
+  @Post('wechat/transfer-notify')
+  @HttpCode(200)
+  async transferNotify(@Req() req: Request) {
+    const { rawBody, headers } = this.extract(req);
+    const sig = headers['wechatpay-signature'];
+    const ts = headers['wechatpay-timestamp'];
+    const nonce = headers['wechatpay-nonce'];
+    if (!this.wechat.verifySignature(ts, nonce, rawBody, sig)) {
+      throw new BadRequestException('签名验证失败');
+    }
+    const payload = JSON.parse(rawBody);
+    const decrypted = this.wechat.decryptResource(payload.resource);
+    await this.adminPayments.handleTransferNotify(decrypted);
+    return { code: 'SUCCESS' };
   }
 }

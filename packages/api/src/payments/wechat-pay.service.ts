@@ -278,6 +278,10 @@ export class WechatPayService {
   /**
    * 商家转账到零钱（自动提现打款）。
    * 场景：佣金报酬（transfer_scene_id=1373，需先在商户平台开通并维护收款用户列表）。
+   *
+   * ⚠️ 这是异步接口：创建成功仅表示「已受理」，返回的 state 可能是
+   * ACCEPTED/PROCESSING（转账中），不代表用户已到账。终态（SUCCESS/FAIL/CANCELLED）
+   * 必须通过转账回调（notify_url）或 queryTransfer 查单确认。
    */
   async transferToBalance(params: {
     outBillNo: string;
@@ -297,8 +301,21 @@ export class WechatPayService {
       openid: params.openid,
       transfer_amount: params.amountCents,
       transfer_remark: params.remark.slice(0, 32),
+      notify_url: this.transferNotifyUrl,
     };
     return this.request('POST', urlPath, payload);
+  }
+
+  /** 查询转账单状态（按商户单号）。返回含 state: ACCEPTED|PROCESSING|SUCCESS|FAIL|CANCELLED 等 */
+  async queryTransfer(outBillNo: string): Promise<any> {
+    const urlPath = `/v3/fund-app/mch-transfer/transfer-bills/out-bill-no/${outBillNo}`;
+    return this.request('GET', urlPath);
+  }
+
+  /** 转账结果回调地址（创建转账单时随单携带，无需商户后台配置） */
+  private get transferNotifyUrl(): string {
+    const base = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+    return `${base}/api/pay/wechat/transfer-notify`;
   }
 
   /** 姓名 RSA 加密（转账报文中实名信息需加密） */
