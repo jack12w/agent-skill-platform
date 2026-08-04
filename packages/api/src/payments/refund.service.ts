@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Not } from 'typeorm';
 import {
   Order,
   OrderItem,
@@ -192,22 +192,24 @@ export class RefundService {
   }
 
   /**
-   * 退款成功后的冲正。用原子抢占保证幂等 —— 微信退款回调同样会重发。
+   * 退款成功后的冲正。
+   *
+   * 设计原则（与 deliver 一致）：**各步骤幂等**，SUCCESS 标记放在最后作为结果标记，
+   * 而非前置闸门。debitForRefund 已按 (ref_id) 去重；权益/订阅撤销为幂等写操作；
+   * refunded_cents 由「该订单所有 SUCCESS 退款聚合 + 本次金额」计算得出（非累加），
+   * 因此重复调用不会产生重复冲正或重复累加。
+   *
+   * 若冲正中途失败，SUCCESS 未标记 → 微信退款回调重发或管理员重试时再次进入，
+   * 幂等步骤从上次成功断点继续，直至全部完成，不存在「已退款但权益未撤销」的死状态。
    */
   async finalizeRefund(outRefundNo: string): Promise<void> {
-    const claim = await this.refundRepo
-      .createQueryBuilder()
-      .update(Refund)
-      .set({ status: 'SUCCESS', refunded_at: new Date() })
-      .where('out_refund_no = :no AND status <> :s', { no: outRefundNo, s: 'SUCCESS' })
-      .execute();
-    if (!(claim.affected ?? 0)) {
+    const refund = await this.refundRepo.findOne({ where: { out_refund_no: outRefundNo } });
+    if (!refund) return;
+    if (refund.status === 'SUCCESS') {
       this.logger.warn(`退款 ${outRefundNo} 已冲正，跳过`);
       return;
     }
 
-    const refund = await this.refundRepo.findOne({ where: { out_refund_no: outRefundNo } });
-    if (!refund) return;
     const order = await this.orderRepo.findOne({ where: { id: refund.order_id } });
     if (!order) return;
 
@@ -215,7 +217,7 @@ export class RefundService {
     const paid = Number(order.paid_cents || 0) || 1;
     const ratio = Number(refund.amount_cents) / paid;
 
-    // 1. 回冲创作者余额（按退款比例扣减当初入账的分成，允许扣成负数挂账）
+    // 1. 回冲创作者余额（按比例扣减当初入账的分成；debitForRefund 按 ref_id 去重）
     for (const it of items) {
       const income = Number(it.seller_income_cents || 0);
       if (it.seller_user_id && income > 0) {
@@ -227,7 +229,10 @@ export class RefundService {
       }
     }
 
-    const totalRefunded = Number(order.refunded_cents || 0) + Number(refund.amount_cents);
+    // refunded_cents 由聚合计算（幂等），而非累加，避免重发导致重复计数
+    const successRefunds = await this.refundRepo.find({ where: { order_id: order.id, status: 'SUCCESS' } });
+    const totalRefunded =
+      successRefunds.reduce((s, r) => s + Number(r.amount_cents || 0), 0) + Number(refund.amount_cents);
     const fullyRefunded = totalRefunded >= paid;
 
     // 2. 全额退款才撤销已发放的权益 / 订阅；部分退款保留（视为折价补偿）
@@ -248,11 +253,19 @@ export class RefundService {
       }
     }
 
-    // 3. 回写订单
+    // 3. 回写订单（幂等）
     await this.orderRepo.update(
       { id: order.id },
       { refunded_cents: totalRefunded, status: fullyRefunded ? 'REFUNDED' : 'PARTIAL_REFUNDED' },
     );
+
+    // 4. 最后原子标记 SUCCESS（仅结果标记；步骤幂等已防重复冲正）
+    await this.refundRepo
+      .createQueryBuilder()
+      .update(Refund)
+      .set({ status: 'SUCCESS', refunded_at: new Date() })
+      .where('out_refund_no = :no AND status <> :s', { no: outRefundNo, s: 'SUCCESS' })
+      .execute();
   }
 
   /** 某订单的退款记录（管理端展示） */

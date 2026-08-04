@@ -48,22 +48,38 @@ export class BalanceService {
       .execute();
   }
 
-  /** 入账（收入） */
+  /** 入账（收入）。按 (ref_id, biz_type, direction=in) 幂等：重复调用只入账一次。 */
   async credit(user_id: string, amount_cents: number, biz_type: string, ref_id?: string, remark?: string) {
     if (amount_cents <= 0) return;
+    if (ref_id) {
+      const dup = await this.txRepo.findOne({ where: { ref_id, biz_type, direction: 'in' } as any });
+      if (dup) {
+        this.logger.log(`credit 幂等跳过（已入账 ref_id=${ref_id} biz=${biz_type}）`);
+        return;
+      }
+    }
     await this.ensure(user_id);
     await this.balRepo.increment({ user_id }, 'available_cents', amount_cents);
     await this.balRepo.increment({ user_id }, 'total_earned_cents', amount_cents);
     const bal = await this.balRepo.findOne({ where: { user_id } });
-    await this.txRepo.insert({
-      user_id,
-      direction: 'in',
-      amount_cents,
-      balance_after_cents: bal?.available_cents ?? amount_cents,
-      biz_type,
-      ref_id,
-      remark,
-    } as any);
+    try {
+      await this.txRepo.insert({
+        user_id,
+        direction: 'in',
+        amount_cents,
+        balance_after_cents: bal?.available_cents ?? amount_cents,
+        biz_type,
+        ref_id,
+        remark,
+      } as any);
+    } catch (e: any) {
+      // 并发双插被 0014 唯一索引挡下（pg 23505）：视为幂等成功，跳过。
+      if (e?.code === '23505') {
+        this.logger.log(`credit 唯一冲突，幂等跳过（ref_id=${ref_id} biz=${biz_type}）`);
+        return;
+      }
+      throw e;
+    }
   }
 
   /** 提现：冻结（available → frozen） */
@@ -96,20 +112,35 @@ export class BalanceService {
     await this.balRepo.increment({ user_id }, 'frozen_cents', -amount_cents);
   }
 
-  /** 退款扣减（可能为负挂账） */
+  /** 退款扣减（可能为负挂账）。按 (ref_id, biz_type=refund_deduct, direction=out) 幂等。 */
   async debitForRefund(user_id: string, amount_cents: number, ref_id?: string) {
     await this.ensure(user_id);
+    if (ref_id) {
+      const dup = await this.txRepo.findOne({ where: { ref_id, biz_type: 'refund_deduct', direction: 'out' } as any });
+      if (dup) {
+        this.logger.log(`debitForRefund 幂等跳过（已扣回 ref_id=${ref_id}）`);
+        return;
+      }
+    }
     await this.balRepo.increment({ user_id }, 'available_cents', -amount_cents);
     await this.balRepo.increment({ user_id }, 'total_earned_cents', -amount_cents);
     const bal = await this.balRepo.findOne({ where: { user_id } });
-    await this.txRepo.insert({
-      user_id,
-      direction: 'out',
-      amount_cents,
-      balance_after_cents: bal?.available_cents ?? -amount_cents,
-      biz_type: 'refund_deduct',
-      ref_id,
-    } as any);
+    try {
+      await this.txRepo.insert({
+        user_id,
+        direction: 'out',
+        amount_cents,
+        balance_after_cents: bal?.available_cents ?? -amount_cents,
+        biz_type: 'refund_deduct',
+        ref_id,
+      } as any);
+    } catch (e: any) {
+      if (e?.code === '23505') {
+        this.logger.log(`debitForRefund 唯一冲突，幂等跳过（ref_id=${ref_id}）`);
+        return;
+      }
+      throw e;
+    }
   }
 
   /* ============ 可提现额度（结算冻结期，无定时任务） ============ */

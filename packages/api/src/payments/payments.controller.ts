@@ -78,7 +78,8 @@ export class PaymentsController {
   }
 
   /**
-   * 创作者会员套餐（公开）：供订阅弹窗展示。
+   * 创作者会员套餐（需登录）：前端订阅弹窗在用户已登录时使用本接口；
+   * 未登录场景请调用公开的 PricingController.creator-plan 接口。
    * 返回该创作者设置的月/季/年价格（分，0=未开通）与平台建议默认价。
    */
   @Get('membership/plan')
@@ -191,7 +192,7 @@ export class PaymentsController {
     const uid = this.uid(req);
     const user = await this.userRepo.findOne({ where: { id: uid } });
     if (!user?.wechat_openid) throw new BadRequestException('请先在账号绑定微信');
-    const amount = Number(body.amountCents);
+    const amount = Math.round(Number(body.amountCents));
     const min = await this.settings.getWithdrawMinCents();
     if (!amount || amount < min) throw new BadRequestException(`最低提现 ${min / 100} 元`);
 

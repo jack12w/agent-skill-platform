@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, LessThan, Not } from 'typeorm';
 import {
   Order,
   OrderItem,
@@ -300,6 +300,10 @@ export class OrdersService implements OnModuleInit {
     const claimed = await this.markPaymentPaid(payment.id, decrypted.transaction_id, decrypted);
     if (!claimed) {
       await this.logRepo.update(log.id, { processed: true });
+      // 已支付过：若上次发货未完成（部分步骤失败被回滚），此处补发。
+      // 因 deliver 各步骤幂等，重复调用安全，且由下次回调/查单自愈。
+      const o = await this.orderRepo.findOne({ where: { id: payment.order_id } });
+      if (o && o.status !== 'DELIVERED') await this.deliver(o);
       return { code: 'SUCCESS' };
     }
 
@@ -339,81 +343,77 @@ export class OrdersService implements OnModuleInit {
   /**
    * 发货/记账（买断写权益+创作者余额；会员激活）。
    *
-   * 幂等由「原子抢占 DELIVERED 状态」保证：并发的回调与主动查单里，只有把
-   * status 从非 DELIVERED 改成 DELIVERED 的那一路 affected=1，其余直接返回。
-   * 此前 membership / creator_membership 分支把终态写成 PAID，导致哨兵
-   * `if (status === 'DELIVERED') return` 永远不成立 —— 重复回调会重复给创作者
-   * 入账、重复顺延会员到期时间。现在所有类型统一以 DELIVERED 收口。
+   * 设计原则：**各步骤本身幂等**，因此本方法可安全重复调用（并发回调+查单、
+   * 或上次部分失败后微信重发回调 / 前端轮询触发 syncFromWechat 自愈）。
+   * 正确性由「步骤幂等」保证，而非前置抢占：
+   *   - grantPurchase 用 orUpdate upsert（同 user+skill+license 不重复）
+   *   - balance.credit 按 (ref_id, biz_type) 去重，重复调用只入账一次
+   *   - activate / activateCreatorSub 查已存在→顺延，天然幂等
+   * 最终标记 DELIVERED 放在「所有步骤成功之后」，作为结果标记而非前置闸门。
+   * 若某步骤抛异常：不回滚（订单保持非 DELIVERED），直接抛出，由下一次
+   * 回调/查单重试；因步骤幂等，重试会从上次成功的断点继续，直至全部完成，
+   * 不存在「钱已入账但订单卡死」的不可恢复状态。
    */
   private async deliver(order: Order) {
-    const claim = await this.orderRepo
-      .createQueryBuilder()
-      .update(Order)
-      .set({ status: 'DELIVERED' })
-      .where('id = :id AND status <> :delivered', { id: order.id, delivered: 'DELIVERED' })
-      .execute();
-    if (!(claim.affected ?? 0)) {
-      this.logger.warn(`订单 ${order.order_no} 已交付，跳过重复发货`);
-      return;
-    }
+    const items = await this.itemRepo.find({ where: { order_id: order.id } });
 
-    try {
-      const items = await this.itemRepo.find({ where: { order_id: order.id } });
-
-      if (order.type === 'skill') {
-        for (const it of items) {
-          if (it.subject_id) {
-            await this.entitlement.grantPurchase(order.user_id, it.subject_id, order.id);
-          }
-          if (it.seller_user_id && Number(it.seller_income_cents) > 0) {
-            await this.balance.credit(
-              it.seller_user_id,
-              Number(it.seller_income_cents),
-              'sale',
-              order.id,
-              `技能销售 ${order.order_no}`,
-            );
-          }
+    if (order.type === 'skill') {
+      for (const it of items) {
+        if (it.subject_id) {
+          await this.entitlement.grantPurchase(order.user_id, it.subject_id, order.id);
         }
-      } else if (order.type === 'creator_membership') {
-        // 创作者会员：激活订阅 + 订阅费直接进创作者余额（取消全平台收益池均分）
-        const snap = items[0]?.snapshot as any;
-        const plan = snap?.plan || 'monthly';
-        const targetType = snap?.targetType;
-        const targetId = snap?.targetId;
-        await this.membership.activateCreatorSub(
-          order.user_id,
-          targetType,
-          targetId,
-          plan,
-          Number(items[0]?.unit_cents) || 0,
-          order.id,
-        );
-        const seller = items[0]?.seller_user_id;
-        const income = Number(items[0]?.seller_income_cents) || 0;
-        if (seller && income > 0) {
-          await this.balance.credit(seller, income, 'membership', order.id, `创作者会员 ${order.order_no}`);
+        if (it.seller_user_id && Number(it.seller_income_cents) > 0) {
+          await this.balance.credit(
+            it.seller_user_id,
+            Number(it.seller_income_cents),
+            'sale',
+            order.id,
+            `技能销售 ${order.order_no}`,
+          );
         }
-      } else {
-        // 老全平台会员（过渡期保留，不参与分成）
-        const plan = (items[0]?.snapshot as any)?.plan || 'monthly';
-        await this.membership.activate(order.user_id, plan, order.id);
       }
-      order.status = 'DELIVERED';
-    } catch (e) {
-      // 发货失败必须回滚状态，否则订单会停在「已交付但实际没发货」的黑洞里，
-      // 且后续回调/查单都会被幂等哨兵挡掉，永远无法补发。
-      await this.orderRepo.update({ id: order.id }, { status: 'PAID' });
-      this.logger.error(`订单 ${order.order_no} 发货失败，已回滚为 PAID 等待重试`, e as any);
-      throw e;
+    } else if (order.type === 'creator_membership') {
+      // 创作者会员：激活订阅 + 订阅费直接进创作者余额（取消全平台收益池均分）
+      const snap = items[0]?.snapshot as any;
+      const plan = snap?.plan || 'monthly';
+      const targetType = snap?.targetType;
+      const targetId = snap?.targetId;
+      await this.membership.activateCreatorSub(
+        order.user_id,
+        targetType,
+        targetId,
+        plan,
+        Number(items[0]?.unit_cents) || 0,
+        order.id,
+      );
+      const seller = items[0]?.seller_user_id;
+      const income = Number(items[0]?.seller_income_cents) || 0;
+      if (seller && income > 0) {
+        await this.balance.credit(seller, income, 'membership', order.id, `创作者会员 ${order.order_no}`);
+      }
+    } else {
+      // 老全平台会员（过渡期保留，不参与分成）
+      const plan = (items[0]?.snapshot as any)?.plan || 'monthly';
+      await this.membership.activate(order.user_id, plan, order.id);
     }
+
+    // 全部步骤成功 → 末尾标记 DELIVERED（仅作为结果标记；步骤幂等已防双发）
+    await this.orderRepo.update({ id: order.id, status: Not('DELIVERED') }, { status: 'DELIVERED' });
   }
+
 
   /** 前端轮询兜底：主动查单并同步 */
   async syncFromWechat(outTradeNo: string): Promise<void> {
     try {
       const payment = await this.payRepo.findOne({ where: { out_trade_no: outTradeNo } });
-      if (!payment || payment.status === 'PAID') return;
+      if (!payment) return;
+      // 已支付：若订单尚未交付（上次发货部分失败被回滚），补发自愈（步骤幂等，安全）。
+      // 前端轮询会持续触发本方法，因此卡在 PAID 的订单能自动恢复为 DELIVERED。
+      if (payment.status === 'PAID') {
+        const o = await this.orderRepo.findOne({ where: { id: payment.order_id } });
+        if (o && o.status !== 'DELIVERED') await this.deliver(o);
+        return;
+      }
       const r = await this.wechat.queryOrder(outTradeNo);
       if (r?.trade_state === 'SUCCESS') {
         // 金额比对同样不能省：查单结果也可能与本地订单金额不符（如后台改价后的脏数据）
@@ -423,17 +423,17 @@ export class OrdersService implements OnModuleInit {
           );
           return;
         }
-        // 与回调路径共用同一把原子锁，避免两边同时发货
+        // 与回调路径共用同一把原子锁，避免两边同时发起微信查单以外的重复动作；
+        // 发货步骤本身幂等，并发交付安全。
         const claimed = await this.markPaymentPaid(payment.id, r.transaction_id);
-        if (!claimed) return;
+        if (!claimed) return; // 另一路已抢占，由它负责 deliver
         const order = await this.orderRepo.findOne({ where: { id: payment.order_id } });
         if (order) {
           await this.orderRepo.update(
             { id: order.id },
             { status: 'PAID', paid_cents: payment.amount_cents, paid_at: new Date() },
           );
-          order.status = 'PAID';
-          await this.deliver(order);
+          if (order.status !== 'DELIVERED') await this.deliver(order);
         }
       } else if (r?.trade_state === 'CLOSED' || r?.trade_state === 'PAYERROR') {
         payment.status = 'CLOSED';

@@ -99,8 +99,9 @@ ff72dc1 fix(hub): 数据总览折线图偶发不渲染 + 底部滚动弹出渐�
 ## 四、数据库迁移（顺序不能错）
 
 > **背景**：`synchronize=false`，部署命令**不会**自动跑迁移，必须手动执行。
-> **顺序**：0010 → 0011 → 0013（0012 仅旧环境需要，见 4.4）。
+> **顺序**：0010 → 0011 → 0013 → 0014（0012 仅旧环境需要，见 4.4）。
 > **硬依赖**：0011 和 0013 未执行就重建容器，会导致接口报错（详见各节）。
+> **0014 幂等**：给 `balance_transactions` 加 `(ref_id, biz_type, direction)` 部分唯一索引（ref_id 非空），杜绝并发双入账；`CREATE UNIQUE INDEX IF NOT EXISTS` 可安全重复执行。
 
 ### 4.1 获取正确的数据库用户名和库名
 
@@ -154,6 +155,14 @@ docker exec -i agent_platform_db psql -U "$DBUSER" -d "$DBNAME" < migrations/001
 users 表加 `last_seen_at` 列 + 索引，支撑管理端"最近访问"列和 5 档活跃数统计。
 
 > 已有降级保护：该列在实体上是 `select:false`，未跑 0013 时登录/注册等业务接口**不受影响**，仅管理端用户列表页报错。但仍建议与其他迁移一并执行。
+
+### 4.5b 迁移 0014 — 余额流水幂等索引
+
+```bash
+docker exec -i agent_platform_db psql -U "$DBUSER" -d "$DBNAME" < migrations/0014_balance_tx_idempotent.sql
+```
+
+给 `balance_transactions` 加部分唯一索引 `uq_balance_tx_ref (ref_id, biz_type, direction) WHERE ref_id IS NOT NULL`。这是并发双入账的**数据库层兜底**：`credit`（创作者分成入账）/ `debitForRefund`（退款冲正）已按 ref_id 先查后插去重，但查插之间存在竞争窗口，本索引把幂等保证下沉到 DB，彻底杜绝"微信回调 + 前端轮询"并发同时给创作者入账两次。代码层已 try/catch 吞掉 `23505` 唯一冲突错误，视为幂等成功。
 
 ### 4.6 验证迁移结果
 
