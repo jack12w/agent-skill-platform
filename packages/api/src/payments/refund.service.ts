@@ -10,7 +10,7 @@ import {
   CreatorSubscription,
   WechatNotifyLog,
 } from './payments.entity';
-import { WechatPayService } from './wechat-pay.service';
+import { WechatPayService, WechatApiError } from './wechat-pay.service';
 import { BalanceService } from './balance.service';
 
 /**
@@ -68,6 +68,12 @@ export class RefundService {
     const paid = Number(order.paid_cents || 0);
     if (paid <= 0) throw new BadRequestException('订单无实付金额，无需退款');
 
+    // 微信官方限制：同一笔订单最多发起 50 次部分退款
+    const refundCount = await this.refundRepo.count({ where: { order_id: order.id } });
+    if (refundCount >= 50) {
+      throw new BadRequestException('该订单退款次数已达微信上限（50 次），无法继续发起退款');
+    }
+
     const already = await this.refundedSoFar(order.id);
     const maxRefundable = paid - already;
     if (maxRefundable <= 0) throw new BadRequestException('该订单已全额退款');
@@ -111,6 +117,36 @@ export class RefundService {
       }
       return this.refundRepo.findOne({ where: { out_refund_no: outRefundNo } });
     } catch (e: any) {
+      // 微信官方规范：退款失败重试必须复用原 out_refund_no（换新单号 = 可能退两次）。
+      // 因此这里要区分失败性质：
+      //   4xx 业务拒绝 → 微信明确未受理，标 FAILED 释放额度，重试新单号安全；
+      //   超时/网络/5xx → 结果不确定（微信可能已受理），绝不能盲目标 FAILED 放任重试，
+      //     必须用原单号主动查退款核实：已受理→按真实状态处理/保留 PENDING 等回调；
+      //     确认无此单（404）→ 未受理，才可安全标 FAILED。
+      const isBizReject = e instanceof WechatApiError && e.wechatStatus >= 400 && e.wechatStatus < 500;
+
+      if (!isBizReject) {
+        try {
+          const q = await this.wechat.queryRefund(outRefundNo);
+          if (q?.status === 'SUCCESS') {
+            this.logger.warn(`退款申请超时但微信已成功（${outRefundNo}），按成功收口`);
+            await this.finalizeRefund(outRefundNo);
+            return this.refundRepo.findOne({ where: { out_refund_no: outRefundNo } });
+          }
+          // PROCESSING / ABNORMAL 等：微信已受理，保留 PENDING 等退款回调收口
+          this.logger.warn(`退款已被微信受理（${q?.status || '未知状态'}），保留 PENDING 等待回调: ${outRefundNo}`);
+          return this.refundRepo.findOne({ where: { out_refund_no: outRefundNo } });
+        } catch (qe: any) {
+          if (!(qe instanceof WechatApiError && qe.wechatStatus === 404)) {
+            // 查单本身也失败（网络抖动等）：无法确定受理状态，保留 PENDING，
+            // 由退款回调或管理员在「退款记录」人工核实，额度保持占用以防超退。
+            this.logger.warn(`退款申请与查单结果均不确定，保留 PENDING 待回调/人工核实: ${outRefundNo}`);
+            return this.refundRepo.findOne({ where: { out_refund_no: outRefundNo } });
+          }
+          // 404 = 微信确认无此退款单 → 未受理，fallthrough 标 FAILED
+        }
+      }
+
       await this.refundRepo.update(
         { out_refund_no: outRefundNo },
         { status: 'FAILED', reason: `${reason || ''} | 失败:${e?.message || '未知'}`.slice(0, 200) },

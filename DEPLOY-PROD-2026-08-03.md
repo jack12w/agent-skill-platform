@@ -414,3 +414,6 @@ A：迁移 0011 未执行（硬依赖）。先跑 0010 再跑 0011。
 
 **Q10：活跃统计显示全是 0？**
 A：正常。`last_seen_at` 从部署后开始累积，用户下次登录使用时自动记录；老用户基数为 NULL 显示"从未"。
+
+**Q11：微信轮换平台证书后回调验签全部失败？**
+A：微信支付会定期轮换平台证书（通常提前邮件/站内信通知，约一年一次）。当前实现用 `WECHAT_PAY_PLATFORM_CERT` 单个证书验签（fail-closed），微信换证后旧证书验签必失败 → 回调全拒 → 支付入账中断。**处理**：重新下载新平台证书（CertificateDownloader 工具或 `/v3/certificates` 接口），更新 `.env.production` 的 `WECHAT_PAY_PLATFORM_CERT`，然后 `up -d --force-recreate api` 即可恢复。轮换期间微信支付会自动重试回调（最多 15 次/3 天），恢复后历史回调会补发，不会丢账。

@@ -18,6 +18,19 @@ import * as fs from 'fs';
  *   2. 金额比对 见 orders.service 处理回调时比对 amount.total
  *   3. 幂等    transaction_id 唯一索引，见 orders.service
  */
+
+/**
+ * 微信 API 错误：继承 BadRequestException（对前端仍是 400，交互不变），
+ * 额外携带微信侧 HTTP 状态码。退款流程据此区分：
+ *   4xx = 微信明确业务拒绝（订单未受理，可安全标记失败并重试）
+ *   超时/网络错误/5xx = 结果不确定（微信可能已受理，必须复用原单号查证，严禁换新单号）
+ */
+export class WechatApiError extends BadRequestException {
+  constructor(message: string, public readonly wechatStatus: number) {
+    super(message);
+  }
+}
+
 @Injectable()
 export class WechatPayService {
   private readonly logger = new Logger(WechatPayService.name);
@@ -140,7 +153,7 @@ export class WechatPayService {
     return JSON.parse(decrypted.toString('utf8'));
   }
 
-  /** 统一请求封装：自动带签名头、解析 JSON */
+  /** 统一请求封装：自动带签名头、解析 JSON。10s 超时（铁律一：外部调用必须有超时兜底） */
   private async request(method: string, urlPath: string, bodyObj?: any): Promise<any> {
     const body = bodyObj ? JSON.stringify(bodyObj) : '';
     const auth = this.buildAuthorization(method, urlPath, body);
@@ -153,11 +166,14 @@ export class WechatPayService {
         'User-Agent': 'SkillDepot/1.0',
       },
       body: method.toUpperCase() === 'GET' ? undefined : body,
+      signal: AbortSignal.timeout(10_000),
     });
     const text = await res.text();
     if (!res.ok) {
       this.logger.error('微信支付接口错误', text);
-      throw new BadRequestException(`微信支付接口错误: ${res.status} ${text}`);
+      // WechatApiError 继承 BadRequestException：对前端仍是 400（交互不变），
+      // 同时携带微信侧状态码，供退款流程区分「4xx 业务拒绝（未受理）」与「超时/5xx（不确定是否受理）」。
+      throw new WechatApiError(`微信支付接口错误: ${res.status} ${text}`, res.status);
     }
     return text ? JSON.parse(text) : {};
   }

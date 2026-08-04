@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
 import {
@@ -29,7 +29,7 @@ export interface CreateOrderInput {
 }
 
 @Injectable()
-export class OrdersService {
+export class OrdersService implements OnModuleInit {
   private readonly logger = new Logger(OrdersService.name);
 
   constructor(
@@ -54,8 +54,61 @@ export class OrdersService {
     return `SD${Date.now()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
   }
 
+  /**
+   * 定时清扫超时未支付订单（每分钟）。此前 closeExpired 无调用方是死代码。
+   * 用 setInterval 而非引入 @nestjs/schedule：零新依赖，与 auth.service 现有风格一致；
+   * closeExpired 本身幂等（CLOSED 后不再命中查询），单实例部署无并发问题。
+   */
+  onModuleInit() {
+    setInterval(() => {
+      this.closeExpired().catch((e) => this.logger.warn('定时关单失败', e));
+    }, 60_000).unref();
+  }
+
+  /**
+   * 防重复下单：同用户、同商品、同档位存在未过期 PENDING_PAY 订单时直接复用，
+   * 返回结构与新建完全一致（前端无感）。覆盖双击/重试/刷新页面再点支付的场景。
+   * Native code_url 有效期 2 小时 > 订单 15 分钟过期，复用期间二维码必然有效。
+   * 价格变更后 15 分钟内复用旧价订单，属可接受窗口；毫秒级并发撞单概率极低，
+   * 即便发生也只是多一笔待支付订单（用户只会扫其中一个码），无资金风险。
+   */
+  private async findReusablePendingOrder(userId: string, input: CreateOrderInput) {
+    const qb = this.orderRepo
+      .createQueryBuilder('o')
+      .innerJoin(OrderItem, 'i', 'i.order_id = o.id')
+      .where('o.user_id = :userId', { userId })
+      .andWhere(`o.status = 'PENDING_PAY'`)
+      .andWhere('o.expire_at > now()')
+      .andWhere('i.subject_type = :type', { type: input.type })
+      .orderBy('o.created_at', 'DESC')
+      .limit(1);
+
+    if (input.type === 'skill') {
+      if (!input.skillId) return null;
+      qb.andWhere('i.subject_id = :sid', { sid: input.skillId });
+    } else if (input.type === 'creator_membership') {
+      if (!input.targetId) return null;
+      qb.andWhere('i.subject_id = :tid', { tid: input.targetId })
+        .andWhere(`i.snapshot->>'plan' = :plan`, { plan: input.plan });
+    } else {
+      qb.andWhere(`i.snapshot->>'plan' = :plan`, { plan: input.plan || 'monthly' });
+    }
+
+    const order = await qb.getOne();
+    if (!order) return null;
+    const payment = await this.payRepo.findOne({ where: { order_id: order.id, status: 'PENDING' } });
+    if (!payment) return null; // 订单在但支付单缺失/异常，走正常新建流程
+
+    this.logger.log(`复用未支付订单 ${order.order_no}（防重复下单）`);
+    return { orderNo: order.order_no, tradeType: payment.trade_type, pay: payment.prepay_data, expireAt: order.expire_at };
+  }
+
   /** 创建订单并发起微信支付 */
   async createOrder(userId: string, input: CreateOrderInput): Promise<any> {
+    // 防重复下单：有未过期的同商品待支付订单直接复用（返回结构与新建一致，前端无感）
+    const reusable = await this.findReusablePendingOrder(userId, input);
+    if (reusable) return reusable;
+
     const commissionBp = await this.settings.getCommissionBp();
     const orderNo = this.genOrderNo();
     let total = 0;
