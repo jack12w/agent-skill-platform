@@ -43,7 +43,7 @@ export class BalanceService {
     await this.balRepo
       .createQueryBuilder()
       .insert()
-      .values({ user_id, available_cents: 0, frozen_cents: 0, total_earned_cents: 0, total_withdrawn_cents: 0, version: 0 })
+      .values({ user_id, available_cents: 0, frozen_cents: 0, total_earned_cents: 0, total_withdrawn_cents: 0 })
       .orIgnore()
       .execute();
   }

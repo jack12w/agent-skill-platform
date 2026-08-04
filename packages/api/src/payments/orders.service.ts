@@ -72,7 +72,7 @@ export class OrdersService implements OnModuleInit {
    * 价格变更后 15 分钟内复用旧价订单，属可接受窗口；毫秒级并发撞单概率极低，
    * 即便发生也只是多一笔待支付订单（用户只会扫其中一个码），无资金风险。
    */
-  private async findReusablePendingOrder(userId: string, input: CreateOrderInput) {
+  private async findReusablePendingOrder(userId: string, input: CreateOrderInput, desiredTradeType?: string) {
     const qb = this.orderRepo
       .createQueryBuilder('o')
       .innerJoin(OrderItem, 'i', 'i.order_id = o.id')
@@ -98,6 +98,11 @@ export class OrdersService implements OnModuleInit {
     if (!order) return null;
     const payment = await this.payRepo.findOne({ where: { order_id: order.id, status: 'PENDING' } });
     if (!payment) return null; // 订单在但支付单缺失/异常，走正常新建流程
+    // LOW-4：复用订单的支付通道与本次期望不一致时不复用（避免通道降级，如扫码用户后来想走 JSAPI）
+    if (desiredTradeType && payment.trade_type !== desiredTradeType) {
+      this.logger.log(`复用订单 ${order.order_no} 通道(${payment.trade_type})与期望(${desiredTradeType})不一致，放弃复用`);
+      return null;
+    }
 
     this.logger.log(`复用未支付订单 ${order.order_no}（防重复下单）`);
     return { orderNo: order.order_no, tradeType: payment.trade_type, pay: payment.prepay_data, expireAt: order.expire_at };
@@ -105,8 +110,15 @@ export class OrdersService implements OnModuleInit {
 
   /** 创建订单并发起微信支付 */
   async createOrder(userId: string, input: CreateOrderInput): Promise<any> {
-    // 防重复下单：有未过期的同商品待支付订单直接复用（返回结构与新建一致，前端无感）
-    const reusable = await this.findReusablePendingOrder(userId, input);
+    // 先取用户（决定支付方式 NATIVE/JSAPI/H5，并用于复用订单的通道一致性判断）
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    const desiredTradeType: 'NATIVE' | 'JSAPI' | 'H5' =
+      input.tradeType === 'JSAPI' && user?.wechat_openid ? 'JSAPI' : input.tradeType === 'H5' ? 'H5' : 'NATIVE';
+
+    // 防重复下单：有未过期的同商品待支付订单直接复用（返回结构与新建一致，前端无感）。
+    // 但若复用订单的支付通道与本次期望不一致（如用户先扫码、后拿到 openid 想走 JSAPI），
+    // 不复用、新建一笔正确通道的订单，避免用户被降级到二维码（LOW-4 优化）。
+    const reusable = await this.findReusablePendingOrder(userId, input, desiredTradeType);
     if (reusable) return reusable;
 
     const commissionBp = await this.settings.getCommissionBp();
@@ -212,10 +224,8 @@ export class OrdersService implements OnModuleInit {
     });
     await this.itemRepo.save(savedItem);
 
-    // 支付方式：默认 Native 扫码；有 openid 且请求 JSAPI 则用 JSAPI
-    const user = await this.userRepo.findOne({ where: { id: userId } });
-    const tradeType: 'NATIVE' | 'JSAPI' | 'H5' =
-      input.tradeType === 'JSAPI' && user?.wechat_openid ? 'JSAPI' : input.tradeType === 'H5' ? 'H5' : 'NATIVE';
+    // 支付方式已在函数开头按 openid 与 input.tradeType 确定（desiredTradeType），此处复用，保证复用判断一致
+    const tradeType = desiredTradeType;
 
     const payResult = await this.wechat.createOrder({
       description,

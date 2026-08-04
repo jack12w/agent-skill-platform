@@ -6,7 +6,6 @@ import {
   Index,
   CreateDateColumn,
   UpdateDateColumn,
-  VersionColumn,
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
@@ -320,9 +319,6 @@ export class CreatorBalance {
 
   @Column({ type: 'bigint', default: 0, transformer: bigintTransformer })
   total_withdrawn_cents: number;
-
-  @VersionColumn()
-  version: number;
 }
 
 /** 余额流水（复式，永不删改） */

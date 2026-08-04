@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, LessThanOrEqual } from 'typeorm';
 import { Membership, CreatorSubscription } from './payments.entity';
@@ -82,22 +82,27 @@ export class MembershipService {
     // 按唯一键 (user_id, target_type, target_id) 定位同一行，忽略 status / expires_at：
     // 否则订阅过期后（status 仍为 active、仅 expires_at 已过）再次订阅会因找不到有效行
     // 而走 INSERT 分支，撞全局唯一索引 → 500。过期后续订应复位为 active 并从今天顺延。
-    const existing = await this.csRepo.findOne({
-      where: { user_id: userId, target_type: targetType, target_id: targetId },
-    });
     // 续费基准取 max(到期日, 现在)：有效期内续费顺延；过期后续订从今天起算，避免得到比现在更早的过期时间。
-    const base = existing && new Date(existing.expires_at).getTime() > Date.now() ? new Date(existing.expires_at) : new Date();
+    const base = new Date();
     const expires = new Date(base.getTime() + this.durationDays(plan) * 86400_000);
-    if (existing) {
-      existing.status = 'active'; // 过期后重订阅复位
-      existing.expires_at = expires;
-      existing.plan = plan;
-      existing.price_cents = priceCents;
-      existing.order_id = orderId;
-      return this.csRepo.save(existing);
-    }
-    return this.csRepo.save(
-      this.csRepo.create({
+    // 并发安全（LOW-3）：两个请求对同一 (user,target) 首次订阅时都可能 findOne 未命中而走 INSERT，
+    // 撞全局唯一索引 → 第二路报 23505。捕获后重试走 update 分支即可自愈。
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const existing = await this.csRepo.findOne({
+        where: { user_id: userId, target_type: targetType, target_id: targetId },
+      });
+      if (existing) {
+        const ref =
+          new Date(existing.expires_at).getTime() > Date.now() ? new Date(existing.expires_at) : new Date();
+        const newExpires = new Date(new Date(ref).getTime() + this.durationDays(plan) * 86400_000);
+        existing.status = 'active'; // 过期后重订阅复位
+        existing.expires_at = newExpires;
+        existing.plan = plan;
+        existing.price_cents = priceCents;
+        existing.order_id = orderId;
+        return this.csRepo.save(existing);
+      }
+      const created = this.csRepo.create({
         user_id: userId,
         target_type: targetType,
         target_id: targetId,
@@ -106,8 +111,18 @@ export class MembershipService {
         status: 'active',
         expires_at: expires,
         order_id: orderId,
-      }),
-    );
+      });
+      try {
+        return await this.csRepo.save(created);
+      } catch (e: any) {
+        if (e?.code === '23505' && attempt < 2) {
+          this.logger.warn(`activateCreatorSub 并发插入冲突，重试 update 分支: ${userId}/${targetType}/${targetId}`);
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new BadRequestException('订阅激活重试失败，请稍后再试');
   }
 
   /** 我的全部有效创作者会员订阅 */

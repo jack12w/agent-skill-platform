@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, MoreThan, In } from 'typeorm';
+import { Repository, LessThan, MoreThan, In, DataSource } from 'typeorm';
 import {
   Order,
   OrderItem,
@@ -33,6 +33,7 @@ export class AdminPaymentsService implements OnModuleInit {
     @InjectRepository(Team) private readonly teamRepo: Repository<Team>,
     private readonly wechat: WechatPayService,
     private readonly balance: BalanceService,
+    private readonly dataSource: DataSource,
   ) {}
 
   private async paginate<T>(repo: Repository<T>, where: any, page: number, size: number, order: any = { created_at: 'DESC' }) {
@@ -197,28 +198,52 @@ export class AdminPaymentsService implements OnModuleInit {
     return (await this.wdRepo.findOne({ where: { id } }))!;
   }
 
-  /** 终态：打款成功（原子防重，completeWithdraw 只执行一次） */
+  /**
+   * 终态：打款成功。状态翻转与余额核销放进同一个 DB 事务（LOW-1 优化）——
+   * 余额核销若失败，整笔回滚、状态退回 PROCESSING，下次回调/查单可安全重试，
+   * 不再依赖 reconcile 兜底极端崩溃瞬间（旧实现：状态已标 PAID 但余额未扣，需对账补）。
+   */
   private async completeWithdrawal(wd: Withdrawal, transferBillNo?: string) {
-    const r = await this.wdRepo
-      .createQueryBuilder()
-      .update(Withdrawal)
-      .set({ status: 'PAID', transfer_bill_no: transferBillNo || wd.transfer_bill_no, paid_at: new Date() })
-      .where(`id = :id AND status NOT IN ('PAID', 'FAILED', 'CANCELLED')`, { id: wd.id })
-      .execute();
-    if (!(r.affected ?? 0)) return; // 已被另一路（回调/查单）收口
-    await this.balance.completeWithdraw(wd.user_id, Number(wd.amount_cents));
+    await this.dataSource.transaction(async (manager) => {
+      const r = await manager
+        .createQueryBuilder()
+        .update(Withdrawal)
+        .set({ status: 'PAID', transfer_bill_no: transferBillNo || wd.transfer_bill_no, paid_at: new Date() })
+        .where(`id = :id AND status NOT IN ('PAID', 'FAILED', 'CANCELLED')`, { id: wd.id })
+        .execute();
+      if (!(r.affected ?? 0)) return; // 已被另一路（回调/查单）收口
+      const amt = Number(wd.amount_cents);
+      await manager.increment(CreatorBalance, { user_id: wd.user_id }, 'frozen_cents', -amt);
+      await manager.increment(CreatorBalance, { user_id: wd.user_id }, 'total_withdrawn_cents', amt);
+      const bal = await manager.findOne(CreatorBalance, { where: { user_id: wd.user_id } });
+      await manager.insert(BalanceTransaction, {
+        user_id: wd.user_id,
+        direction: 'out',
+        amount_cents: amt,
+        balance_after_cents: bal?.available_cents ?? 0,
+        biz_type: 'withdraw',
+      } as any);
+    });
   }
 
-  /** 终态：打款失败（原子防重，unfreeze 只执行一次） */
+  /**
+   * 终态：打款失败。状态翻转与解冻放进同一事务（LOW-1 优化）：
+   * 解冻若失败整笔回滚、状态退回非终态，下次同步可重试，避免旧实现里
+   * 「已标 FAILED 但冻结未释放」导致的余额永久冻结。
+   */
   private async failWithdrawal(wd: Withdrawal, reason: string) {
-    const r = await this.wdRepo
-      .createQueryBuilder()
-      .update(Withdrawal)
-      .set({ status: 'FAILED', fail_reason: (reason || '打款失败').slice(0, 200) })
-      .where(`id = :id AND status NOT IN ('PAID', 'FAILED', 'CANCELLED')`, { id: wd.id })
-      .execute();
-    if (!(r.affected ?? 0)) return;
-    await this.balance.unfreeze(wd.user_id, Number(wd.amount_cents));
+    await this.dataSource.transaction(async (manager) => {
+      const r = await manager
+        .createQueryBuilder()
+        .update(Withdrawal)
+        .set({ status: 'FAILED', fail_reason: (reason || '打款失败').slice(0, 200) })
+        .where(`id = :id AND status NOT IN ('PAID', 'FAILED', 'CANCELLED')`, { id: wd.id })
+        .execute();
+      if (!(r.affected ?? 0)) return;
+      const amt = Number(wd.amount_cents);
+      await manager.increment(CreatorBalance, { user_id: wd.user_id }, 'available_cents', amt);
+      await manager.increment(CreatorBalance, { user_id: wd.user_id }, 'frozen_cents', -amt);
+    });
   }
 
   /** 按微信转账单 state 收口（回调与查单共用） */
