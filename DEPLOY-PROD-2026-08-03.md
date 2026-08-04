@@ -28,7 +28,7 @@
 |------|------|----------|
 | 微信支付系统 | 下单/回调/退款/对账/提现全链路（APIv3） | 0010 |
 | 创作者会员制 | 创作者自定价三档会员，订阅费直入创作者余额 | 0011 |
-| 废弃表清理 | 删除 5 张收益池时代的废弃表 | 0012 |
+| 废弃表清理 | 从 0010 移除 5 张收益池时代的废弃表（0012 仅清理已跑旧版 0010 的环境） | 0012（可选） |
 | 支付安全修复 | 验签 fail-closed、原子防双花、0 元拦截、退款闭环 | — |
 | 定价防呆 | member_only/both 模式必须先设会员套餐 | — |
 | 管理后台修复 | 折线图竞态、底部渐变通栏、回调日志查询 Tab | — |
@@ -99,7 +99,7 @@ ff72dc1 fix(hub): 数据总览折线图偶发不渲染 + 底部滚动弹出渐�
 ## 四、数据库迁移（顺序不能错）
 
 > **背景**：`synchronize=false`，部署命令**不会**自动跑迁移，必须手动执行。
-> **顺序**：0010 → 0011 → 0012 → 0013。
+> **顺序**：0010 → 0011 → 0013（0012 仅旧环境需要，见 4.4）。
 > **硬依赖**：0011 和 0013 未执行就重建容器，会导致接口报错（详见各节）。
 
 ### 4.1 获取正确的数据库用户名和库名
@@ -113,13 +113,15 @@ DBNAME=$(docker exec agent_platform_db sh -c 'echo $POSTGRES_DB')
 echo "用户: $DBUSER  库: $DBNAME"   # 确认非空
 ```
 
-### 4.2 迁移 0010 — 支付系统建表（17 张表 + 种子）
+### 4.2 迁移 0010 — 支付系统建表（12 张表 + 种子）
 
 ```bash
 docker exec -i agent_platform_db psql -U "$DBUSER" -d "$DBNAME" < migrations/0010_payment_system.sql
 ```
 
-建 orders/payments/refunds/balances/withdrawals/entitlements 等 17 张表，并写入平台设置种子（抽成 10%、冻结 7 天、最低提现 ¥20、会员价 ¥29/79/268）。代码有降级保护，未跑时支付功能不可用但不影响其他功能。
+建 orders/payments/refunds/balances/withdrawals/entitlements 等 12 张表，并写入平台设置种子（抽成 10%、冻结 7 天、最低提现 ¥20、会员价 ¥29/79/268）。代码有降级保护，未跑时支付功能不可用但不影响其他功能。
+
+> 0010 已精简：收益池时代的 5 张废弃表已从本迁移移除，全新部署不会再建出它们。
 
 ### 4.3 迁移 0011 — 创作者会员制（⚠️ 硬依赖）
 
@@ -131,13 +133,17 @@ docker exec -i agent_platform_db psql -U "$DBUSER" -d "$DBNAME" < migrations/001
 
 > ⚠️ **硬依赖**：权益校验的 `isSubscribed` 无降级，未跑 0011 时技能详情页/下载等接口直接 SQL 报错。必须在 0010 之后、重建容器之前执行。
 
-### 4.4 迁移 0012 — 清理废弃表
+### 4.4 迁移 0012 — 清理废弃表（⚠️ 仅旧环境需要，全新部署可跳过）
 
 ```bash
 docker exec -i agent_platform_db psql -U "$DBUSER" -d "$DBNAME" < migrations/0012_drop_redundant_tables.sql
 ```
 
-删除收益池时代的 5 张废弃表（membership_downloads/settlements/service_orders/skill_manifests/api_calls），代码零引用，安全。
+删除收益池时代的 5 张废弃表（membership_downloads/settlements/service_orders/skill_manifests/api_calls）。
+
+> **全新部署（从未跑过旧版 0010）可跳过本步**：0010 已精简，不会再建这些表。
+> 本迁移仅用于清理"曾跑过 2026-08-03 之前旧版 0010"的环境。全部 `DROP TABLE IF EXISTS`，
+> 幂等，即使跳过不跑、或在不存在的库上跑了，都不会报错。
 
 ### 4.5 迁移 0013 — 用户活跃追踪（⚠️ 建议与容器重建同期）
 
@@ -152,7 +158,7 @@ users 表加 `last_seen_at` 列 + 索引，支撑管理端"最近访问"列和 5
 ### 4.6 验证迁移结果
 
 ```bash
-# 应列出全部 17 张支付/会员相关表
+# 应列出全部 14 张支付/会员相关表（0010 的 12 张 + 0011 的 2 张）
 docker exec -i agent_platform_db psql -U "$DBUSER" -d "$DBNAME" -c "\dt" | grep -E "skill_pricing|orders|payments|refunds|balances|withdrawals|creator_membership|creator_subscriptions|entitlements|platform_settings"
 
 # 应返回 4 行种子（抽成 1000 / 冻结 7 / 最低提现 2000 / 会员价 2900,7900,26800）
@@ -372,7 +378,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.production up -d --bui
 ### 9.2 迁移回滚（谨慎）
 
 - 0010/0011/0013 是**加表/加列**，不破坏已有数据。旧代码不引用这些表/列，**只回滚代码、保留新表是安全的**（推荐）。
-- 0012 删除的 5 张表不可恢复（DROP），但它们本就废弃且代码零引用。
+- 0012 删除的 5 张表不可恢复（DROP），但它们本就废弃且代码零引用；且新版 0010 已不再创建它们，仅旧环境需要此迁移。
 - 如确需删表回滚，手动 DROP 对应表即可（无外部依赖）。
 
 ---

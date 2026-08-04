@@ -169,19 +169,6 @@ CREATE TABLE IF NOT EXISTS memberships (
 );
 CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_id);
 
--- 会员下载记录（收益池去重：一个会员×一个技能×一个周期只计 1 次）
-CREATE TABLE IF NOT EXISTS membership_downloads (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  skill_id      UUID NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
-  seller_user_id UUID REFERENCES users(id),
-  period        TEXT NOT NULL,             -- YYYY-MM
-  counted       BOOLEAN NOT NULL DEFAULT false
-);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_membership_downloads_user_skill_period
-  ON membership_downloads(user_id, skill_id, period);
-CREATE INDEX IF NOT EXISTS idx_membership_downloads_period ON membership_downloads(period);
-
 -- ============================================================
 -- 四、资金相关表（P0）
 -- ============================================================
@@ -230,58 +217,5 @@ CREATE TABLE IF NOT EXISTS withdrawals (
 );
 CREATE INDEX IF NOT EXISTS idx_withdrawals_user ON withdrawals(user_id);
 
--- 结算快照（含会员收益池）
-CREATE TABLE IF NOT EXISTS settlements (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  period        TEXT NOT NULL,             -- YYYY-MM
-  type          TEXT NOT NULL,             -- membership_pool|order_settle
-  total_cents   BIGINT NOT NULL DEFAULT 0,
-  platform_cents BIGINT NOT NULL DEFAULT 0,
-  creator_cents BIGINT NOT NULL DEFAULT 0,
-  detail        JSONB,
-  status        TEXT NOT NULL DEFAULT 'PENDING',  -- PENDING|REVIEWING|EXECUTED
-  executed_at   TIMESTAMPTZ,
-  executed_by   UUID REFERENCES users(id)
-);
-CREATE INDEX IF NOT EXISTS idx_settlements_period ON settlements(period);
-
--- ============================================================
--- 五、后续预留表（当前未使用，建表无害，避免后续再补迁移）
--- ============================================================
-
--- B 类：服务交易托管（P1）
-CREATE TABLE IF NOT EXISTS service_orders (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_id        UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  provider_user_id UUID REFERENCES users(id),
-  service_type    TEXT NOT NULL,           -- consult|dev|project
-  requirement     TEXT,
-  quote_cents     BIGINT NOT NULL DEFAULT 0,
-  escrow_status   TEXT NOT NULL DEFAULT 'held',  -- held|released|refunded
-  milestone       JSONB,
-  delivered_at    TIMESTAMPTZ,
-  confirmed_at    TIMESTAMPTZ,
-  auto_confirm_at TIMESTAMPTZ,
-  dispute_status  TEXT
-);
-
--- D 类：技能 API 化托管（P3）
-CREATE TABLE IF NOT EXISTS skill_manifests (
-  skill_id  UUID PRIMARY KEY REFERENCES skills(id) ON DELETE CASCADE,
-  instructions TEXT,
-  prompt    TEXT,
-  params    JSONB,
-  examples  JSONB,
-  version   TEXT,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS api_calls (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  skill_id      UUID NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
-  caller_user_id UUID REFERENCES users(id),
-  token_id      UUID,
-  called_at     TIMESTAMPTZ DEFAULT NOW(),
-  billed_cents  BIGINT NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_api_calls_skill ON api_calls(skill_id);
+-- 注：收益池时代的 membership_downloads / settlements 表已移除（业务改为创作者会员制，
+-- 支付即直入创作者余额）。曾跑过旧版 0010 的环境可用 migrations/0012 清理这些历史表。
