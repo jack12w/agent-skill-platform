@@ -65,6 +65,14 @@ export class RefundService {
       throw new BadRequestException(`订单当前状态(${order.status})不可退款`);
     }
 
+    // 权威闸门（纵深防御）：必须以 payments 表中 status='PAID' 的支付行为唯一事实来源。
+    // order.status/paid_cents 仅是支付成功后的派生状态；即便未来出现脏数据或 order 字段被误改，
+    // 只要底层 Payment 不是真实 PAID，一律拒绝退款，彻底杜绝「未支付却可退款」的任何路径。
+    const payment = await this.payRepo.findOne({ where: { order_id: order.id, status: 'PAID' } });
+    if (!payment) {
+      throw new BadRequestException('订单无成功支付记录（payment 未 PAID），无法退款');
+    }
+
     const paid = Number(order.paid_cents || 0);
     if (paid <= 0) throw new BadRequestException('订单无实付金额，无需退款');
 
@@ -86,7 +94,6 @@ export class RefundService {
       );
     }
 
-    const payment = await this.payRepo.findOne({ where: { order_id: order.id, status: 'PAID' } });
     const outRefundNo = this.genRefundNo();
 
     const refund = this.refundRepo.create({
