@@ -343,7 +343,8 @@ export class BalanceTransaction {
   @Column() // sale|membership|refund_deduct|withdraw|adjust
   biz_type: string;
 
-  @Column({ type: 'uuid', nullable: true })
+  // 业务传入复合字符串（${order.id}:${item.id}）作幂等键，必须为 TEXT（见 migrations/0017）
+  @Column({ type: 'text', nullable: true })
   ref_id: string;
 
   @Column({ type: 'text', nullable: true })

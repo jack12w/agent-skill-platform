@@ -1,0 +1,23 @@
+# 支付压测专用隔离 Postgres（绝不触碰业务库 platform）
+# 启动：docker compose -f docker-compose.load.yml up -d
+# 连接串：postgres://postgres:postgres@localhost:5433/loadtest_pay
+services:
+  pg-load:
+    image: postgres:16-alpine
+    container_name: pg-load-pay
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: loadtest_pay
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_load_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d loadtest_pay"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pg_load_data:
