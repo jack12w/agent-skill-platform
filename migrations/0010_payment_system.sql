@@ -1,6 +1,11 @@
 -- 0010: 支付与分成系统地基 + 架构漂移修复
 -- 全部使用 IF NOT EXISTS / 幂等 DO 块，可安全重复执行，不影响任何现有表与接口。
 -- 部署：本文件需在服务器手动 psql 执行（部署命令 `up -d --build` 不自动跑迁移）。
+--
+-- 注：本文件已内含原 0014/0015/0016/0017 的全部修复（为保持首次部署历史干净而折入）：
+--   * balance_transactions.ref_id 直接建为 TEXT（业务用 `${order.id}:${item.id}` 复合字符串做幂等键，非 UUID）；
+--   * 余额流水幂等索引直接建为 idx_balance_tx_idempotent(user_id, ref_id, biz_type, direction) WHERE ref_id IS NOT NULL；
+--   因此全新部署只需跑 0010→0013，无需再跑任何后续支付修复迁移。
 --   DBUSER=$(docker exec agent_platform_db sh -c 'echo $POSTGRES_USER')
 --   DBNAME=$(docker exec agent_platform_db sh -c 'echo $POSTGRES_DB')
 --   docker exec -i agent_platform_db psql -U "$DBUSER" -d "$DBNAME" < migrations/0010_payment_system.sql
@@ -191,11 +196,17 @@ CREATE TABLE IF NOT EXISTS balance_transactions (
   amount_cents       BIGINT NOT NULL DEFAULT 0,
   balance_after_cents BIGINT NOT NULL DEFAULT 0,
   biz_type           TEXT NOT NULL,         -- sale|membership_share|refund_deduct|withdraw|adjust
-  ref_id             UUID,
+  ref_id             TEXT,                  -- 复合幂等键(如 order.id:item.id)，故为 TEXT 而非 UUID
   remark             TEXT,
   created_at         TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_balance_tx_user ON balance_transactions(user_id);
+
+-- 余额流水幂等索引（防并发双入账兜底）：直接建最终正确形态。
+-- 原 0014/0015/0016/0017 的修补已折入本文件，全新部署即此形态。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_balance_tx_idempotent
+  ON balance_transactions (user_id, ref_id, biz_type, direction)
+  WHERE ref_id IS NOT NULL;
 
 -- 提现申请
 CREATE TABLE IF NOT EXISTS withdrawals (
