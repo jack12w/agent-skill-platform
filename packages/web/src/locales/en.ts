@@ -255,6 +255,7 @@ const en = {
     commentedOn: 'commented on',
     newVersion: 'New version',
     newSkill: 'New skill',
+    loginToView: 'Log in to view your comments and subscriptions',
   },
   tags: {
     source: 'Source',

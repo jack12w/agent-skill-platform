@@ -255,6 +255,7 @@ const zh = {
     commentedOn: '评论了',
     newVersion: '新版本',
     newSkill: '新技能',
+    loginToView: '登录后查看你的评论与订阅通知',
   },
   tags: {
     source: '来源',

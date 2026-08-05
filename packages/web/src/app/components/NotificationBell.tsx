@@ -64,6 +64,7 @@ function Avatar({ src, fallback }: { src?: string; fallback: ReactNode }) {
 export default function NotificationBell() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false);
   const [open, setOpen] = useState(false);
   const [allComments, setAllComments] = useState<any[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(getReadIds());
@@ -74,6 +75,22 @@ export default function NotificationBell() {
   const { t } = useTranslation();
 
   useEffect(() => { setMounted(true); }, []);
+
+  // 响应式登录态：登录/登出（含同标签页登录）时立即更新，避免“登录后铃铛不显示、需刷新才出现”。
+  // 登录只会写 localStorage、不触发 React 重渲染，因此用 storage 事件（跨标签页）+ 短轮询（同标签页）兜底。
+  useEffect(() => {
+    const sync = () => setLoggedIn(!!loadUser());
+    sync();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'user' || e.key === 'token') sync();
+    };
+    window.addEventListener('storage', onStorage);
+    const watcher = setInterval(sync, 1500);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      clearInterval(watcher);
+    };
+  }, []);
 
   const fetchNotifications = useCallback(async () => {
     const token = localStorage.getItem('token');
@@ -108,30 +125,30 @@ export default function NotificationBell() {
 
   // Poll every 15s, pause when tab hidden（缩短轮询周期，加快铃铛徽标更新）
   useEffect(() => {
-    if (!loadUser()) return;
+    if (!loggedIn) return;
     fetchNotifications();
     fetchSubNotifications();
     const interval = setInterval(() => {
-      if (!document.hidden && loadUser()) {
+      if (!document.hidden) {
         fetchNotifications();
         fetchSubNotifications();
       }
     }, 15000);
-    const onVisible = () => { if (loadUser()) { fetchNotifications(); fetchSubNotifications(); } };
+    const onVisible = () => { fetchNotifications(); fetchSubNotifications(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [fetchNotifications, fetchSubNotifications]);
+  }, [loggedIn, fetchNotifications, fetchSubNotifications]);
 
   // 打开铃铛面板时立即刷新，避免等下一个轮询周期才看到新通知
   useEffect(() => {
-    if (open && loadUser()) {
+    if (open && loggedIn) {
       fetchNotifications();
       fetchSubNotifications();
     }
-  }, [open, fetchNotifications, fetchSubNotifications]);
+  }, [open, loggedIn, fetchNotifications, fetchSubNotifications]);
 
   // 点击面板外部自动关闭
   useEffect(() => {
@@ -214,7 +231,9 @@ export default function NotificationBell() {
     setOpen(false);
   };
 
-  if (!mounted || !loadUser()) return null;
+  if (!mounted) return null;
+  // 未登录时强制徽标为 0（数据只在登录后拉取）
+  const displayCount = loggedIn ? unreadCount : 0;
 
   return (
     <div className="relative">
@@ -227,14 +246,14 @@ export default function NotificationBell() {
           <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
-        {unreadCount > 0 && (
+        {displayCount > 0 && (
           <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-danger-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none z-10 shadow">
-            {unreadCount > 99 ? '99+' : unreadCount}
+            {displayCount > 99 ? '99+' : displayCount}
           </span>
         )}
       </button>
 
-      {open && (
+      {open && (loggedIn ? (
         <div
           ref={panelRef}
           className="absolute right-0 top-full mt-2 w-[340px] z-[60] bg-white border border-neutral-200 rounded-xl shadow-xl h-[380px] flex flex-col overflow-hidden"
@@ -364,7 +383,14 @@ export default function NotificationBell() {
             </div>
           </div>
         </div>
-      )}
+      ) : (
+        <div className="absolute right-0 top-full mt-2 w-[300px] z-[60] bg-white border border-neutral-200 rounded-xl shadow-xl p-6 text-center">
+          <p className="text-sm text-neutral-500 mb-3">{t('notification.loginToView')}</p>
+          <Link href="/auth" onClick={() => setOpen(false)} className="inline-block px-4 py-2 bg-brand-500 text-white text-sm rounded-md hover:bg-brand-600 transition">
+            {t('auth.login')}
+          </Link>
+        </div>
+      ))}
     </div>
   );
 }
