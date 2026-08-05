@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import MDEditor from '@uiw/react-md-editor';
@@ -49,6 +49,17 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   const [hasPlan, setHasPlan] = useState(false);
   const [freeSub, setFreeSub] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
+  // ── 详情页折叠：标签最多 2 行、版本历史最多 3 条 ──
+  const [tagsExpanded, setTagsExpanded] = useState(false);
+  const tagsRef = useRef<HTMLDivElement>(null);
+  const [tagsOverflow, setTagsOverflow] = useState(false);
+  const [versionsExpanded, setVersionsExpanded] = useState(false);
+  // 标签区超过 2 行（被 CSS 截断）时显示「更多标签」
+  useEffect(() => {
+    const el = tagsRef.current;
+    if (!el) return;
+    setTagsOverflow(!tagsExpanded && el.scrollHeight > el.clientHeight + 1);
+  }, [skill, tagsExpanded]);
 
   useEffect(() => { setCurrentUserId(decodeUserId()); }, []);
 
@@ -304,7 +315,7 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
       <div className="flex flex-col md:flex-row gap-12">
         <div className="flex-1 min-w-0 md:min-w-[460px]">
           <div className="flex items-start justify-between gap-4 mb-4"><h1 className="text-2xl sm:text-4xl font-bold">{skill.name}</h1>{isOwner && <Link href={`/skills/${skill.slug || skill.id}/edit`} className="shrink-0 px-4 py-2 border border-neutral-300 rounded-lg text-sm font-medium hover:bg-neutral-100">{t('detail.edit')}</Link>}</div>
-          <div className="flex items-center gap-2 mb-4 flex-wrap">{tags.map((tag) => {
+          <div ref={tagsRef} className="flex items-center gap-2 mb-4 flex-wrap" style={tagsExpanded ? undefined : { maxHeight: '4.5rem', overflow: 'hidden' }}>{tags.map((tag) => {
             const isFeatured = tag === '精选';
             return (
               <button key={tag} onClick={() => router.push(`/skills?tag=${encodeURIComponent(tag)}`)}
@@ -317,6 +328,11 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
               </button>
             );
           })}</div>
+          {tagsOverflow && (
+            <button type="button" onClick={() => setTagsExpanded((v) => !v)} className="text-sm text-brand-600 hover:underline mb-4 -mt-2 block">
+              {tagsExpanded ? t('detail.showLess') : t('detail.tagsShowMore')}
+            </button>
+          )}
           {skill.content_md && (
             <div data-color-mode="light" className="mb-6 p-5 border rounded-xl bg-white max-h-[288px] md:max-h-[388px] overflow-y-auto [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none' as any }}>
               <MDEditor.Markdown source={skill.content_md} />
@@ -326,7 +342,13 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
           <div className="p-6 border rounded-xl">
             <h2 className="text-xl font-bold mb-4">{t('detail.versionHistory')}</h2>
             {versions.length === 0 ? (<p className="text-sm text-neutral-500">{t('detail.noVersion')}</p>) : (
-              <div className="space-y-2">{versions.map((v) => { const isLatest = skill.latest_version_id === v.id; const downloading = acting === `dl:${v.id}`; return (<div key={v.id} className="p-3 bg-neutral-100 rounded-lg"><div className="flex items-center justify-between"><div className="min-w-0"><div className="flex items-center gap-2"><span className="font-mono font-medium">v{v.version}</span>{isLatest && <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">{t('detail.latest')}</span>}</div><div className="text-xs text-neutral-500 mt-0.5" suppressHydrationWarning>{v.size ? `${(v.size / 1024).toFixed(1)} KB · ` : ''}{new Date(v.created_at).toLocaleString()}</div></div><button onClick={() => handleDownload(v.id)} disabled={acting !== null} className="shrink-0 text-sm px-3 py-1.5 border border-brand-600 text-brand-600 rounded hover:bg-brand-50 disabled:opacity-50 disabled:cursor-not-allowed">{downloading ? t('detail.downloading') : t('detail.download')}</button></div>{v.notes && <p className="text-xs text-neutral-500 mt-1 ml-1">{v.notes}</p>}</div>); })}</div>
+              <div className="space-y-2">{(versionsExpanded ? versions : versions.slice(0, 3)).map((v) => { const isLatest = skill.latest_version_id === v.id; const downloading = acting === `dl:${v.id}`; return (<div key={v.id} className="p-3 bg-neutral-100 rounded-lg"><div className="flex items-center justify-between"><div className="min-w-0"><div className="flex items-center gap-2"><span className="font-mono font-medium">v{v.version}</span>{isLatest && <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">{t('detail.latest')}</span>}</div><div className="text-xs text-neutral-500 mt-0.5" suppressHydrationWarning>{v.size ? `${(v.size / 1024).toFixed(1)} KB · ` : ''}{new Date(v.created_at).toLocaleString()}</div></div><button onClick={() => handleDownload(v.id)} disabled={acting !== null} className="shrink-0 text-sm px-3 py-1.5 border border-brand-600 text-brand-600 rounded hover:bg-brand-50 disabled:opacity-50 disabled:cursor-not-allowed">{downloading ? t('detail.downloading') : t('detail.download')}</button></div>{v.notes && <p className="text-xs text-neutral-500 mt-1 ml-1">{v.notes}</p>}</div>); })}
+              {versions.length > 3 && (
+                <button type="button" onClick={() => setVersionsExpanded((vv) => !vv)} className="text-sm text-brand-600 hover:underline mt-3 block">
+                  {versionsExpanded ? t('detail.showLess') : t('detail.versionsShowMore')}
+                </button>
+              )}
+              </div>
             )}
           </div>
 
