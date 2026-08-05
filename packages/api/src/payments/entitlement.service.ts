@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, IsNull } from 'typeorm';
 import { SkillPricing, Entitlement, Membership } from './payments.entity';
@@ -29,10 +29,17 @@ export class EntitlementService {
     try {
       pricing = await this.pricingRepo.findOne({ where: { skill_id: skill.id } });
     } catch (e: any) {
-      // 降级放行：0010 迁移未执行（skill_pricing 表不存在）或数据库异常时，
-      // 绝不能因为新增的付费墙而阻断原有的免费下载能力。
-      this.logger.warn(`定价查询失败，按免费放行 skill=${skill.id}: ${e?.message}`);
-      return;
+      const msg = e?.message || '';
+      // 部署期安全：迁移 0010 尚未执行（skill_pricing 表不存在）时，按免费放行，
+      // 避免阻断原有的免费下载能力（与 pricing GET 接口的降级保持一致）。
+      if (/skill_pricing/i.test(msg) && /does not exist/i.test(msg)) {
+        this.logger.warn(`定价表不存在，按免费放行 skill=${skill.id}: ${msg}`);
+        return;
+      }
+      // 运行时数据库异常：绝不能放行付费内容。改为 fail-closed 让调用方重试，
+      // 避免 DB 抖动期间付费技能被白嫖（原实现为 fail-open，等于任意付费技能可免费下载）。
+      this.logger.error(`定价查询失败，fail-closed 拒绝下载 skill=${skill.id}: ${msg}`);
+      throw new InternalServerErrorException('资源暂不可用，请稍后重试');
     }
 
     // 1. 免费 / 无定价

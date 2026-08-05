@@ -47,14 +47,6 @@ export class RefundService {
     return `RF${Date.now()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
   }
 
-  /** 已成功退款 + 退款处理中的合计，用于校验不超退 */
-  private async refundedSoFar(orderId: string): Promise<number> {
-    const rows = await this.refundRepo.find({ where: { order_id: orderId } });
-    return rows
-      .filter((r) => r.status === 'SUCCESS' || r.status === 'PENDING')
-      .reduce((s, r) => s + Number(r.amount_cents || 0), 0);
-  }
-
   /**
    * 管理员发起退款。amountCents 缺省表示全额退。
    */
@@ -82,31 +74,45 @@ export class RefundService {
       throw new BadRequestException('该订单退款次数已达微信上限（50 次），无法继续发起退款');
     }
 
-    const already = await this.refundedSoFar(order.id);
-    const maxRefundable = paid - already;
-    if (maxRefundable <= 0) throw new BadRequestException('该订单已全额退款');
+    // 悲观锁订单行，串行化同一订单的并发退款，杜绝「读已退金额→插退款单」的竞态导致超退。
+    // 注意：锁仅覆盖「校验+插 PENDING 单」这段本地操作，微信网络调用在锁释放后进行，不持锁。
+    let refund!: Refund;
+    let outRefundNo!: string;
+    let amount = 0;
+    await this.orderRepo.manager.transaction(async (em) => {
+      await em.findOne(Order, { where: { id: order.id }, lock: { mode: 'pessimistic_write' } });
+      const rRepo = em.getRepository(Refund);
+      const already = await rRepo
+        .find({ where: { order_id: order.id } })
+        .then((rows) =>
+          rows
+            .filter((r) => r.status === 'SUCCESS' || r.status === 'PENDING')
+            .reduce((s, r) => s + Number(r.amount_cents || 0), 0),
+        );
+      const maxRefundable = paid - already;
+      if (maxRefundable <= 0) throw new BadRequestException('该订单已全额退款');
 
-    const amount = amountCents == null ? maxRefundable : Math.round(Number(amountCents));
-    if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('退款金额必须大于 0');
-    if (amount > maxRefundable) {
-      throw new BadRequestException(
-        `退款金额超限：实付 ${(paid / 100).toFixed(2)} 元，已退/处理中 ${(already / 100).toFixed(2)} 元，本次最多可退 ${(maxRefundable / 100).toFixed(2)} 元`,
-      );
-    }
+      amount = amountCents == null ? maxRefundable : Math.round(Number(amountCents));
+      if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException('退款金额必须大于 0');
+      if (amount > maxRefundable) {
+        throw new BadRequestException(
+          `退款金额超限：实付 ${(paid / 100).toFixed(2)} 元，已退/处理中 ${(already / 100).toFixed(2)} 元，本次最多可退 ${(maxRefundable / 100).toFixed(2)} 元`,
+        );
+      }
 
-    const outRefundNo = this.genRefundNo();
-
-    const refund = this.refundRepo.create({
-      order_id: order.id,
-      payment_id: payment?.id ?? null,
-      out_refund_no: outRefundNo,
-      amount_cents: amount,
-      reason: reason || '管理员退款',
-      status: 'PENDING',
-      applied_by: adminId,
-      reviewed_by: adminId,
-    } as any);
-    await this.refundRepo.save(refund);
+      outRefundNo = this.genRefundNo();
+      refund = rRepo.create({
+        order_id: order.id,
+        payment_id: payment?.id ?? null,
+        out_refund_no: outRefundNo,
+        amount_cents: amount,
+        reason: reason || '管理员退款',
+        status: 'PENDING',
+        applied_by: adminId,
+        reviewed_by: adminId,
+      });
+      await rRepo.save(refund);
+    });
 
     try {
       const r = await this.wechat.refund({
