@@ -46,3 +46,8 @@ poster.html
 qrcode.png
 # google 站点验证（服务器本地文件）
 packages/web/public/google*.html
+# 部署/压测脚本（本地不推送，非产品代码）
+scripts/load-test-payments.mjs
+scripts/k6-payments.js
+DEPLOY-*.md
+*压测方案.md
