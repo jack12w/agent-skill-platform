@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, MoreThan } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { Skill } from './skill.entity';
 import { SkillVersion } from './skill-version.entity';
@@ -9,6 +9,8 @@ import { SkillStats } from './skill-stats.entity';
 import { Comment } from './comment.entity';
 import { TeamMember } from '../teams/team-member.entity';
 import { Team } from '../teams/team.entity';
+import { SkillPricing, CreatorMembershipPlan, CreatorSubscription } from '../payments/payments.entity';
+import { Subscription, SubscriptionTargetType } from '../subscriptions/subscription.entity';
 import { OssService } from '../storage/oss.service';
 import { EntitlementService } from '../payments/entitlement.service';
 import { EventType, SkillStatus, parseSkillMd } from '@platform/shared';
@@ -54,6 +56,14 @@ export class SkillsService {
     private teamMemberRepository: Repository<TeamMember>,
     @InjectRepository(Team)
     private teamRepository: Repository<Team>,
+    @InjectRepository(SkillPricing)
+    private pricingRepository: Repository<SkillPricing>,
+    @InjectRepository(CreatorMembershipPlan)
+    private creatorPlanRepository: Repository<CreatorMembershipPlan>,
+    @InjectRepository(CreatorSubscription)
+    private creatorSubRepository: Repository<CreatorSubscription>,
+    @InjectRepository(Subscription)
+    private subscriptionRepository: Repository<Subscription>,
     private ossService: OssService,
     private entitlementService: EntitlementService,
   ) {}
@@ -465,6 +475,93 @@ export class SkillsService {
     const skill = await this.skillRepository.findOne({ where: { id: skillId } });
     if (!skill) return; // 404 由调用方处理
     await this.assertTeamVisible(skill.owner_team_id, userId, isAdmin);
+  }
+
+  /**
+   * 详情页聚合接口：一次性返回 技能 + 版本 + 定价 + 作者套餐 + 订阅状态，
+   * 把前端原本 5 个请求（/skills/{id}、/versions、/pay/pricing、/pay/creator-plan、
+   * /pay/membership/subscribe 或 /subscriptions/status）压成 1 个，显著降低限流压力。
+   * 复用既有查询逻辑（findOne / listVersions / 定价与套餐的 DB 存在性判断），
+   * 行为与原分散接口一致；缺失/无权限由 findOne / assertSkillTeamVisible 抛出 404/403。
+   */
+  async getDetail(idOrSlug: string, userId?: string, isAdmin = false) {
+    const skill = await this.findOne(idOrSlug, userId, false, isAdmin);
+    await this.assertSkillTeamVisible(idOrSlug, userId, isAdmin);
+
+    const ownerType = skill.owner_team_id ? 'team' : 'user';
+    const ownerId = skill.owner_team_id || skill.owner_user_id;
+    const hasPlan = await this.hasCreatorPlan(ownerType, ownerId);
+
+    const [versions, pricing] = await Promise.all([
+      this.listVersions(idOrSlug, userId, isAdmin),
+      this.getPricingObject(idOrSlug),
+    ]);
+
+    const membershipStatus = userId
+      ? await this.getMembershipStatus(ownerType, ownerId, userId, hasPlan)
+      : null;
+
+    return { skill, versions, pricing, hasPlan, membershipStatus };
+  }
+
+  /** 复制 PricingController.pricing 的公开查询 + 免费降级 */
+  private async getPricingObject(skillId: string) {
+    const free = {
+      pricing_mode: 'free',
+      price_cents: 0,
+      member_included: false,
+      commercial_price_cents: 0,
+      currency: 'CNY',
+    };
+    try {
+      const p = await this.pricingRepository.findOne({ where: { skill_id: skillId } });
+      return p || free;
+    } catch {
+      return free;
+    }
+  }
+
+  /** 复制 PricingController.creator-plan 的 hasPlan 判定 */
+  private async hasCreatorPlan(targetType: string, targetId: string): Promise<boolean> {
+    try {
+      const plan = await this.creatorPlanRepository.findOne({
+        where: { target_type: targetType, target_id: targetId },
+      });
+      return !!plan;
+    } catch {
+      return false;
+    }
+  }
+
+  /** 复制 /pay/membership/subscribe 与 /subscriptions/status 的当前用户订阅状态 */
+  private async getMembershipStatus(
+    targetType: SubscriptionTargetType,
+    targetId: string,
+    userId: string,
+    hasPlan: boolean,
+  ) {
+    try {
+      if (hasPlan) {
+        const sub = await this.creatorSubRepository.findOne({
+          where: {
+            user_id: userId,
+            target_type: targetType,
+            target_id: targetId,
+            status: 'active',
+            expires_at: MoreThan(new Date()),
+          },
+        });
+        return sub
+          ? { subscribed: true, plan: sub.plan, expires_at: sub.expires_at }
+          : { subscribed: false };
+      }
+      const sub = await this.subscriptionRepository.findOne({
+        where: { subscriber_id: userId, target_type: targetType, target_id: targetId },
+      });
+      return { subscribed: !!sub };
+    } catch {
+      return { subscribed: false };
+    }
   }
 
   async getDownloadUrl(skillId: string, versionId?: string, userId?: string, isAdmin = false) {

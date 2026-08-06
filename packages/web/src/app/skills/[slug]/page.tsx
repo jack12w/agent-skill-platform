@@ -77,57 +77,45 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
     if (res.ok) { setVersions(await res.json()); setVersionsLoadFailed(false); }
     else { setVersionsLoadFailed(true); }
   };
-  const reload = async () => { const res = await fetch(`/api/skills/${params.slug}`, { headers: getAuthHeaders() }); if (res.ok) { const data = await res.json(); setSkill(data); await loadVersions(data.id); } };
+  const reload = async () => {
+    const res = await fetch(`/api/skills/${params.slug}/detail`, { headers: getAuthHeaders() });
+    if (res.ok) {
+      const d = await res.json();
+      setSkill(d.skill);
+      setVersions(d.versions || []);
+      if (d.pricing) setPricing(d.pricing);
+      setHasPlan(!!d.hasPlan);
+      if (d.membershipStatus) {
+        if (d.hasPlan) setAuthorSub(d.membershipStatus);
+        else setFreeSub(!!d.membershipStatus.subscribed);
+      }
+    }
+  };
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`/api/skills/${params.slug}`, { headers: getAuthHeaders() });
+        // 聚合接口：一次返回 技能+版本+定价+作者套餐+订阅状态（原 5 个请求压成 1 个）
+        const res = await fetch(`/api/skills/${params.slug}/detail`, { headers: getAuthHeaders() });
         if (!res.ok) {
           if (res.status === 403) { setForbidden(true); setLoading(false); return; }
           // 记录状态码：404 → 真缺失；429/5xx/其它 → 瞬时故障（可重试），与「技能走丢了」区分开
           setErrorStatus(res.status || null);
           throw new Error(`HTTP ${res.status}`);
         }
-        const data = await res.json();
-        setSkill(data);
+        const d = await res.json();
+        setSkill(d.skill);
         setShareConfig({
-          title: data.name,
-          desc: data.summary || data.short_summary || '',
-          imgUrl: data.cover_url || undefined,
+          title: d.skill.name,
+          desc: d.skill.summary || d.skill.short_summary || '',
+          imgUrl: d.skill.cover_url || undefined,
         });
-        await loadVersions(data.id);
-        // 定价信息（公开接口，未登录也可读；失败不影响页面）
-        fetch(`/api/pay/pricing/${data.id}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .then((p) => { if (p?.pricing) setPricing(p.pricing); })
-          .catch(() => {});
-        // 作者是否设置了付费会员套餐（公开接口）→ 决定订阅按钮走付费还是免费关注
-        const ownerType = data.owner_team_id ? 'team' : 'user';
-        const ownerId = data.owner_team_id || data.owner_user_id;
-        let planHas = false;
-        try {
-          const planRes = await fetch(`/api/pay/creator-plan?targetType=${ownerType}&targetId=${encodeURIComponent(ownerId)}`);
-          if (planRes.ok) {
-            const p = await planRes.json();
-            planHas = !!p.hasPlan;
-            setHasPlan(planHas);
-          }
-        } catch { /* ignore */ }
-        // 当前用户对该技能创作者的订阅状态（付费会员 or 免费关注）
-        const uid = decodeUserId();
-        if (uid) {
-          if (planHas) {
-            fetch(`/api/pay/membership/subscribe/${ownerType}/${ownerId}`, { headers: getAuthHeaders() })
-              .then((r) => (r.ok ? r.json() : null))
-              .then((s) => { if (s) setAuthorSub(s); })
-              .catch(() => {});
-          } else {
-            fetch(`/api/subscriptions/status?targetType=${ownerType}&targetId=${encodeURIComponent(ownerId)}`, { headers: getAuthHeaders() })
-              .then((r) => (r.ok ? r.json() : null))
-              .then((s) => { if (s) setFreeSub(!!s.subscribed); })
-              .catch(() => {});
-          }
+        setVersions(d.versions || []);
+        if (d.pricing) setPricing(d.pricing);
+        setHasPlan(!!d.hasPlan);
+        if (d.membershipStatus) {
+          if (d.hasPlan) setAuthorSub(d.membershipStatus);
+          else setFreeSub(!!d.membershipStatus.subscribed);
         }
       }
       catch (e: any) { setError(e.message || 'Failed to load skill'); }

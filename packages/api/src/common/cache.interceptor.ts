@@ -32,6 +32,7 @@ function isCacheable(path: string): boolean {
   if (path === '/api/ai/feed') return true;
   if (path === '/api/tags/groups') return true;
   if (/^\/api\/skills\/[^/]+\/versions$/.test(path)) return true; // 版本列表
+  if (/^\/api\/skills\/[^/]+\/detail$/.test(path)) return true; // 详情聚合（含订阅状态，按用户隔离缓存）
   if (/^\/api\/skills\/[^/]+$/.test(path)) return true; // 详情（单段 id，自动排除 download/comments）
   return false;
 }

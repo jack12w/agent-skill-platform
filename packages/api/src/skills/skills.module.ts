@@ -11,12 +11,13 @@ import { Comment } from './comment.entity';
 import { LeaderboardSnapshot } from '../leaderboard/leaderboard-snapshot.entity';
 import { TeamMember } from '../teams/team-member.entity';
 import { Team } from '../teams/team.entity';
+import { Subscription } from '../subscriptions/subscription.entity';
 import { StatsAggregationService } from '../stats-aggregation.service';
 import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Skill, SkillVersion, Event, SkillStats, Comment, LeaderboardSnapshot, TeamMember, Team]),
+    TypeOrmModule.forFeature([Skill, SkillVersion, Event, SkillStats, Comment, LeaderboardSnapshot, TeamMember, Team, Subscription]),
     PaymentsModule,
   ],
   providers: [SkillsService, StatsAggregationService],

@@ -140,6 +140,22 @@ export class SkillsController {
     return result;
   }
 
+  /** 详情页聚合接口：技能+版本+定价+作者套餐+订阅状态 一次返回（降低限流压力） */
+  @Get(':id/detail')
+  async getDetail(@Param('id') id: string, @Request() req: any) {
+    let userId: string | undefined;
+    let isAdmin = false;
+    const token = req.headers.authorization?.split(' ')[1];
+    if (token) {
+      try {
+        const payload = this.jwtService.decode(token) as { sub: string; role?: string } | null;
+        userId = payload?.sub || undefined;
+        isAdmin = payload?.role === 'admin';
+      } catch { /* ignore */ }
+    }
+    return this.skillsService.getDetail(id, userId, isAdmin);
+  }
+
   @Post(':id/like')
   @UseGuards(AuthGuard)
   like(@Param('id') id: string, @Request() req: any) {
