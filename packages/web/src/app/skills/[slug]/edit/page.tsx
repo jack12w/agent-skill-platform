@@ -225,7 +225,9 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
         </div>
         {!hasMembershipPlan && (
           <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mb-4">
-            {t('edit.noPlanWarning')}
+            {t('edit.noPlanWarningPrefix')}
+            <Link href="/account/membership" className="underline font-medium text-amber-700 hover:text-amber-800">「{t('edit.noPlanWarningLink')}」</Link>
+            {t('edit.noPlanWarningSuffix')}
           </p>
         )}
 

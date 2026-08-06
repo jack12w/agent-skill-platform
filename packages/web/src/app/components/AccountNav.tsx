@@ -16,6 +16,7 @@ export default function AccountNav() {
     { href: '/account/orders', label: t('pay.ordersTitle') },
     { href: '/account/earnings', label: t('pay.earningsTitle') },
     { href: '/account/withdraw', label: t('pay.withdrawTitle') },
+    { href: '/account/membership', label: t('paySet.myMembershipTitle') },
   ];
 
   return (

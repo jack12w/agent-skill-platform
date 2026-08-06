@@ -6,6 +6,7 @@ import useTranslation from '../../../hooks/useTranslation';
 import { setShareConfig, resetShareConfig } from '../../../lib/share';
 import SkillUpdateBadge from '../../components/SkillUpdateBadge';
 import MembershipModal from '../../components/MembershipModal';
+import MembershipPriceEditor from '../../components/MembershipPriceEditor';
 
 export default function UserProfile({ params }: { params: { username: string } }) {
   const { t } = useTranslation();
@@ -298,6 +299,15 @@ export default function UserProfile({ params }: { params: { username: string } }
           </div>
         </div>
       </div>
+
+      {/* 会员定价：仅本人查看自己主页时显示，可在此直接编辑会员套餐价（与团队设置页对称） */}
+      {currentUserId === user.id && (
+        <section className="mb-10">
+          <h2 className="text-xl font-bold mb-1 text-neutral-900">{t('paySet.myMembershipTitle')}</h2>
+          <p className="text-sm text-neutral-500 mb-4">{t('paySet.myMembershipHint')}</p>
+          <MembershipPriceEditor targetType="user" targetId={user.id} />
+        </section>
+      )}
 
       {/* Tag TAB filter */}
       {user.tags && user.tags.length > 0 && (

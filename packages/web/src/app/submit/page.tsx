@@ -80,6 +80,10 @@ export default function SubmitSkill() {
   const [tagGroups, setTagGroups] = useState(FALLBACK_PRESET_TAGS);
   const [mode, setMode] = useState<'single' | 'batch'>('single');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  // 付费设置（与编辑页一致）
+  const [pricing, setPricing] = useState<{ pricing_mode: string; price_cents: number | string; member_included: boolean; commercial_price_cents: number | string }>({ pricing_mode: 'free', price_cents: 0, member_included: false, commercial_price_cents: 0 });
+  const [hasMembershipPlan, setHasMembershipPlan] = useState(false);
   const [nameFeedback, setNameFeedback] = useState<{ loading: boolean; similar: any[] }>({ loading: false, similar: [] });
 
   // 实时检测技能名称相似度（防抖 500ms）
@@ -107,6 +111,7 @@ export default function SubmitSkill() {
       if (token) {
         const payload = JSON.parse(atob(token.split('.')[1]));
         setIsAdmin(payload.role === 'admin');
+        setUserId(payload.id || null);
       }
     } catch {}
   }, []);
@@ -127,6 +132,18 @@ export default function SubmitSkill() {
       .then((teams) => setMyTeams(Array.isArray(teams) ? teams : []))
       .catch(() => {});
   }, []);
+
+  // 查当前 owner（本人或所选团队）是否已有会员套餐，决定「会员专属 / 付费+会员免费」是否可用
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token || !userId) return;
+    const tType = formData.owner_team_id ? 'team' : 'user';
+    const tId = formData.owner_team_id || userId;
+    fetch(`/api/pay/creator-plan?targetType=${tType}&targetId=${encodeURIComponent(tId)}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.ok ? r.json() : null)
+      .then((cp) => setHasMembershipPlan(!!cp?.hasPlan))
+      .catch(() => {});
+  }, [formData.owner_team_id, userId]);
 
   const MAX_SIZE = 300 * 1024; // 300KB
 
@@ -230,6 +247,20 @@ export default function SubmitSkill() {
         const uploadData = new FormData(); uploadData.append('file', file);
         const uploadRes = await fetch(`/api/skills/${skill.id}/versions`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: uploadData });
         if (!uploadRes.ok) { const body = await uploadRes.json().catch(() => ({})); throw new Error(body.message || `HTTP ${uploadRes.status}`); }
+        // 保存付费设置（失败仅告警，不阻断发布）
+        try {
+          const pr = await fetch(`/api/pay/pricing/${skill.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+            body: JSON.stringify({
+              pricing_mode: pricing.pricing_mode,
+              price_cents: Math.max(0, Math.round((Number(pricing.price_cents) || 0) * 100)),
+              member_included: pricing.member_included,
+              commercial_price_cents: Math.max(0, Math.round((Number(pricing.commercial_price_cents) || 0) * 100)),
+            }),
+          });
+          if (!pr.ok) { const e = await pr.json().catch(() => ({})); console.warn('pricing save failed:', e.message || pr.status); }
+        } catch (pe: any) { console.warn('pricing save error:', pe?.message); }
         router.push('/dashboard');
       } catch (uploadErr: any) {
         // 回滚：删除已创建但无版本的技能，保证整体失败不留残留数据
@@ -382,6 +413,100 @@ export default function SubmitSkill() {
             <span className="block text-xs text-neutral-500 mt-1">{t('submit.teamHint')}</span>
           </div>
         )}
+
+        {/* ── 付费设置 ── */}
+        <div className="p-5 sm:p-6 border rounded-xl bg-white">
+          <h2 className="text-xl font-bold mb-1">{t('edit.pricingTitle')}</h2>
+          <p className="text-xs text-neutral-500 mb-4">{t('edit.pricingDesc')}</p>
+
+          {/* 收费模式 */}
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            {([
+              { key: 'free', label: t('edit.modeFree'), desc: t('edit.modeFreeDesc') },
+              { key: 'paid', label: t('edit.modePaid'), desc: t('edit.modePaidDesc') },
+              { key: 'member_only', label: t('edit.modeMember'), desc: t('edit.modeMemberDesc') },
+              { key: 'both', label: t('edit.modeBoth'), desc: t('edit.modeBothDesc') },
+            ] as const).map((m) => {
+              const needsPlan = m.key === 'member_only' || m.key === 'both';
+              const blocked = needsPlan && !hasMembershipPlan;
+              return (
+                <button
+                  key={m.key}
+                  type="button"
+                  disabled={blocked}
+                  onClick={() => {
+                    if (blocked) return;
+                    setPricing((p) => ({ ...p, pricing_mode: m.key, member_included: m.key === 'member_only' || m.key === 'both' ? true : p.member_included }));
+                  }}
+                  className={`text-left px-3 py-2.5 rounded-lg border transition-all ${
+                    blocked
+                      ? 'border-neutral-200 bg-neutral-50 opacity-60 cursor-not-allowed'
+                      : pricing.pricing_mode === m.key
+                      ? 'border-brand-600 bg-brand-50'
+                      : 'border-neutral-200 hover:bg-neutral-50'
+                  }`}
+                >
+                  <div className="text-sm font-medium">
+                    {m.label}
+                    {blocked && <span className="ml-1 text-[10px] text-amber-600">需先设套餐</span>}
+                  </div>
+                  <div className="text-[11px] text-neutral-500 mt-0.5 leading-snug">{m.desc}</div>
+                </button>
+              );
+            })}
+          </div>
+          {!hasMembershipPlan && (
+            <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mb-4">
+              {t('edit.noPlanWarningPrefix')}
+              <Link href="/account/membership" className="underline font-medium text-amber-700 hover:text-amber-800">「{t('edit.noPlanWarningLink')}」</Link>
+              {t('edit.noPlanWarningSuffix')}
+            </p>
+          )}
+
+          {pricing.pricing_mode === 'paid' || pricing.pricing_mode === 'both' ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1">{t('edit.priceLabel')}</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={pricing.price_cents}
+                  onChange={(e) => setPricing((p) => ({ ...p, price_cents: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder={t('edit.pricePlaceholder')}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 mb-1">{t('edit.commercialLabel')}</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={pricing.commercial_price_cents}
+                  onChange={(e) => setPricing((p) => ({ ...p, commercial_price_cents: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder={t('edit.commercialPlaceholder')}
+                />
+                <span className="block text-xs text-neutral-500 mt-1">{t('edit.commercialHint')}</span>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={pricing.pricing_mode === 'both' ? true : pricing.member_included}
+                  disabled={pricing.pricing_mode === 'both'}
+                  onChange={(e) => setPricing((p) => ({ ...p, member_included: e.target.checked }))}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm text-neutral-700">{t('edit.memberIncluded')}</span>
+              </label>
+            </div>
+          ) : pricing.pricing_mode === 'member_only' ? (
+            <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">{t('edit.modeMemberNote')}</p>
+          ) : (
+            <p className="text-xs text-neutral-500">{t('edit.modeFreeNote')}</p>
+          )}
+        </div>
 
         <button type="submit" disabled={loading} className="w-full py-4 bg-brand-600 text-white rounded-lg font-bold hover:bg-brand-700 disabled:bg-neutral-400">{loading ? t('submit.publishing') : t('submit.publish')}</button>
       </form>

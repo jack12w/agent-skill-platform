@@ -54,13 +54,26 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   // ── 详情页折叠：标签最多 2 行、版本历史最多 3 条 ──
   const [tagsExpanded, setTagsExpanded] = useState(false);
   const tagsRef = useRef<HTMLDivElement>(null);
-  const [tagsOverflow, setTagsOverflow] = useState(false);
   const [versionsExpanded, setVersionsExpanded] = useState(false);
-  // 标签区超过 2 行（被 CSS 截断）时显示「更多标签」
+  // 标签区超过 2 行（被 CSS 截断）时显示「更多」，并动态隐藏尾部标签，让「更多」停在第二行末尾
   useEffect(() => {
     const el = tagsRef.current;
     if (!el) return;
-    setTagsOverflow(!tagsExpanded && el.scrollHeight > el.clientHeight + 1);
+    const tagEls = Array.from(el.querySelectorAll('[data-tag]')) as HTMLElement[];
+    const moreBtn = el.querySelector('[data-more]') as HTMLElement | null;
+    // 先全部显示，便于测量自然高度
+    tagEls.forEach((t) => (t.style.display = ''));
+    if (moreBtn) moreBtn.style.display = '';
+    if (tagsExpanded) { return; }
+    const overflow = el.scrollHeight > el.clientHeight + 1;
+    if (moreBtn) moreBtn.style.display = overflow ? '' : 'none';
+    if (overflow) {
+      // 从后往前隐藏标签，直到「更多」按钮落在两行可见区域内
+      for (let i = tagEls.length - 1; i >= 0; i--) {
+        tagEls[i].style.display = 'none';
+        if (el.scrollHeight <= el.clientHeight + 1) break;
+      }
+    }
   }, [skill, tagsExpanded]);
 
   useEffect(() => { setCurrentUserId(decodeUserId()); }, []);
@@ -322,24 +335,26 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
       <div className="flex flex-col md:flex-row gap-12">
         <div className="flex-1 min-w-0 md:min-w-[460px]">
           <div className="flex items-start justify-between gap-4 mb-4"><h1 className="text-2xl sm:text-4xl font-bold">{skill.name}</h1>{isOwner && <Link href={`/skills/${skill.slug || skill.id}/edit`} className="shrink-0 px-4 py-2 border border-neutral-300 rounded-lg text-sm font-medium hover:bg-neutral-100">{t('detail.edit')}</Link>}</div>
-          <div ref={tagsRef} className="flex items-center gap-2 mb-4 flex-wrap" style={tagsExpanded ? undefined : { maxHeight: '4.5rem', overflow: 'hidden' }}>{tags.map((tag) => {
-            const isFeatured = tag === '精选';
-            return (
-              <button key={tag} onClick={() => router.push(`/skills?tag=${encodeURIComponent(tag)}`)}
-                className={`px-3 py-1 text-sm rounded-full hover:opacity-80 transition cursor-pointer ${
-                  isFeatured
-                    ? 'bg-orange-50 text-orange-800 border border-orange-200'
-                    : 'bg-brand-50 text-brand-600 hover:bg-brand-100 hover:text-brand-700'
-                }`}>
-                {tag}
-              </button>
-            );
-          })}</div>
-          {tagsOverflow && (
-            <button type="button" onClick={() => setTagsExpanded((v) => !v)} className="text-sm text-brand-600 hover:underline mb-4 -mt-2 block">
+          <div ref={tagsRef} className="flex items-center gap-2 mb-4 flex-wrap" style={tagsExpanded ? undefined : { maxHeight: '4.5rem', overflow: 'hidden' }}>
+            {tags.map((tag) => {
+              const isFeatured = tag === '精选';
+              return (
+                <button key={tag} data-tag onClick={() => router.push(`/skills?tag=${encodeURIComponent(tag)}`)}
+                  className={`px-3 py-1 text-sm rounded-full hover:opacity-80 transition cursor-pointer ${
+                    isFeatured
+                      ? 'bg-orange-50 text-orange-800 border border-orange-200'
+                      : 'bg-brand-50 text-brand-600 hover:bg-brand-100 hover:text-brand-700'
+                  }`}>
+                  {tag}
+                </button>
+              );
+            })}
+            <button type="button" data-more onClick={() => setTagsExpanded((v) => !v)}
+              className="inline-flex items-center gap-1 px-3 py-1 text-sm rounded-full bg-brand-50 text-brand-600 border border-brand-200 hover:bg-brand-100 hover:text-brand-700 font-medium transition cursor-pointer whitespace-nowrap">
               {tagsExpanded ? t('detail.showLess') : t('detail.tagsShowMore')}
+              <svg className={`w-3.5 h-3.5 transition-transform ${tagsExpanded ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
             </button>
-          )}
+          </div>
           {skill.content_md && (
             <div data-color-mode="light" className="mb-6 p-5 border rounded-xl bg-white max-h-[288px] md:max-h-[388px] overflow-y-auto [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none' as any }}>
               <MDEditor.Markdown source={skill.content_md} />
@@ -360,7 +375,7 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
             ) : (
               <div className="space-y-2">{(versionsExpanded ? versions : versions.slice(0, 3)).map((v) => { const isLatest = skill.latest_version_id === v.id; const downloading = acting === `dl:${v.id}`; return (<div key={v.id} className="p-3 bg-neutral-100 rounded-lg"><div className="flex items-center justify-between"><div className="min-w-0"><div className="flex items-center gap-2"><span className="font-mono font-medium">v{v.version}</span>{isLatest && <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">{t('detail.latest')}</span>}</div><div className="text-xs text-neutral-500 mt-0.5" suppressHydrationWarning>{v.size ? `${(v.size / 1024).toFixed(1)} KB · ` : ''}{new Date(v.created_at).toLocaleString()}</div></div><button onClick={() => handleDownload(v.id)} disabled={acting !== null} className="shrink-0 text-sm px-3 py-1.5 border border-brand-600 text-brand-600 rounded hover:bg-brand-50 disabled:opacity-50 disabled:cursor-not-allowed">{downloading ? t('detail.downloading') : t('detail.download')}</button></div>{v.notes && <p className="text-xs text-neutral-500 mt-1 ml-1">{v.notes}</p>}</div>); })}
               {versions.length > 3 && (
-                <button type="button" onClick={() => setVersionsExpanded((vv) => !vv)} className="text-sm text-brand-600 hover:underline mt-3 block">
+                <button type="button" onClick={() => setVersionsExpanded((vv) => !vv)} className="block w-full text-center mt-3 py-2 text-sm text-brand-600 bg-brand-50 border border-brand-200 rounded-lg hover:bg-brand-100 hover:text-brand-700 font-medium transition cursor-pointer">
                   {versionsExpanded ? t('detail.showLess') : t('detail.versionsShowMore')}
                 </button>
               )}
@@ -383,33 +398,37 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
                 )}
               </div>
             )}
-            {/* 订阅作者：设了付费套餐 → 会员支付；未设 → 免费关注 */}
-            {!isOwner && currentUserId && (
-              hasPlan ? (
-                authorSub?.subscribed ? (
-                  <div className="mb-3 text-center text-xs text-green-700 bg-green-50 rounded-lg py-2">
-                    {t('detail.subscribedAuthor')}
-                  </div>
+            {/* 订阅（左，红色）+ 点赞（右，品牌紫）同行，置于下载上方 */}
+            <div className="flex gap-3 mb-3">
+              {!isOwner && currentUserId && (
+                hasPlan ? (
+                  authorSub?.subscribed ? (
+                    <div className="flex-1 text-center text-xs text-green-700 bg-green-50 rounded-lg py-2.5">
+                      {t('detail.subscribedAuthor')}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleAuthorSubClick}
+                      className="flex-1 py-2.5 rounded-lg bg-red-500 text-white font-medium hover:bg-red-600 transition"
+                    >
+                      {t('detail.subscribeAuthor')}
+                    </button>
+                  )
                 ) : (
                   <button
                     onClick={handleAuthorSubClick}
-                    className="w-full mb-3 py-2.5 rounded-lg border border-brand-600 text-brand-600 font-medium hover:bg-brand-50"
+                    disabled={followBusy}
+                    className={`flex-1 py-2.5 rounded-lg font-medium transition disabled:opacity-50 ${freeSub ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' : 'bg-red-500 text-white hover:bg-red-600'}`}
                   >
-                    {t('detail.subscribeAuthor')}
+                    {freeSub ? t('detail.followedAuthor') : t('detail.followAuthor')}
                   </button>
                 )
-              ) : (
-                <button
-                  onClick={handleAuthorSubClick}
-                  disabled={followBusy}
-                  className={`w-full mb-3 py-2.5 rounded-lg font-medium transition disabled:opacity-50 ${freeSub ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' : 'border border-brand-600 text-brand-600 hover:bg-brand-50'}`}
-                >
-                  {freeSub ? t('detail.followedAuthor') : t('detail.followAuthor')}
-                </button>
-              )
-            )}
+              )}
+              <button onClick={handleLike} disabled={acting !== null} className="flex-1 py-2.5 rounded-lg border border-brand-600 text-brand-600 font-bold hover:bg-brand-50 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                {acting === 'like' ? t('detail.liking') : `${t('detail.likeSkill')} ${skill.stats?.likes_total || 0}`}
+              </button>
+            </div>
             <button onClick={() => handleDownload()} disabled={acting !== null || versions.length === 0} className="w-full py-3 bg-brand-600 text-white rounded-lg font-bold hover:bg-brand-700 mb-3 disabled:opacity-50 disabled:cursor-not-allowed">{acting === 'download' ? t('detail.downloading') : versions.length === 0 ? t('detail.noVersionYet') : `${t('detail.download')} v${versions.find((v) => v.id === skill.latest_version_id)?.version || versions[0]?.version || 'latest'}`}</button>
-            <button onClick={handleLike} disabled={acting !== null} className="w-full py-3 border border-brand-600 text-brand-600 rounded-lg font-bold hover:bg-brand-50 disabled:opacity-50 disabled:cursor-not-allowed">{acting === 'like' ? t('detail.liking') : t('detail.likeSkill')}</button>
           </div>
           <div className="text-sm text-neutral-500"><div>{t('detail.publishedBy')}: <Link href={`/users/${encodeURIComponent(ownerName)}`} className="text-brand-600 font-medium hover:underline">{ownerName}</Link></div>{skill.owner_team && <div>{t('detail.teamLabel')}: <Link href={`/teams/${skill.owner_team.id}`} className="text-brand-600 font-medium hover:underline">{skill.owner_team.name}</Link></div>}<div>{t('detail.lastUpdated')}: <span className="text-neutral-900 font-medium" suppressHydrationWarning>{skill.updated_at ? new Date(skill.updated_at).toLocaleDateString() : '-'}</span></div></div>
 

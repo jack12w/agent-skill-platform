@@ -190,7 +190,7 @@ tags: [搜索, 数据分析]
               </ul>
 
               <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.pCreatorMember')}</h2>
-              <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pCreatorMemberDesc')}</p>
+              <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pCreatorMemberDescPrefix')}<Link href="/account/membership" className="text-brand-600 hover:underline font-medium">「{t('help.pCreatorMemberDescLink')}」</Link>{t('help.pCreatorMemberDescSuffix')}</p>
 
               <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.pVsAdmin')}</h2>
               <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pVsAdminDesc')}</p>
