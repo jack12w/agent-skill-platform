@@ -12,11 +12,12 @@ import CheckoutModal from '../../components/CheckoutModal';
 import MembershipModal from '../../components/MembershipModal';
 
 function decodeUserId(): string | null {
+  // 与个人主页（users/[username]）保持同一来源：直接读本地 user 对象 id，
+  // 避免解析 JWT base64url 时 atob 因 -/_ 字符抛异常导致 currentUserId 恒为 null、
+  // 进而订阅按钮永不显示。
   try {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) return null;
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload?.sub ?? null;
+    const u = JSON.parse(localStorage.getItem('user') || 'null');
+    return u?.id || null;
   } catch { return null; }
 }
 
