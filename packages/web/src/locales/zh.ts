@@ -556,6 +556,7 @@ const zh = {
     myMembershipHint: '设置你的个人会员订阅价格，订阅用户在有效期内可免费下载你发布的全部技能。留空表示该档不开放。',
     myPlanSaved: '会员定价已保存',
     priceRecommended: '未设置时默认填入推荐价（月 ¥29 / 季 ¥79 / 年 ¥268），可随时修改后保存。',
+    editMembershipPriceEntry: '编辑会员价',
   },
   help: {
     title: '帮助中心',

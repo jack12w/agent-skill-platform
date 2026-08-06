@@ -554,6 +554,7 @@ const en = {
     myMembershipHint: 'Set your personal membership price. Subscribers can download all your skills for free during the subscription. Leave blank to disable a tier.',
     myPlanSaved: 'Membership pricing saved',
     priceRecommended: 'Recommended prices are pre-filled when unset (Monthly ¥29 / Quarterly ¥79 / Yearly ¥268). You can edit and save anytime.',
+    editMembershipPriceEntry: 'Edit membership price',
   },
   help: {
     title: 'Help Center',
