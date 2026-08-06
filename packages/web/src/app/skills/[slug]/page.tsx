@@ -34,6 +34,8 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   const [versions, setVersions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
+  const [versionsLoadFailed, setVersionsLoadFailed] = useState(false);
   const [forbidden, setForbidden] = useState(false);
   const [acting, setActing] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -70,7 +72,11 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
       return () => clearTimeout(timer);
     }
   }, [forbidden, router]);
-  const loadVersions = async (skillId: string) => { const res = await fetch(`/api/skills/${skillId}/versions`, { headers: getAuthHeaders() }); if (res.ok) setVersions(await res.json()); };
+  const loadVersions = async (skillId: string) => {
+    const res = await fetch(`/api/skills/${skillId}/versions`, { headers: getAuthHeaders() });
+    if (res.ok) { setVersions(await res.json()); setVersionsLoadFailed(false); }
+    else { setVersionsLoadFailed(true); }
+  };
   const reload = async () => { const res = await fetch(`/api/skills/${params.slug}`, { headers: getAuthHeaders() }); if (res.ok) { const data = await res.json(); setSkill(data); await loadVersions(data.id); } };
 
   useEffect(() => {
@@ -79,6 +85,8 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
         const res = await fetch(`/api/skills/${params.slug}`, { headers: getAuthHeaders() });
         if (!res.ok) {
           if (res.status === 403) { setForbidden(true); setLoading(false); return; }
+          // 记录状态码：404 → 真缺失；429/5xx/其它 → 瞬时故障（可重试），与「技能走丢了」区分开
+          setErrorStatus(res.status || null);
           throw new Error(`HTTP ${res.status}`);
         }
         const data = await res.json();
@@ -268,11 +276,21 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
       </div>
     );
   }
-  if (error || !skill) return (
+  if (error || !skill) {
+    const isTransient = errorStatus !== null && errorStatus !== 404;
+    return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center">
       <div className="text-6xl mb-4">😕</div>
-      <h1 className="text-2xl font-bold mb-2">{t('detail.skillNotFound')}</h1>
-      <p className="text-neutral-500 mb-10">{t('detail.skillLostHint')}</p>
+      <h1 className="text-2xl font-bold mb-2">{isTransient ? t('detail.loadFailed') : t('detail.skillNotFound')}</h1>
+      <p className="text-neutral-500 mb-6">{isTransient ? t('detail.loadFailedHint') : t('detail.skillLostHint')}</p>
+      {isTransient && (
+        <button
+          onClick={() => { setError(null); setErrorStatus(null); reload(); }}
+          className="inline-block mb-8 px-6 py-3 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700"
+        >
+          {t('detail.retry')}
+        </button>
+      )}
       {suggestedSkills.length > 0 && (
         <div>
           <h2 className="text-lg font-semibold mb-4">{t('detail.skillRecommend')}</h2>
@@ -295,7 +313,8 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
         </div>
       )}
     </div>
-  );
+    );
+  }
 
   const tags: string[] = skill.tags ?? [];
   const ownerName = skill.owner_user?.name || 'Anonymous';
@@ -341,7 +360,16 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
           {skill.io_schema && (<div className="p-6 bg-neutral-100 rounded-xl mb-8"><h2 className="text-xl font-bold mb-4">{t('detail.ioSchema')}</h2><pre className="text-sm bg-neutral-100 p-4 rounded overflow-auto">{JSON.stringify(skill.io_schema, null, 2)}</pre></div>)}
           <div className="p-6 border rounded-xl">
             <h2 className="text-xl font-bold mb-4">{t('detail.versionHistory')}</h2>
-            {versions.length === 0 ? (<p className="text-sm text-neutral-500">{t('detail.noVersion')}</p>) : (
+            {versions.length === 0 ? (
+              versionsLoadFailed ? (
+                <div className="flex items-center gap-3 text-sm text-neutral-500">
+                  <span>{t('detail.versionLoadFailed')}</span>
+                  <button onClick={() => skill && loadVersions(skill.id)} className="px-3 py-1 border border-brand-600 text-brand-600 rounded hover:bg-brand-50">{t('detail.retry')}</button>
+                </div>
+              ) : (
+                <p className="text-sm text-neutral-500">{t('detail.noVersion')}</p>
+              )
+            ) : (
               <div className="space-y-2">{(versionsExpanded ? versions : versions.slice(0, 3)).map((v) => { const isLatest = skill.latest_version_id === v.id; const downloading = acting === `dl:${v.id}`; return (<div key={v.id} className="p-3 bg-neutral-100 rounded-lg"><div className="flex items-center justify-between"><div className="min-w-0"><div className="flex items-center gap-2"><span className="font-mono font-medium">v{v.version}</span>{isLatest && <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">{t('detail.latest')}</span>}</div><div className="text-xs text-neutral-500 mt-0.5" suppressHydrationWarning>{v.size ? `${(v.size / 1024).toFixed(1)} KB · ` : ''}{new Date(v.created_at).toLocaleString()}</div></div><button onClick={() => handleDownload(v.id)} disabled={acting !== null} className="shrink-0 text-sm px-3 py-1.5 border border-brand-600 text-brand-600 rounded hover:bg-brand-50 disabled:opacity-50 disabled:cursor-not-allowed">{downloading ? t('detail.downloading') : t('detail.download')}</button></div>{v.notes && <p className="text-xs text-neutral-500 mt-1 ml-1">{v.notes}</p>}</div>); })}
               {versions.length > 3 && (
                 <button type="button" onClick={() => setVersionsExpanded((vv) => !vv)} className="text-sm text-brand-600 hover:underline mt-3 block">

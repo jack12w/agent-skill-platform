@@ -27,9 +27,10 @@ async function bootstrap() {
     maxAge: 86400,
   });
 
-  // ── 全局限流：每 IP 每分钟 120 次请求 ────
-  // 可根据需要调整窗口大小和次数
-  app.useGlobalGuards(new RateLimitGuard(60_000, 120));
+  // ── 全局限流：每真实客户端 IP 每分钟 600 次 ────
+  // 守卫内部已做：① X-Forwarded-For 取真实客户端 IP；② 拿不到真实 IP（反代/网桥）时回退全局大桶，
+  //    避免所有用户共享小桶被打满；③ /api/health 豁免。阈值可按需调整。
+  app.useGlobalGuards(new RateLimitGuard(600));
 
   // ── Body Parser 限制 ─────────────────────
   // verify 钩子缓存原始 body（req.rawBody），供微信支付回调验签使用（不修改既有 JSON 解析行为）

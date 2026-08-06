@@ -92,6 +92,15 @@ export default function NotificationBell() {
     };
   }, []);
 
+  // 限流暂停：被 429 时记录暂停截止时间，期间不轮询，避免持续冲击限流桶
+  const pausedUntilRef = useRef(0);
+  const handleRateLimited = (res: Response) => {
+    if (res.status !== 429) return;
+    const ra = res.headers.get('retry-after');
+    const waitMs = ra ? parseInt(ra, 10) * 1000 : 30000;
+    pausedUntilRef.current = Date.now() + (Number.isFinite(waitMs) && waitMs > 0 ? waitMs : 30000);
+  };
+
   const fetchNotifications = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) return;
@@ -100,6 +109,7 @@ export default function NotificationBell() {
       const res = await fetch('/api/auth/unread-comments', {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (res.status === 429) { handleRateLimited(res); return; }
       if (res.ok) {
         const data = await res.json();
         setAllComments(data.comments ?? []);
@@ -115,6 +125,7 @@ export default function NotificationBell() {
       const res = await fetch('/api/notifications', {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (res.status === 429) { handleRateLimited(res); return; }
       if (res.ok) {
         const data = await res.json();
         setNotiItems(data.items ?? []);
@@ -123,24 +134,27 @@ export default function NotificationBell() {
     } catch { /* ignore */ }
   }, []);
 
-  // Poll every 15s, pause when tab hidden（缩短轮询周期，加快铃铛徽标更新）
-  useEffect(() => {
-    if (!loggedIn) return;
+  // 单次轮询（受「限流暂停」约束）
+  const pollOnce = useCallback(() => {
+    if (Date.now() < pausedUntilRef.current) return;
     fetchNotifications();
     fetchSubNotifications();
+  }, [fetchNotifications, fetchSubNotifications]);
+
+  // Poll every 30s, pause when tab hidden or rate-limited（降低轮询频率，缓解限流压力）
+  useEffect(() => {
+    if (!loggedIn) return;
+    pollOnce();
     const interval = setInterval(() => {
-      if (!document.hidden) {
-        fetchNotifications();
-        fetchSubNotifications();
-      }
-    }, 15000);
-    const onVisible = () => { fetchNotifications(); fetchSubNotifications(); };
+      if (!document.hidden) pollOnce();
+    }, 30000);
+    const onVisible = () => { pollOnce(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [loggedIn, fetchNotifications, fetchSubNotifications]);
+  }, [loggedIn, pollOnce]);
 
   // 打开铃铛面板时立即刷新，避免等下一个轮询周期才看到新通知
   useEffect(() => {
