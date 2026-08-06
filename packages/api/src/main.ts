@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
 import { RateLimitGuard } from './common/rate-limit.guard';
+import { CacheInterceptor } from './common/cache.interceptor';
 import { SystemMetricsService } from './common/system-metrics.service';
 
 async function bootstrap() {
@@ -31,6 +32,11 @@ async function bootstrap() {
   // 守卫内部已做：① X-Forwarded-For 取真实客户端 IP；② 拿不到真实 IP（反代/网桥）时回退全局大桶（2000/min），
   //    避免所有用户共享小桶被打满；③ Redis 不可用时降级内存兜底，绝不阻塞全站；④ /api/health 豁免。
   app.useGlobalGuards(new RateLimitGuard(120));
+
+  // ── 热点只读 GET 接口 Redis 响应缓存（扛 5000 在线的核心杠杆） ────
+  // 仅白名单公开 GET（列表/详情/版本/榜单/分类/GEO feed）；匿名共享 + 登录用户按令牌隔离（防串号）；
+  // Redis 不可用时直接放行不缓存。详见 cache.interceptor.ts。
+  app.useGlobalInterceptors(new CacheInterceptor());
 
   // ── Body Parser 限制 ─────────────────────
   // verify 钩子缓存原始 body（req.rawBody），供微信支付回调验签使用（不修改既有 JSON 解析行为）
