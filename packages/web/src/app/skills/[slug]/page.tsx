@@ -12,12 +12,12 @@ import CheckoutModal from '../../components/CheckoutModal';
 import MembershipModal from '../../components/MembershipModal';
 
 function decodeUserId(): string | null {
-  // 与个人主页（users/[username]）保持同一来源：直接读本地 user 对象 id，
-  // 避免解析 JWT base64url 时 atob 因 -/_ 字符抛异常导致 currentUserId 恒为 null、
-  // 进而订阅按钮永不显示。
+  // 从登录令牌 (JWT) 的 sub 字段解析当前用户 id（权威身份，由后端签发）。
   try {
-    const u = JSON.parse(localStorage.getItem('user') || 'null');
-    return u?.id || null;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return null;
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload?.sub ?? null;
   } catch { return null; }
 }
 
@@ -405,31 +405,19 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
             )}
             {/* 订阅（左，红色）+ 点赞（右，品牌紫）同行，置于下载上方 */}
             <div className="flex gap-3 mb-3">
-              {currentUserId && (
-                isOwner ? (
-                  <button disabled className="flex-1 py-2.5 rounded-lg font-medium bg-neutral-100 text-neutral-400 cursor-not-allowed">
-                    {t('detail.cannotSubscribeSelf')}
-                  </button>
-                ) : hasPlan ? (
-                  authorSub?.subscribed ? (
-                    <div className="flex-1 text-center text-xs text-green-700 bg-green-50 rounded-lg py-2.5">
-                      {t('detail.subscribedAuthor')}
-                    </div>
-                  ) : (
-                    <button
-                      onClick={handleAuthorSubClick}
-                      className="flex-1 py-2.5 rounded-lg bg-red-500 text-white font-medium hover:bg-red-600 transition"
-                    >
-                      {t('detail.subscribeAuthor')}
-                    </button>
-                  )
+              {/* 本人或团队成员不显示订阅按钮；其他登录用户显示，文案统一为 订阅/已订阅 */}
+              {!isOwner && currentUserId && (
+                (authorSub?.subscribed || freeSub) ? (
+                  <div className="flex-1 text-center text-xs text-green-700 bg-green-50 rounded-lg py-2.5">
+                    {t('detail.subscribed')}
+                  </div>
                 ) : (
                   <button
                     onClick={handleAuthorSubClick}
                     disabled={followBusy}
-                    className={`flex-1 py-2.5 rounded-lg font-medium transition disabled:opacity-50 ${freeSub ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' : 'bg-red-500 text-white hover:bg-red-600'}`}
+                    className="flex-1 py-2.5 rounded-lg bg-red-500 text-white font-medium hover:bg-red-600 transition disabled:opacity-50"
                   >
-                    {freeSub ? t('detail.followedAuthor') : t('detail.followAuthor')}
+                    {t('detail.subscribe')}
                   </button>
                 )
               )}

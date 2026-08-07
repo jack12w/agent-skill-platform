@@ -307,6 +307,7 @@ export class SkillsService {
       cover_url: data.cover_url || null,
       owner_user_id: teamId ? null : userId,
       owner_team_id: teamId,
+      created_by: userId,
       status: SkillStatus.PENDING,
     });
     const savedSkill = await this.skillRepository.save(skill);
@@ -355,7 +356,9 @@ export class SkillsService {
         patch.owner_user_id = null;
       } else {
         patch.owner_team_id = null;
-        patch.owner_user_id = userId;
+        // 解绑团队：恢复个人归属，但回填「原创作者」(created_by) 而非当前操作者，
+        // 避免团队里另一个成员解绑后技能变成归属于他。
+        patch.owner_user_id = skill.created_by || userId;
       }
     }
 

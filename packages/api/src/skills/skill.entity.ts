@@ -54,6 +54,13 @@ export class Skill {
   owner_team: Team;
 
   @Column({ nullable: true })
+  created_by: string;
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'created_by' })
+  created_by_user: User;
+
+  @Column({ nullable: true })
   latest_version_id: string;
 
   @OneToOne(() => SkillVersion)

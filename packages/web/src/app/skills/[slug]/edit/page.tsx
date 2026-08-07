@@ -16,11 +16,12 @@ const FALLBACK_PRESET_TAGS: Record<string, string[]> = {
 const GROUP_KEYS = ['scene', 'role', 'category'] as const;
 
 function decodeUserId(): string | null {
+  // 从登录令牌 (JWT) 的 sub 字段解析当前用户 id（权威身份，由后端签发）。
   try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
-    if (!raw) return null;
-    const u = JSON.parse(raw);
-    return u?.id ?? null;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return null;
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload?.sub ?? null;
   } catch { return null; }
 }
 

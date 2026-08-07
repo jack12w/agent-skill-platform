@@ -86,11 +86,8 @@ const zh = {
     retry: '重试',
     skillRecommend: '推荐技能',
     reviewBanner: '此技能正在审核中，暂未公开',
-    subscribeAuthor: '订阅会员',
-    subscribedAuthor: '已订阅会员',
-    followAuthor: '订阅',
-    followedAuthor: '已订阅',
-    cannotSubscribeSelf: '不能订阅自己',
+    subscribe: '订阅',
+    subscribed: '已订阅',
   },
   edit: {
     title: '编辑技能',

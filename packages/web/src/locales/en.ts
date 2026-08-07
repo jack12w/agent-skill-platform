@@ -86,11 +86,8 @@ const en = {
     retry: 'Retry',
     skillRecommend: 'Recommended Skills',
     reviewBanner: 'This skill is under review and not yet public',
-    subscribeAuthor: 'Subscribe to membership',
-    subscribedAuthor: 'Subscribed to membership',
-    followAuthor: 'Subscribe',
-    followedAuthor: 'Subscribed',
-    cannotSubscribeSelf: 'Cannot subscribe to yourself',
+    subscribe: 'Subscribe',
+    subscribed: 'Subscribed',
   },
   edit: {
     title: 'Edit Skill',
