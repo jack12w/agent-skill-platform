@@ -68,6 +68,18 @@ export class SkillsService {
     private entitlementService: EntitlementService,
   ) {}
 
+  /** 技能管理者判定：本人（owner_user_id）或所属团队成员均可管理（团队技能 owner_user_id 可能为 null） */
+  private async isSkillManager(skill: Skill, userId: string): Promise<boolean> {
+    if (skill.owner_user_id === userId) return true;
+    if (skill.owner_team_id) {
+      const m = await this.teamMemberRepository.findOne({
+        where: { team_id: skill.owner_team_id, user_id: userId },
+      });
+      return !!m;
+    }
+    return false;
+  }
+
   async findAll(query: { query?: string; tag?: string; tags?: string; sort?: string; page?: number; size?: number; owner?: string; owner_id?: string }, userId?: string) {
     const { query: q, tag, tags: tagsStr, sort, page = 1, size = 20, owner, owner_id } = query;
     const tagList = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
@@ -293,7 +305,7 @@ export class SkillsService {
       content_md: contentMd,
       tags: (Array.isArray(data.tags) ? data.tags : []).flatMap((t: string) => t.split(/[，,]+/)).map((t: string) => t.trim()).filter(Boolean),
       cover_url: data.cover_url || null,
-      owner_user_id: userId,
+      owner_user_id: teamId ? null : userId,
       owner_team_id: teamId,
       status: SkillStatus.PENDING,
     });
@@ -304,8 +316,8 @@ export class SkillsService {
 
   async updateSkill(idOrSlug: string, data: Partial<Skill>, userId: string) {
     const skill = await this.findOne(idOrSlug, undefined, true);
-    if (skill.owner_user_id !== userId) {
-      throw new ForbiddenException('Only the owner can edit this skill');
+    if (!(await this.isSkillManager(skill, userId))) {
+      throw new ForbiddenException('Only the owner or a team member can edit this skill');
     }
 
     // Whitelist editable fields — never let clients set id/owner/slug/status/etc.
@@ -329,7 +341,7 @@ export class SkillsService {
     }
     if (typeof data.cover_url === 'string') patch.cover_url = data.cover_url;
 
-    // owner_team_id: '' / null → detach; '<uuid>' → must be a team the user belongs to
+    // 独占归属：挂团队 → 清空个人归属；解绑团队 → 恢复个人归属（编辑者本人）
     if ('owner_team_id' in data) {
       const teamId = (data.owner_team_id as string | null) || null;
       if (teamId) {
@@ -339,8 +351,12 @@ export class SkillsService {
         if (!membership) {
           throw new ForbiddenException('You are not a member of that team');
         }
+        patch.owner_team_id = teamId;
+        patch.owner_user_id = null;
+      } else {
+        patch.owner_team_id = null;
+        patch.owner_user_id = userId;
       }
-      patch.owner_team_id = teamId;
     }
 
     if (Object.keys(patch).length === 0) {
@@ -375,7 +391,7 @@ export class SkillsService {
 
   async createVersion(skillId: string, fileBuffer: Buffer, userId: string, notes?: string) {
     const skill = await this.findOne(skillId, undefined, true);
-    if (skill.owner_user_id !== userId) throw new ForbiddenException('Not authorized');
+    if (!(await this.isSkillManager(skill, userId))) throw new ForbiddenException('Not authorized');
 
     // Locate SKILL.md inside the zip — accept it anywhere, prefer the shallowest path.
     // (Case-insensitive, so SKILL.md / skill.md / Skill.md all work.)
@@ -501,7 +517,11 @@ export class SkillsService {
       ? await this.getMembershipStatus(ownerType, ownerId, userId, hasPlan)
       : null;
 
-    return { skill, versions, pricing, hasPlan, membershipStatus };
+    const isTeamMember = skill.owner_team_id && userId
+      ? !!(await this.teamMemberRepository.findOne({ where: { team_id: skill.owner_team_id, user_id: userId } }))
+      : false;
+
+    return { skill, versions, pricing, hasPlan, membershipStatus, isTeamMember };
   }
 
   /** 复制 PricingController.pricing 的公开查询 + 免费降级 */
@@ -629,7 +649,7 @@ export class SkillsService {
 
   async deleteVersion(skillId: string, versionId: string, userId: string) {
     const skill = await this.findOne(skillId, undefined, true);
-    if (skill.owner_user_id !== userId) throw new ForbiddenException('Not authorized');
+    if (!(await this.isSkillManager(skill, userId))) throw new ForbiddenException('Not authorized');
 
     const version = await this.versionRepository.findOne({ where: { id: versionId, skill_id: skill.id } });
     if (!version) throw new NotFoundException('Version not found');
@@ -647,8 +667,8 @@ export class SkillsService {
 
   async deleteSkill(skillId: string, userId: string) {
     const skill = await this.findOne(skillId, undefined, true);
-    if (skill.owner_user_id !== userId) {
-      throw new ForbiddenException('Only the skill owner can delete this skill');
+    if (!(await this.isSkillManager(skill, userId))) {
+      throw new ForbiddenException('Only the owner or a team member can delete this skill');
     }
 
     // 1. Delete all version packages from OSS

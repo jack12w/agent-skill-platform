@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, IsNull } from 'typeorm';
 import { SkillPricing, Entitlement, Membership } from './payments.entity';
 import { Skill } from '../skills/skill.entity';
+import { TeamMember } from '../teams/team-member.entity';
 import { PaymentRequiredException } from './payment-exceptions';
 import { SettingsService } from './settings.service';
 import { MembershipService } from './membership.service';
@@ -20,6 +21,7 @@ export class EntitlementService {
     @InjectRepository(SkillPricing) private readonly pricingRepo: Repository<SkillPricing>,
     @InjectRepository(Entitlement) private readonly entRepo: Repository<Entitlement>,
     @InjectRepository(Membership) private readonly memberRepo: Repository<Membership>,
+    @InjectRepository(TeamMember) private readonly teamMemberRepo: Repository<TeamMember>,
     private readonly settings: SettingsService,
     private readonly membership: MembershipService,
   ) {}
@@ -48,8 +50,8 @@ export class EntitlementService {
     // 2. 管理员
     if (isAdmin) return;
 
-    // 3. 作者本人
-    if (userId && skill.owner_user_id === userId) return;
+    // 3. 作者本人 或 所属团队成员（团队技能 owner_user_id 为 null，按团队成员放行，避免团队自己付费下载）
+    if (userId && (skill.owner_user_id === userId || (!!skill.owner_team_id && !!(await this.teamMemberRepo.findOne({ where: { team_id: skill.owner_team_id, user_id: userId } }))))) return;
 
     if (userId) {
       // 4. 已购有效权益（含永久 expires_at IS NULL）

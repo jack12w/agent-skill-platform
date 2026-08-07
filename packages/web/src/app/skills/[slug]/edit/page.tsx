@@ -16,8 +16,12 @@ const FALLBACK_PRESET_TAGS: Record<string, string[]> = {
 const GROUP_KEYS = ['scene', 'role', 'category'] as const;
 
 function decodeUserId(): string | null {
-  try { const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null; if (!token) return null; return JSON.parse(atob(token.split('.')[1]))?.sub ?? null; }
-  catch { return null; }
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
+    if (!raw) return null;
+    const u = JSON.parse(raw);
+    return u?.id ?? null;
+  } catch { return null; }
 }
 
 export default function EditSkill({ params }: { params: { slug: string } }) {
@@ -47,10 +51,12 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
         const [sRes, vRes, tRes] = await Promise.all([fetch(`/api/skills/${params.slug}`), fetch(`/api/skills/${params.slug}/versions`), fetch('/api/teams/my', { headers: { Authorization: `Bearer ${token}` } })]);
         if (!sRes.ok) throw new Error(`HTTP ${sRes.status}`);
         const s = await sRes.json(); const uid = decodeUserId();
-        if (s.owner_user_id !== uid) { setError('You are not the owner of this skill.'); setSkill(s); return; }
+        const myTeamsData = tRes.ok ? await tRes.json() : [];
+        const isTeamMember = !!s.owner_team_id && myTeamsData.some((tm: any) => tm.id === s.owner_team_id);
+        if (s.owner_user_id !== uid && !isTeamMember) { setError('You are not the owner of this skill.'); setSkill(s); return; }
         setSkill(s); setForm({ name: s.name ?? '', content_md: s.content_md ?? '', tags: (s.tags ?? []).filter((t: string) => t !== '社区').join(', '), cover_url: s.cover_url ?? '', owner_team_id: s.owner_team_id ?? '' });
         if (vRes.ok) setVersions(await vRes.json());
-        if (tRes.ok) setMyTeams(await tRes.json());
+        setMyTeams(myTeamsData);
         // 载入现行定价（公开接口，失败不影响页面）
         try {
           const pResp = await fetch(`/api/pay/pricing/${s.id}`);

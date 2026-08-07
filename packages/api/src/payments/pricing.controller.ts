@@ -15,6 +15,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SkillPricing, CreatorMembershipPlan } from './payments.entity';
 import { Skill } from '../skills/skill.entity';
+import { TeamMember } from '../teams/team-member.entity';
 import { SettingsService } from './settings.service';
 import { AuthGuard } from '../auth/auth.guard';
 
@@ -33,6 +34,7 @@ export class PricingController {
     @InjectRepository(SkillPricing) private readonly pricingRepo: Repository<SkillPricing>,
     @InjectRepository(Skill) private readonly skillRepo: Repository<Skill>,
     @InjectRepository(CreatorMembershipPlan) private readonly planRepo: Repository<CreatorMembershipPlan>,
+    @InjectRepository(TeamMember) private readonly teamMemberRepo: Repository<TeamMember>,
     private readonly settings: SettingsService,
   ) {}
 
@@ -106,8 +108,11 @@ export class PricingController {
     if (!skill) throw new NotFoundException('Skill not found');
 
     const isAdmin = req.user?.role === 'admin';
-    if (skill.owner_user_id !== req.user.sub && !isAdmin) {
-      throw new ForbiddenException('Only the skill owner or an admin can set its pricing');
+    const uid = req.user.sub;
+    const isManager = skill.owner_user_id === uid
+      || (!!skill.owner_team_id && !!(await this.teamMemberRepo.findOne({ where: { team_id: skill.owner_team_id, user_id: uid } })));
+    if (!isManager && !isAdmin) {
+      throw new ForbiddenException('Only the skill owner, a team member, or an admin can set its pricing');
     }
 
     const mode = body?.pricing_mode as PricingMode;

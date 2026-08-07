@@ -90,6 +90,7 @@ const en = {
     subscribedAuthor: 'Subscribed to membership',
     followAuthor: 'Subscribe',
     followedAuthor: 'Subscribed',
+    cannotSubscribeSelf: 'Cannot subscribe to yourself',
   },
   edit: {
     title: 'Edit Skill',

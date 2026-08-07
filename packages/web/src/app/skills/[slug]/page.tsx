@@ -52,6 +52,8 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   const [hasPlan, setHasPlan] = useState(false);
   const [freeSub, setFreeSub] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
+  // 当前用户是否为该技能所属团队成员（用于「订阅自己」按钮禁用）
+  const [isTeamMember, setIsTeamMember] = useState(false);
   // ── 详情页折叠：标签最多 2 行、版本历史最多 3 条 ──
   const [tagsExpanded, setTagsExpanded] = useState(false);
   const tagsRef = useRef<HTMLDivElement>(null);
@@ -99,6 +101,7 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
       setVersions(d.versions || []);
       if (d.pricing) setPricing(d.pricing);
       setHasPlan(!!d.hasPlan);
+      setIsTeamMember(!!d.isTeamMember);
       if (d.membershipStatus) {
         if (d.hasPlan) setAuthorSub(d.membershipStatus);
         else setFreeSub(!!d.membershipStatus.subscribed);
@@ -127,6 +130,7 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
         setVersions(d.versions || []);
         if (d.pricing) setPricing(d.pricing);
         setHasPlan(!!d.hasPlan);
+        setIsTeamMember(!!d.isTeamMember);
         if (d.membershipStatus) {
           if (d.hasPlan) setAuthorSub(d.membershipStatus);
           else setFreeSub(!!d.membershipStatus.subscribed);
@@ -319,8 +323,8 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   }
 
   const tags: string[] = skill.tags ?? [];
-  const ownerName = skill.owner_user?.name || 'Anonymous';
-  const isOwner = !!currentUserId && currentUserId === skill.owner_user_id;
+  const ownerName = skill.owner_user?.name || skill.owner_team?.name || 'Anonymous';
+  const isOwner = !!currentUserId && (currentUserId === skill.owner_user_id || isTeamMember);
   const authorTargetType = skill.owner_team_id ? 'team' : 'user';
   const authorTargetId = skill.owner_team_id || skill.owner_user_id;
   const authorTargetName = skill.owner_team_id ? skill.owner_team?.name : ownerName;
@@ -401,8 +405,12 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
             )}
             {/* 订阅（左，红色）+ 点赞（右，品牌紫）同行，置于下载上方 */}
             <div className="flex gap-3 mb-3">
-              {!isOwner && currentUserId && (
-                hasPlan ? (
+              {currentUserId && (
+                isOwner ? (
+                  <button disabled className="flex-1 py-2.5 rounded-lg font-medium bg-neutral-100 text-neutral-400 cursor-not-allowed">
+                    {t('detail.cannotSubscribeSelf')}
+                  </button>
+                ) : hasPlan ? (
                   authorSub?.subscribed ? (
                     <div className="flex-1 text-center text-xs text-green-700 bg-green-50 rounded-lg py-2.5">
                       {t('detail.subscribedAuthor')}
@@ -431,7 +439,7 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
             </div>
             <button onClick={() => handleDownload()} disabled={acting !== null || versions.length === 0} className="w-full py-3 bg-brand-600 text-white rounded-lg font-bold hover:bg-brand-700 mb-3 disabled:opacity-50 disabled:cursor-not-allowed">{acting === 'download' ? t('detail.downloading') : versions.length === 0 ? t('detail.noVersionYet') : `${t('detail.download')} v${versions.find((v) => v.id === skill.latest_version_id)?.version || versions[0]?.version || 'latest'}`}</button>
           </div>
-          <div className="text-sm text-neutral-500"><div>{t('detail.publishedBy')}: <Link href={`/users/${encodeURIComponent(ownerName)}`} className="text-brand-600 font-medium hover:underline">{ownerName}</Link></div>{skill.owner_team && <div>{t('detail.teamLabel')}: <Link href={`/teams/${skill.owner_team.id}`} className="text-brand-600 font-medium hover:underline">{skill.owner_team.name}</Link></div>}<div>{t('detail.lastUpdated')}: <span className="text-neutral-900 font-medium" suppressHydrationWarning>{skill.updated_at ? new Date(skill.updated_at).toLocaleDateString() : '-'}</span></div></div>
+          <div className="text-sm text-neutral-500"><div>{t('detail.publishedBy')}: {skill.owner_team ? <Link href={`/teams/${skill.owner_team.id}`} className="text-brand-600 font-medium hover:underline">{skill.owner_team.name}</Link> : <Link href={`/users/${encodeURIComponent(ownerName)}`} className="text-brand-600 font-medium hover:underline">{ownerName}</Link>}</div><div>{t('detail.lastUpdated')}: <span className="text-neutral-900 font-medium" suppressHydrationWarning>{skill.updated_at ? new Date(skill.updated_at).toLocaleDateString() : '-'}</span></div></div>
 
           {/* ── 评论输入（右侧） ── */}
           <div className="p-4 border rounded-xl bg-white">

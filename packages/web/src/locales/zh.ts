@@ -90,6 +90,7 @@ const zh = {
     subscribedAuthor: '已订阅会员',
     followAuthor: '订阅',
     followedAuthor: '已订阅',
+    cannotSubscribeSelf: '不能订阅自己',
   },
   edit: {
     title: '编辑技能',
