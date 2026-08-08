@@ -1,26 +1,28 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { LeaderboardSnapshot } from './leaderboard-snapshot.entity';
 import { SkillStats } from '../skills/skill-stats.entity';
 import { LeaderboardType, LeaderboardPeriod } from '@platform/shared';
 
 @Injectable()
 export class LeaderboardService {
   constructor(
-    @InjectRepository(LeaderboardSnapshot)
-    private snapshotRepository: Repository<LeaderboardSnapshot>,
     @InjectRepository(SkillStats)
     private statsRepository: Repository<SkillStats>,
   ) {}
 
   /**
-   * Real-time aggregation directly from skill_stats + users/teams.
-   * Snapshot table is no longer used for reads (kept for future cron use).
+   * 实时聚合，单一数据源 = skill_stats（recordEvent 每次点赞/下载都会维护，新鲜度无差别）。
    *
-   * weekly: subjects who uploaded skills OR had like/download events in last 7 days;
-   *         skill_count = skills uploaded this week; likes/downloads/score from weekly events.
-   * all:    every published skill counted; totals from skill_stats columns.
+   * 分数公式（保留技能数的「对数衰减」，让少数高价值技能也能压过大量平庸技能，
+   * 避免排名随技能数量线性飙升、看不出哪个技能有价值）：
+   *   score = LOG(2, skill_count + 1) * 5 + 0.3 * likes + 0.3 * downloads
+   * - 周榜：likes/downloads 取 skill_stats.likes_7d / downloads_7d；
+   *         skill_count = 近 7 天上传的技能。
+   * - 总榜：likes/downloads 取 skill_stats.likes_total / downloads_total；
+   *         skill_count = 全部已发布技能。
+   *
+   * 团队条目额外暴露 member_count（成员总数）/ new_members（近 7 天新增，来自 team_members.joined_at）。
    */
   async getSnapshot(type: LeaderboardType, period: LeaderboardPeriod) {
     const isWeekly = period === LeaderboardPeriod.WEEKLY;
@@ -33,100 +35,77 @@ export class LeaderboardService {
       ? "AND s.owner_team_id IN (SELECT id FROM teams WHERE is_public = true)"
       : "AND (s.owner_team_id IS NULL OR s.owner_team_id IN (SELECT id FROM teams WHERE is_public = true))";
 
-    // Build raw SQL — typeorm QueryBuilder is awkward across two grouping dimensions
     const subjectIdCol = isTeam ? 's.owner_team_id' : 's.owner_user_id';
     const subjectTable = isTeam ? 'teams' : 'users';
 
-    // For weekly we recount likes/downloads from events table; for all we use stats columns
-    let rows: Array<{
-      subject_id: string;
-      name: string;
-      skill_count: string;
-      likes: string;
-      downloads: string;
-      score: string;
-    }>;
+    // 周榜读 skill_stats.likes_7d/downloads_7d；总榜读 totals（不再现场扫 events）
+    const likeCol = isWeekly ? 'st.likes_7d' : 'st.likes_total';
+    const dlCol = isWeekly ? 'st.downloads_7d' : 'st.downloads_total';
 
-    if (isWeekly) {
-      rows = await this.statsRepository.query(
-        `
-        WITH event_agg AS (
-          SELECT
-            e.skill_id,
-            COUNT(DISTINCT e.user_id) FILTER (WHERE e.type = 'like')     AS likes,
-            COUNT(*) FILTER (WHERE e.type = 'download')                   AS downloads
-          FROM events e
-          WHERE e.created_at >= NOW() - INTERVAL '7 days'
-          GROUP BY e.skill_id
-        )
-        SELECT
-          ${subjectIdCol}::text                              AS subject_id,
-          COALESCE(subj.name, 'Anonymous')                   AS name,
-          COUNT(DISTINCT s.id) FILTER (WHERE s.created_at >= NOW() - INTERVAL '7 days') AS skill_count,
-          COALESCE(SUM(ea.likes), 0)                         AS likes,
-          COALESCE(SUM(ea.downloads), 0)                     AS downloads,
-          LOG(2, COUNT(DISTINCT s.id) FILTER (WHERE s.created_at >= NOW() - INTERVAL '7 days') + 1) * 5
-            + COALESCE(SUM(ea.likes), 0) * 0.3
-            + COALESCE(SUM(ea.downloads), 0) * 0.3           AS score
-        FROM skills s
-        LEFT JOIN event_agg ea     ON ea.skill_id = s.id
-        LEFT JOIN ${subjectTable} subj ON subj.id = ${subjectIdCol}
-        WHERE ${subjectIdCol} IS NOT NULL AND s.status = 'published' ${teamFilter}
-        GROUP BY ${subjectIdCol}, subj.name
-        HAVING (COUNT(DISTINCT s.id) FILTER (WHERE s.created_at >= NOW() - INTERVAL '7 days')) > 0
-          OR COALESCE(SUM(ea.likes), 0) + COALESCE(SUM(ea.downloads), 0) > 0
-        ORDER BY score DESC
-        LIMIT 50
-        `,
-      );
-    } else {
-      rows = await this.statsRepository.query(
-        `
-        SELECT
-          ${subjectIdCol}::text                               AS subject_id,
-          COALESCE(subj.name, 'Anonymous')                    AS name,
-          COUNT(DISTINCT s.id)                                AS skill_count,
-          COALESCE(SUM(st.likes_total), 0)                    AS likes,
-          COALESCE(SUM(st.downloads_total), 0)                AS downloads,
-          LOG(2, COUNT(DISTINCT s.id) + 1) * 5
-            + COALESCE(SUM(st.likes_total), 0) * 0.3
-            + COALESCE(SUM(st.downloads_total), 0) * 0.3      AS score
-        FROM skills s
-        LEFT JOIN skill_stats st   ON st.skill_id = s.id
-        LEFT JOIN ${subjectTable} subj ON subj.id = ${subjectIdCol}
-        WHERE ${subjectIdCol} IS NOT NULL AND s.status = 'published' ${teamFilter}
-        GROUP BY ${subjectIdCol}, subj.name
-        ORDER BY score DESC
-        LIMIT 50
-        `,
-      );
-    }
+    // 技能数：周榜仅统计近 7 天上传的技能
+    const skillCountExpr = isWeekly
+      ? "COUNT(DISTINCT s.id) FILTER (WHERE s.created_at >= NOW() - INTERVAL '7 days')"
+      : 'COUNT(DISTINCT s.id)';
 
-    // Frontend expects { data_json: [...] } shape (used to come from snapshot table)
-    return {
-      type,
-      period,
-      snapshot_date: new Date().toISOString().split('T')[0],
-      data_json: rows.map((r) => ({
+    // 团队额外维度：成员总数 / 近 7 天新增成员（每团队为常量，GROUP BY 后用 MAX 取回安全）
+    const memberSelect = isTeam
+      ? ', MAX(tm.new_members) AS new_members, MAX(tm.member_count) AS member_count'
+      : '';
+    const memberJoin = isTeam
+      ? `LEFT JOIN (
+           SELECT team_id,
+             COUNT(*) FILTER (WHERE joined_at >= NOW() - INTERVAL '7 days') AS new_members,
+             COUNT(*) AS member_count
+           FROM team_members GROUP BY team_id
+         ) tm ON tm.team_id = s.owner_team_id`
+      : '';
+
+    const rows: any[] = await this.statsRepository.query(
+      `
+      SELECT
+        ${subjectIdCol}::text AS subject_id,
+        COALESCE(subj.name, 'Anonymous') AS name,
+        ${skillCountExpr} AS skill_count,
+        COALESCE(SUM(${likeCol}), 0) AS likes,
+        COALESCE(SUM(${dlCol}), 0) AS downloads,
+        LOG(2, ${skillCountExpr} + 1) * 5
+          + COALESCE(SUM(${likeCol}), 0) * 0.3
+          + COALESCE(SUM(${dlCol}), 0) * 0.3 AS score
+        ${memberSelect}
+      FROM skills s
+      LEFT JOIN skill_stats st ON st.skill_id = s.id
+      ${memberJoin}
+      LEFT JOIN ${subjectTable} subj ON subj.id = ${subjectIdCol}
+      WHERE ${subjectIdCol} IS NOT NULL AND s.status = 'published' ${teamFilter}
+      GROUP BY ${subjectIdCol}, subj.name
+      HAVING ${skillCountExpr} > 0
+        OR COALESCE(SUM(${likeCol}), 0) + COALESCE(SUM(${dlCol}), 0) > 0
+      ORDER BY score DESC
+      LIMIT 50
+      `,
+    );
+
+    const data_json = rows.map((r: any) => {
+      const row: any = {
         id: r.subject_id,
         name: r.name,
         skill_count: Number(r.skill_count) || 0,
         likes: Number(r.likes) || 0,
         downloads: Number(r.downloads) || 0,
         score: Number(r.score) || 0,
-      })),
-    };
-  }
+      };
+      if (isTeam) {
+        row.member_count = Number(r.member_count) || 0;
+        row.new_members = Number(r.new_members) || 0;
+      }
+      return row;
+    });
 
-  // Kept for future cron — not used by GET /leaderboard anymore
-  async createSnapshot(type: LeaderboardType, period: LeaderboardPeriod) {
-    const data = await this.getSnapshot(type, period);
-    const snapshot = this.snapshotRepository.create({
+    return {
       type,
       period,
-      snapshot_date: data.snapshot_date,
-      data_json: data.data_json,
-    });
-    return this.snapshotRepository.save(snapshot);
+      snapshot_date: new Date().toISOString().split('T')[0],
+      data_json,
+    };
   }
 }

@@ -8,7 +8,6 @@ import { SkillVersion } from './skill-version.entity';
 import { Event } from './event.entity';
 import { SkillStats } from './skill-stats.entity';
 import { Comment } from './comment.entity';
-import { LeaderboardSnapshot } from '../leaderboard/leaderboard-snapshot.entity';
 import { TeamMember } from '../teams/team-member.entity';
 import { Team } from '../teams/team.entity';
 import { Subscription } from '../subscriptions/subscription.entity';
@@ -18,7 +17,7 @@ import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Skill, SkillVersion, Event, SkillStats, Comment, LeaderboardSnapshot, TeamMember, Team, Subscription, SkillPricing, CreatorMembershipPlan, CreatorSubscription]),
+    TypeOrmModule.forFeature([Skill, SkillVersion, Event, SkillStats, Comment, TeamMember, Team, Subscription, SkillPricing, CreatorMembershipPlan, CreatorSubscription]),
     PaymentsModule,
   ],
   providers: [SkillsService, StatsAggregationService],
