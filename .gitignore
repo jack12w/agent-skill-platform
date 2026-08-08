@@ -10,6 +10,9 @@ dist/
 *.tsbuildinfo
 *.bak
 .DS_Store
+# 微信支付证书（私钥/平台证书，禁止入库，避免密钥泄露）
+certs/
+*.pem
 # local preview artifacts
 badge-preview.html
 badge-color-preview.html
