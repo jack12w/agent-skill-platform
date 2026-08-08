@@ -74,6 +74,10 @@ services:
       - WECHAT_PAY_APIV3_KEY=${WECHAT_PAY_APIV3_KEY}
       - WECHAT_PAY_PRIVATE_KEY=${WECHAT_PAY_PRIVATE_KEY}
       - WECHAT_PAY_PLATFORM_CERT=${WECHAT_PAY_PLATFORM_CERT}
+    # 写法 B：微信支付证书以文件方式挂载进容器，避免把私钥写进 .env / 镜像层。
+    # 服务器上把 apiclient_key.pem 与平台证书 wechatpay_platform_cert.pem 放到项目根 ./certs/ 目录。
+    volumes:
+      - ./certs:/app/certs:ro
     # API 仅通过 127.0.0.1 暴露给宿主机 Nginx（route B：宝塔把 /api/ 直连本端口，
     # 使真实客户端 IP 经 X-Forwarded-For 到达 API，激活「每真实IP 120/min」精确限流）。不暴露公网。
     ports:
