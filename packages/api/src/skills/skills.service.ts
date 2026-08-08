@@ -395,19 +395,31 @@ export class SkillsService {
       order: { created_at: 'DESC' },
     });
 
+    const isOwner = await this.isOwner(skill, userId);
+    let visible = allVersions;
+
     // Non-owners (and non-admins) should not see versions newer than the published version
-    if (skill.published_version_id) {
-      const isOwner = await this.isOwner(skill, userId);
-      if (!isOwner && !isAdmin) {
-        const pubIdx = allVersions.findIndex(v => v.id === skill.published_version_id);
-        if (pubIdx >= 0) {
-          // Only return the published version and older versions
-          return allVersions.slice(pubIdx);
-        }
+    if (skill.published_version_id && !isOwner && !isAdmin) {
+      const pubIdx = allVersions.findIndex(v => v.id === skill.published_version_id);
+      if (pubIdx >= 0) {
+        // Only return the published version and older versions
+        visible = allVersions.slice(pubIdx);
       }
     }
 
-    return allVersions;
+    /*
+     * 防付费墙绕过：package_url 是 OSS 直链，公开放行等于把付费技能裸奔。
+     * 仅作者 / 团队成员 / 管理员可见；匿名与普通用户拿到的版本对象不含直链，
+     * 下载必须走 getDownloadUrl（含 entitlement 付费墙校验）。
+     */
+    if (!isOwner && !isAdmin) {
+      return visible.map((v) => {
+        const { package_url, ...rest } = v;
+        return rest;
+      });
+    }
+
+    return visible;
   }
 
   async createVersion(skillId: string, fileBuffer: Buffer, userId: string, notes?: string) {
