@@ -53,7 +53,7 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
         if (!sRes.ok) throw new Error(`HTTP ${sRes.status}`);
         const s = await sRes.json(); const uid = decodeUserId();
         const myTeamsData = tRes.ok ? await tRes.json() : [];
-        const isTeamMember = !!s.owner_team_id && myTeamsData.some((tm: any) => tm.id === s.owner_team_id);
+        const isTeamMember = !!s.owner_team_id && myTeamsData.some((tm: any) => tm.team?.id === s.owner_team_id);
         if (s.owner_user_id !== uid && !isTeamMember) { setError('You are not the owner of this skill.'); setSkill(s); return; }
         setSkill(s); setForm({ name: s.name ?? '', content_md: s.content_md ?? '', tags: (s.tags ?? []).filter((t: string) => t !== '社区').join(', '), cover_url: s.cover_url ?? '', owner_team_id: s.owner_team_id ?? '' });
         if (vRes.ok) setVersions(await vRes.json());

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import useTranslation from '../../hooks/useTranslation';
 
@@ -25,25 +25,37 @@ export default function Leaderboard() {
   const { t } = useTranslation();
   const [tab, setTab] = useState<'personal' | 'team'>('personal');
   const [period, setPeriod] = useState<'weekly' | 'all'>('weekly');
+  // 每个视图（个人/团队 × 周/总）独立缓存一份数据：切换时互不串、且命中缓存秒切不闪白
+  const cacheRef = useRef<Record<string, any[]>>({});
+  const reqIdRef = useRef(0);
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 切换 tab/period 时取消上一条仍在飞的请求，避免旧请求 resolve 后覆盖新视图（团队→个人错位、周榜→总榜错位）
-    const ctrl = new AbortController();
+    const key = `${tab}-${period}`;
+    // 命中缓存：直接取，无需重新请求
+    if (cacheRef.current[key]) {
+      setData(cacheRef.current[key]);
+      setLoading(false);
+      return;
+    }
+    // 用请求序号做守卫：快速切换视图时，过期响应绝不会覆盖新视图（团队→个人错位、周榜→总榜错位）
+    const reqId = ++reqIdRef.current;
     setLoading(true);
     (async () => {
       try {
-        const res = await fetch(`/api/leaderboard?type=${tab}&period=${period}`, { signal: ctrl.signal });
+        const res = await fetch(`/api/leaderboard?type=${tab}&period=${period}`);
         const snapshot = await res.json();
-        setData(snapshot?.data_json || []);
+        if (reqId !== reqIdRef.current) return; // 已有更新的请求发出，丢弃过期响应
+        const arr = snapshot?.data_json || [];
+        cacheRef.current[key] = arr;
+        setData(arr);
       } catch (e) {
-        if ((e as Error)?.name !== 'AbortError') console.error(e);
+        if (reqId === reqIdRef.current) console.error(e);
       } finally {
-        setLoading(false);
+        if (reqId === reqIdRef.current) setLoading(false);
       }
     })();
-    return () => ctrl.abort();
   }, [tab, period]);
 
   const isTeam = tab === 'team';
