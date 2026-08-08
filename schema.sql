@@ -43,8 +43,9 @@ CREATE TYPE skill_status AS ENUM ('published', 'archived');
 
 CREATE TABLE IF NOT EXISTS skills (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    owner_user_id UUID NOT NULL REFERENCES users(id),
+    owner_user_id UUID REFERENCES users(id),  -- 与 owner_team_id 互斥(XOR)：团队技能无个人归属人
     owner_team_id UUID REFERENCES teams(id),
+    created_by UUID REFERENCES users(id),      -- 永久原创作者（团队解散/解绑不漂移，见迁移 0014）
     name TEXT NOT NULL,
     slug TEXT UNIQUE NOT NULL,
     summary TEXT,

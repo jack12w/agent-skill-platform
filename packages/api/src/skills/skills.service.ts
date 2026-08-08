@@ -80,6 +80,24 @@ export class SkillsService {
     return false;
   }
 
+  /**
+   * 技能归属者判定（团队感知）：
+   *  - 个人技能：owner_user_id 命中即归属者；
+   *  - 团队技能：owner_user_id 为 NULL（与 owner_team_id 互斥），归属者 = 团队成员。
+   * 用于详情 / 版本 / 下载等「归属者特权」场景，避免团队技能因 owner_user_id 为空而无人可归属。
+   */
+  private async isOwner(skill: Skill, userId?: string): Promise<boolean> {
+    if (!userId) return false;
+    if (skill.owner_user_id === userId) return true;
+    if (skill.owner_team_id) {
+      const m = await this.teamMemberRepository.findOne({
+        where: { team_id: skill.owner_team_id, user_id: userId },
+      });
+      return !!m;
+    }
+    return false;
+  }
+
   async findAll(query: { query?: string; tag?: string; tags?: string; sort?: string; page?: number; size?: number; owner?: string; owner_id?: string }, userId?: string) {
     const { query: q, tag, tags: tagsStr, sort, page = 1, size = 20, owner, owner_id } = query;
     const tagList = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
@@ -379,7 +397,7 @@ export class SkillsService {
 
     // Non-owners (and non-admins) should not see versions newer than the published version
     if (skill.published_version_id) {
-      const isOwner = userId && (skill.owner_user_id === userId);
+      const isOwner = await this.isOwner(skill, userId);
       if (!isOwner && !isAdmin) {
         const pubIdx = allVersions.findIndex(v => v.id === skill.published_version_id);
         if (pubIdx >= 0) {
@@ -595,7 +613,7 @@ export class SkillsService {
     await this.entitlementService.assertCanDownload(skill, userId, isAdmin);
     // ▲▲
 
-    const isOwner = userId && skill.owner_user_id === userId;
+    const isOwner = await this.isOwner(skill, userId);
 
     const canSeeLatest = isOwner || isAdmin;
     let version: SkillVersion | null = null;
@@ -713,7 +731,7 @@ export class SkillsService {
 
     // Non-owners (and non-admins) cannot view non-published skills (skip for internal service calls)
     if (!skipStatusCheck) {
-      const isOwner = userId && (skill.owner_user_id === userId);
+      const isOwner = await this.isOwner(skill, userId);
       if (!isOwner && !isAdmin && skill.status !== SkillStatus.PUBLISHED) {
         throw new NotFoundException();
       }
@@ -738,7 +756,7 @@ export class SkillsService {
     // Swap latest_version_id / latest_version with published_version_id / published_version
     // so the frontend displays the approved version info.
     if (!skipStatusCheck && !isAdmin && skill.published_version_id) {
-      const isOwner = userId && (skill.owner_user_id === userId);
+      const isOwner = await this.isOwner(skill, userId);
       if (!isOwner) {
         skill.latest_version_id = skill.published_version_id;
         // Load the published version for the frontend display
@@ -791,7 +809,7 @@ export class SkillsService {
       }
 
       // Don't show update badge for skills the user owns
-      if (skill.owner_user_id === userId) {
+      if (await this.isOwner(skill, userId)) {
         skill.has_update = false;
         skill.user_downloaded_version = null;
         continue;
