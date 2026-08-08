@@ -413,6 +413,7 @@ const en = {
     fixed: 'Fixed {count} skills',
     currentTags: 'Current Tags ({count})',
     error: 'Error',
+    payment: 'Payment Settings',
     orders: 'Orders',
     memberships: 'Memberships',
     balances: 'Creator Earnings',

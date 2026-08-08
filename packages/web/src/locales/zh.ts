@@ -415,6 +415,7 @@ const zh = {
     currentTags: '当前标签 ({count})',
     error: '错误',
     // ── 支付管理 ──
+    payment: '支付设置',
     orders: '订单管理',
     memberships: '会员管理',
     balances: '创作者收益',
