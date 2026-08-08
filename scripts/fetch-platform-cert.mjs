@@ -47,6 +47,7 @@ function getCertificates(ctx) {
         method: 'GET',
         headers: {
           Accept: 'application/json',
+          'User-Agent': 'skill-depot-pay-tools/1.0',
           Authorization: buildAuthHeader('GET', urlPath, '', ctx),
         },
       },
