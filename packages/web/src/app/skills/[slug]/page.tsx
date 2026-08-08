@@ -197,8 +197,10 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
     finally { setFollowBusy(false); }
   };
 
-  // 订阅作者按钮：有付费套餐 → 打开会员支付弹窗；无套餐 → 免费关注
+  // 订阅作者按钮：未登录先跳登录；有付费套餐 → 打开会员支付弹窗；无套餐 → 免费关注
   const handleAuthorSubClick = () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) { alert(t('detail.loginFirst')); router.push('/auth'); return; }
     if (hasPlan) setMemberSubOpen(true);
     else toggleFollow();
   };
@@ -405,26 +407,24 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
             )}
             {/* 订阅（左，红色）+ 点赞（右，品牌紫）同行，置于下载上方 */}
             <div className="flex gap-3 mb-3">
-              {/* 登录用户都显示订阅按钮：本人/团队成员置灰「不能订阅自己」，其他用户可点击订阅（不论订阅个人还是团队） */}
-              {currentUserId && (
-                isOwner ? (
-                  <button disabled className="flex-1 py-2.5 rounded-lg font-medium bg-neutral-100 text-neutral-400 cursor-not-allowed">
-                    {t('detail.cannotSubscribeSelf')}
-                  </button>
+              {/* 所有人（含匿名访客）都显示订阅按钮：本人/团队成员置灰「不能订阅自己」，其他用户可点击订阅（不论订阅个人还是团队），匿名用户点击跳转登录 */}
+              {isOwner ? (
+                <button disabled className="flex-1 py-2.5 rounded-lg font-medium bg-neutral-100 text-neutral-400 cursor-not-allowed">
+                  {t('detail.cannotSubscribeSelf')}
+                </button>
+              ) : (
+                (authorSub?.subscribed || freeSub) ? (
+                  <div className="flex-1 text-center text-xs text-green-700 bg-green-50 rounded-lg py-2.5">
+                    {t('detail.subscribed')}
+                  </div>
                 ) : (
-                  (authorSub?.subscribed || freeSub) ? (
-                    <div className="flex-1 text-center text-xs text-green-700 bg-green-50 rounded-lg py-2.5">
-                      {t('detail.subscribed')}
-                    </div>
-                  ) : (
-                    <button
-                      onClick={handleAuthorSubClick}
-                      disabled={followBusy}
-                      className="flex-1 py-2.5 rounded-lg bg-red-500 text-white font-medium hover:bg-red-600 transition disabled:opacity-50"
-                    >
-                      {t('detail.subscribe')}
-                    </button>
-                  )
+                  <button
+                    onClick={handleAuthorSubClick}
+                    disabled={followBusy}
+                    className="flex-1 py-2.5 rounded-lg bg-red-500 text-white font-medium hover:bg-red-600 transition disabled:opacity-50"
+                  >
+                    {t('detail.subscribe')}
+                  </button>
                 )
               )}
               <button onClick={handleLike} disabled={acting !== null} className="flex-1 py-2.5 rounded-lg border border-brand-600 text-brand-600 font-bold hover:bg-brand-50 transition disabled:opacity-50 disabled:cursor-not-allowed">
