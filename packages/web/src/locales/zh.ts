@@ -366,6 +366,7 @@ const zh = {
     active90d: '近90天登录活跃',
     active180d: '近180天登录活跃',
     active365d: '近365天登录活跃',
+    dau: '今日活跃',
     thType: '类型',
     thUpdated: '更新时间',
     thAction: '操作',

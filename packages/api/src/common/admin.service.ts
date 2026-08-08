@@ -216,16 +216,18 @@ export class AdminService {
 
     // 5 档活跃登录用户数（仅登录用户）：数据源为 user_daily_active 活跃日志，
     // 按时间窗 COUNT(DISTINCT user_id) 聚合，天然去重、各档单调不同；匿名访客不计入。
+    // dau = 今日（CURRENT_DATE）活跃登录用户数，供管理后台"今日活跃"指标使用。
     const rows = await this.userRepo.query(`
       SELECT
-        COUNT(DISTINCT user_id) FILTER (WHERE day >= current_date - 7)::int   AS d7,
-        COUNT(DISTINCT user_id) FILTER (WHERE day >= current_date - 30)::int  AS d30,
-        COUNT(DISTINCT user_id) FILTER (WHERE day >= current_date - 90)::int  AS d90,
-        COUNT(DISTINCT user_id) FILTER (WHERE day >= current_date - 180)::int AS d180,
-        COUNT(DISTINCT user_id) FILTER (WHERE day >= current_date - 365)::int AS d365
+        COUNT(DISTINCT user_id) FILTER (WHERE day = current_date)::int        AS dau,
+        COUNT(DISTINCT user_id) FILTER (WHERE day >= current_date - 7)::int    AS d7,
+        COUNT(DISTINCT user_id) FILTER (WHERE day >= current_date - 30)::int   AS d30,
+        COUNT(DISTINCT user_id) FILTER (WHERE day >= current_date - 90)::int   AS d90,
+        COUNT(DISTINCT user_id) FILTER (WHERE day >= current_date - 180)::int  AS d180,
+        COUNT(DISTINCT user_id) FILTER (WHERE day >= current_date - 365)::int  AS d365
       FROM user_daily_active
     `);
-    const activeUsers = rows?.[0] || { d7: 0, d30: 0, d90: 0, d180: 0, d365: 0 };
+    const activeUsers = rows?.[0] || { dau: 0, d7: 0, d30: 0, d90: 0, d180: 0, d365: 0 };
 
     return { items, total, page, size, activeUsers };
   }

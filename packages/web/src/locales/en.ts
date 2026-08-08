@@ -365,6 +365,7 @@ const en = {
     active90d: 'Logged-in active 90d',
     active180d: 'Logged-in active 180d',
     active365d: 'Logged-in active 365d',
+    dau: 'Active today',
     thType: 'Type',
     thUpdated: 'Updated',
     thAction: 'Action',

@@ -50,6 +50,12 @@ export default function HubUsersPage() {
       <h1 className="text-xl font-bold text-neutral-900 mb-1">{t('admin.users')}</h1>
       <div className="flex items-center gap-3 my-4 flex-wrap">
         <input type="text" placeholder={t('admin.thSearch')} value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="px-3 py-1.5 text-sm border rounded-lg w-56 focus:outline-none focus:border-brand-400" />
+        {/* 今日活跃（DAU）：高亮主指标，置于 5 档窗口标签之前 */}
+        {data?.activeUsers && (
+          <span className="px-2.5 py-1 bg-brand-600 text-white rounded-lg text-xs font-semibold whitespace-nowrap shadow-sm">
+            {t('admin.dau')} <span className="font-bold text-base align-middle">{data.activeUsers.dau}</span>
+          </span>
+        )}
         {/* 用户活跃统计（7/30/90/180/365 天），与搜索状态无关的全局指标 */}
         {data?.activeUsers && (
           <div className="flex items-center gap-1.5 flex-wrap">

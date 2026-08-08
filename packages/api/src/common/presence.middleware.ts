@@ -37,20 +37,21 @@ export class PresenceMiddleware implements NestMiddleware {
   }
 
   private touch(userId: string) {
-    // 刷新个人"最近访问"时间戳（5 分钟节流）
+    // 单条 CTE：5 分钟节流刷新 last_seen_at，且仅当该 UPDATE 真正生效时
+    // （距上次访问超过 5 分钟）才写入当日活跃行。两条操作合并为 1 次 DB 往返，
+    // 自然实现节流——活跃行每天最多写一次（ON CONFLICT 兜底去重）。
+    // 匿名访客因无有效 token 不会进入此处；DB 异常静默吞掉，绝不影响业务。
     this.userRepo
       .query(
-        `UPDATE users SET last_seen_at = now()
-         WHERE id = $1 AND (last_seen_at IS NULL OR last_seen_at < now() - interval '5 minutes')`,
-        [userId],
-      )
-      .catch(() => {});
-
-    // 记录登录用户活跃日志（每天一行，去重），作为活跃用户统计的真实数据源。
-    // 仅登录用户写入，匿名访客不写入。
-    this.userRepo
-      .query(
-        `INSERT INTO user_daily_active (user_id, day) VALUES ($1, CURRENT_DATE)
+        `WITH u AS (
+           UPDATE users
+              SET last_seen_at = now()
+            WHERE id = $1
+              AND (last_seen_at IS NULL OR last_seen_at < now() - interval '5 minutes')
+          RETURNING id
+         )
+         INSERT INTO user_daily_active (user_id, day)
+         SELECT id, CURRENT_DATE FROM u
          ON CONFLICT (user_id, day) DO NOTHING`,
         [userId],
       )
