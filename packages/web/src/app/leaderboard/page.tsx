@@ -120,10 +120,12 @@ export default function Leaderboard() {
                 const isChampion = rank === 1;
                 const orderClass = rank === 1 ? 'sm:order-2' : rank === 2 ? 'sm:order-1' : 'sm:order-3';
                 const widthClass = isChampion ? 'sm:w-[320px]' : 'sm:w-[300px]';
+                const podiumHref = isTeam ? `/teams/${item.id}` : `/users/${encodeURIComponent(item.name)}`;
                 return (
-                  <div
+                  <Link
                     key={item.id}
-                    className={`relative flex flex-col items-center gap-2.5 rounded-2xl bg-white px-6 py-6 border border-brand-100 shadow-lg
+                    href={podiumHref}
+                    className={`relative block flex flex-col items-center gap-2.5 rounded-2xl bg-white px-6 py-6 border border-brand-100 shadow-lg cursor-pointer hover:shadow-xl transition
                       ${orderClass} ${widthClass}
                       ${isChampion ? 'sm:pb-9 sm:pt-8 shadow-[0_12px_34px_rgba(124,58,237,0.25)]' : ''}`}
                   >
@@ -160,7 +162,7 @@ export default function Leaderboard() {
                     </div>
                     <div className="mt-1 text-3xl font-bold text-brand-700">{Number(item.score).toFixed(1)}</div>
                     <div className="text-xs text-neutral-400">{t('leaderboard.scoreLabel')}</div>
-                  </div>
+                  </Link>
                 );
               })}
             </div>
