@@ -29,16 +29,21 @@ export default function Leaderboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchLeaderboard = async () => {
-      setLoading(true);
+    // 切换 tab/period 时取消上一条仍在飞的请求，避免旧请求 resolve 后覆盖新视图（团队→个人错位、周榜→总榜错位）
+    const ctrl = new AbortController();
+    setLoading(true);
+    (async () => {
       try {
-        const res = await fetch(`/api/leaderboard?type=${tab}&period=${period}`);
+        const res = await fetch(`/api/leaderboard?type=${tab}&period=${period}`, { signal: ctrl.signal });
         const snapshot = await res.json();
         setData(snapshot?.data_json || []);
-      } catch (e) { console.error(e); }
-      finally { setLoading(false); }
-    };
-    fetchLeaderboard();
+      } catch (e) {
+        if ((e as Error)?.name !== 'AbortError') console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+    return () => ctrl.abort();
   }, [tab, period]);
 
   const isTeam = tab === 'team';
