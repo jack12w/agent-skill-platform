@@ -461,6 +461,7 @@ const en = {
     tabSingle: 'Buy Once',
     tabMember: 'Pro Membership',
     included: 'Included',
+    needSeparatePurchase: 'Buy separately',
     subject: 'Item',
     skillDefault: 'Skill download',
     memberTip: 'Pro members download this skill for free, along with many more member skills.',

@@ -463,6 +463,7 @@ const zh = {
     tabSingle: '单独购买',
     tabMember: 'Pro 会员',
     included: '含此技能',
+    needSeparatePurchase: '需单独购买',
     subject: '购买内容',
     skillDefault: '技能下载',
     memberTip: '开通 Pro 会员即可免费下载该技能，以及全站更多会员技能。',

@@ -400,8 +400,10 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
             {pricing && pricing.pricing_mode !== 'free' && (
               <div className="mb-3 flex items-center justify-center gap-2">
                 <span className="text-2xl font-black text-brand-700">¥{((pricing.price_cents || 0) / 100).toFixed(2)}</span>
-                {pricing.member_included && (
+                {pricing.member_included ? (
                   <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">{t('pay.included')}</span>
+                ) : (
+                  <span className="text-[11px] px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500">{t('pay.needSeparatePurchase')}</span>
                 )}
               </div>
             )}
@@ -414,7 +416,7 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
                 </button>
               ) : (
                 (authorSub?.subscribed || freeSub) ? (
-                  <div className="flex-1 text-center text-xs text-green-700 bg-green-50 rounded-lg py-2.5">
+                  <div className="flex-1 text-center text-sm font-medium text-green-700 bg-green-50 rounded-lg py-2.5">
                     {t('detail.subscribed')}
                   </div>
                 ) : (
