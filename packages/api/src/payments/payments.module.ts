@@ -19,6 +19,7 @@ import {
 import { User } from '../auth/user.entity';
 import { Skill } from '../skills/skill.entity';
 import { Team } from '../teams/team.entity';
+import { TeamMember } from '../teams/team-member.entity';
 import { WechatPayService } from './wechat-pay.service';
 import { SettingsService } from './settings.service';
 import { EntitlementService } from './entitlement.service';
@@ -32,7 +33,7 @@ import { AdminPaymentsController } from './admin-payments.controller';
 import { WechatNotifyController } from './wechat-notify.controller';
 import { PricingController } from './pricing.controller';
 
-const ENTITIES = [...PAYMENT_ENTITIES, User, Skill, Team];
+const ENTITIES = [...PAYMENT_ENTITIES, User, Skill, Team, TeamMember];
 
 @Module({
   imports: [TypeOrmModule.forFeature(ENTITIES), AuthModule],
