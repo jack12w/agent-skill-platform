@@ -27,6 +27,9 @@ export class EntitlementService {
   ) {}
 
   async assertCanDownload(skill: Skill, userId?: string, isAdmin = false): Promise<void> {
+    // [paywall-debug] 临时诊断日志：定位"付费技能被免费下载"命中了哪条放行分支，定位后整段移除
+    const dbg = (reason: string) =>
+      this.logger.log(`[paywall-debug] ALLOW skill=${skill.id} user=${userId || 'anon'} admin=${isAdmin} reason=${reason}`);
     let pricing: SkillPricing | null = null;
     try {
       pricing = await this.pricingRepo.findOne({ where: { skill_id: skill.id } });
@@ -45,13 +48,22 @@ export class EntitlementService {
     }
 
     // 1. 免费 / 无定价
-    if (!pricing || pricing.pricing_mode === 'free') return;
+    if (!pricing || pricing.pricing_mode === 'free') {
+      dbg(pricing ? `free-mode(mode=${pricing.pricing_mode})` : 'no-pricing-row');
+      return;
+    }
 
     // 2. 管理员
-    if (isAdmin) return;
+    if (isAdmin) {
+      dbg('admin');
+      return;
+    }
 
     // 3. 作者本人 或 所属团队成员（团队技能 owner_user_id 为 null，按团队成员放行，避免团队自己付费下载）
-    if (userId && (skill.owner_user_id === userId || (!!skill.owner_team_id && !!(await this.teamMemberRepo.findOne({ where: { team_id: skill.owner_team_id, user_id: userId } }))))) return;
+    if (userId && (skill.owner_user_id === userId || (!!skill.owner_team_id && !!(await this.teamMemberRepo.findOne({ where: { team_id: skill.owner_team_id, user_id: userId } }))))) {
+      dbg(skill.owner_user_id === userId ? 'owner' : 'team-member');
+      return;
+    }
 
     if (userId) {
       // 4. 已购有效权益（含永久 expires_at IS NULL）
@@ -61,25 +73,33 @@ export class EntitlementService {
         .andWhere('e.skill_id = :sid', { sid: skill.id })
         .andWhere('(e.expires_at IS NULL OR e.expires_at > :now)', { now: new Date() })
         .getOne();
-      if (owned) return;
+      if (owned) {
+        dbg(`entitlement(source=${owned.source},order=${owned.order_id})`);
+        return;
+      }
 
       // 5. 会员可下：过渡期老全局会员 或 已订阅该技能所属创作者
       if (pricing.member_included) {
         const legacy = await this.memberRepo.findOne({
           where: { user_id: userId, status: 'active', expires_at: MoreThan(new Date()) },
         });
-        if (legacy) return;
+        if (legacy) {
+          dbg('legacy-membership');
+          return;
+        }
 
         // 技能归属：team 优先，否则 user
         const targetType = skill.owner_team_id ? 'team' : 'user';
         const targetId = skill.owner_team_id || skill.owner_user_id;
         if (targetId && (await this.membership.isSubscribed(userId, targetType, targetId))) {
+          dbg('creator-subscription');
           return;
         }
       }
     }
 
     // 未授权 → 抛 402 + 定价信息，前端据此唤起收银台
+    this.logger.log(`[paywall-debug] DENY skill=${skill.id} user=${userId || 'anon'} mode=${pricing.pricing_mode} price=${pricing.price_cents} member_included=${pricing.member_included}`);
     const membershipPrices = await this.settings.getMembershipPrices();
     throw new PaymentRequiredException({
       skill_id: skill.id,
