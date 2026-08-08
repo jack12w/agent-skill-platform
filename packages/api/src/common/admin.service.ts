@@ -214,15 +214,16 @@ export class AdminService {
     if (search) qb.andWhere('(u.name ILIKE :q OR u.email ILIKE :q)', { q: `%${search}%` });
     const [items, total] = await qb.getManyAndCount();
 
-    // 5 档活跃用户数（last_seen_at 由 PresenceMiddleware 节流维护；单次条件聚合查询）
+    // 5 档活跃登录用户数（仅登录用户）：数据源为 user_daily_active 活跃日志，
+    // 按时间窗 COUNT(DISTINCT user_id) 聚合，天然去重、各档单调不同；匿名访客不计入。
     const rows = await this.userRepo.query(`
       SELECT
-        COUNT(*) FILTER (WHERE last_seen_at >= now() - interval '7 days')::int   AS d7,
-        COUNT(*) FILTER (WHERE last_seen_at >= now() - interval '30 days')::int  AS d30,
-        COUNT(*) FILTER (WHERE last_seen_at >= now() - interval '90 days')::int  AS d90,
-        COUNT(*) FILTER (WHERE last_seen_at >= now() - interval '180 days')::int AS d180,
-        COUNT(*) FILTER (WHERE last_seen_at >= now() - interval '365 days')::int AS d365
-      FROM users
+        COUNT(DISTINCT user_id) FILTER (WHERE day >= current_date - 7)::int   AS d7,
+        COUNT(DISTINCT user_id) FILTER (WHERE day >= current_date - 30)::int  AS d30,
+        COUNT(DISTINCT user_id) FILTER (WHERE day >= current_date - 90)::int  AS d90,
+        COUNT(DISTINCT user_id) FILTER (WHERE day >= current_date - 180)::int AS d180,
+        COUNT(DISTINCT user_id) FILTER (WHERE day >= current_date - 365)::int AS d365
+      FROM user_daily_active
     `);
     const activeUsers = rows?.[0] || { d7: 0, d30: 0, d90: 0, d180: 0, d365: 0 };
 

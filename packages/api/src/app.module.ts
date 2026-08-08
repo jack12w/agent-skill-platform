@@ -23,6 +23,7 @@ import { Event } from './skills/event.entity';
 import { AdminLog } from './common/admin-log.entity';
 import { TagGroup } from './common/tag-group.entity';
 import { PageView } from './common/page-view.entity';
+import { UserDailyActive } from './common/user-daily-active.entity';
 import { Feedback } from './common/feedback.entity';
 import { PublicTagGroupsController } from './common/public-tag-groups.controller';
 import { AnalyticsController } from './common/analytics.controller';
@@ -54,7 +55,7 @@ import { PresenceMiddleware } from './common/presence.middleware';
       retryAttempts: process.env.NODE_ENV === 'production' ? 10 : 2,
       retryDelay: 3000,
     }),
-    TypeOrmModule.forFeature([Skill, SkillVersion, User, Team, Comment, Event, AdminLog, TagGroup, PageView, Feedback]),
+    TypeOrmModule.forFeature([Skill, SkillVersion, User, Team, Comment, Event, AdminLog, TagGroup, PageView, Feedback, UserDailyActive]),
     StorageModule,
     AuthModule,
     SkillsModule,

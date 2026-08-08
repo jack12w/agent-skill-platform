@@ -37,10 +37,21 @@ export class PresenceMiddleware implements NestMiddleware {
   }
 
   private touch(userId: string) {
+    // 刷新个人"最近访问"时间戳（5 分钟节流）
     this.userRepo
       .query(
         `UPDATE users SET last_seen_at = now()
          WHERE id = $1 AND (last_seen_at IS NULL OR last_seen_at < now() - interval '5 minutes')`,
+        [userId],
+      )
+      .catch(() => {});
+
+    // 记录登录用户活跃日志（每天一行，去重），作为活跃用户统计的真实数据源。
+    // 仅登录用户写入，匿名访客不写入。
+    this.userRepo
+      .query(
+        `INSERT INTO user_daily_active (user_id, day) VALUES ($1, CURRENT_DATE)
+         ON CONFLICT (user_id, day) DO NOTHING`,
         [userId],
       )
       .catch(() => {});

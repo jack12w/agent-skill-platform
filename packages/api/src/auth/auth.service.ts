@@ -73,6 +73,14 @@ export class AuthService {
     });
     if (user && (await bcrypt.compare(pass, user.password_hash))) {
       const payload = { sub: user.id, email: user.email, role: user.role };
+      // 登录成功即记一笔当日活跃（兜底：登录请求本身不带 token，中间件不会触发）
+      this.userRepository
+        .query(
+          `INSERT INTO user_daily_active (user_id, day) VALUES ($1, CURRENT_DATE)
+           ON CONFLICT (user_id, day) DO NOTHING`,
+          [user.id],
+        )
+        .catch(() => {});
       return {
         access_token: await this.jwtService.signAsync(payload),
         user: { id: user.id, email: user.email, name: user.name, avatar_url: user.avatar_url },

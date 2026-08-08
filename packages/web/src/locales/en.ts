@@ -359,12 +359,12 @@ const en = {
     thRegistered: 'Registered',
     thLastSeen: 'Last Seen',
     neverActive: 'Never',
-    // User activity stats
-    active7d: 'Active 7d',
-    active30d: 'Active 30d',
-    active90d: 'Active 90d',
-    active180d: 'Active 180d',
-    active365d: 'Active 365d',
+    // User activity stats (logged-in users only, anonymous excluded)
+    active7d: 'Logged-in active 7d',
+    active30d: 'Logged-in active 30d',
+    active90d: 'Logged-in active 90d',
+    active180d: 'Logged-in active 180d',
+    active365d: 'Logged-in active 365d',
     thType: 'Type',
     thUpdated: 'Updated',
     thAction: 'Action',

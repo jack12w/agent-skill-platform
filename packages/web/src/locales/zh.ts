@@ -360,12 +360,12 @@ const zh = {
     thRegistered: '注册日期',
     thLastSeen: '最近访问',
     neverActive: '从未',
-    // 用户活跃统计
-    active7d: '近7天活跃',
-    active30d: '近30天活跃',
-    active90d: '近90天活跃',
-    active180d: '近180天活跃',
-    active365d: '近365天活跃',
+    // 用户活跃统计（仅登录用户，排除匿名访客）
+    active7d: '近7天登录活跃',
+    active30d: '近30天登录活跃',
+    active90d: '近90天登录活跃',
+    active180d: '近180天登录活跃',
+    active365d: '近365天登录活跃',
     thType: '类型',
     thUpdated: '更新时间',
     thAction: '操作',
