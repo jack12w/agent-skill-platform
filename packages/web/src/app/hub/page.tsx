@@ -101,7 +101,7 @@ export default function HubPage() {
       .catch(() => {});
 
     return () => { cancelled = true; };
-  }, [stats, t]);
+  }, [stats, t, loading]);
 
   // Analytics chart（同样走单例 loader，不再依赖 window.Chart 的加载时序）
   useEffect(() => {
