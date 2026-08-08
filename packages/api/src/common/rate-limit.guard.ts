@@ -23,6 +23,28 @@ const DEFAULT_MAX_GLOBAL = Math.max(DEFAULT_MAX_PER_IP * 5, 2000);
 /** 内网/保留段标识 key（所有拿不到真实客户端 IP 的请求共用） */
 const GLOBAL_KEY = '__global_proxy__';
 
+/**
+ * 只读 GET 白名单 —— 这些接口幂等、服务端已缓存（leaderboard 60s / skills 30s 等）、成本极低，
+ * 且是 SPA 每次路由变化都会触发的请求（jssdk / subscriptions/count / leaderboard / skills / tags/groups …）。
+ * 正常浏览会在 1 分钟内密集触发，若纳入 per-IP 120 限制极易被误伤 429。
+ * 因此对这些「GET + 白名单前缀」的请求完全放行（不参与限流计数），
+ * 其余未知 GET / 所有写操作仍按 120/分钟（真实 IP）或 2000/分钟（全局）拦截，仍能挡爬虫/脚本。
+ */
+const READONLY_WHITELIST = [
+  '/api/wechat/jssdk', // 微信分享签名：每次路由变化触发，仅微信内浏览器才生效
+  '/api/subscriptions/count', // 订阅计数 badge：只读展示，订阅/取消是别的写接口
+  '/api/leaderboard', // 排行榜：服务端 60s 缓存
+  '/api/skills', // 技能列表/详情/版本：服务端 30s 缓存
+  '/api/tags/groups', // 标签分组：几乎静态
+  '/api/ai/feed', // AI feed：服务端 60s 缓存
+];
+
+/** 是否命中只读白名单（仅 GET/HEAD，写操作一律不豁免） */
+function isReadonlyWhitelisted(method: string, path: string): boolean {
+  if (method !== 'GET' && method !== 'HEAD') return false;
+  return READONLY_WHITELIST.some((p) => path === p || path.startsWith(p + '/'));
+}
+
 interface MemWindow {
   count: number;
   resetAt: number;
@@ -97,10 +119,15 @@ export class RateLimitGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
-    const url = (request.originalUrl || request.url || '') as string;
+    const rawUrl = (request.originalUrl || request.url || '') as string;
+    const path = rawUrl.split('?')[0]; // 去掉 query，用于前缀白名单匹配
 
     // 健康检查豁免（探针/监控不应被限流）
-    if (url.includes('/api/health')) return true;
+    if (path.includes('/api/health')) return true;
+
+    // 只读 GET 白名单：正常浏览密集触发的幂等只读接口，完全放行不参与限流计数。
+    // 仅 GET/HEAD 命中；POST/PATCH/DELETE 等写操作不受影响，仍受 120/分钟拦截。
+    if (isReadonlyWhitelisted(request.method, path)) return true;
 
     const { key, realClient } = this.resolveClientIp(request);
     // 真实客户端 IP → 精确限流；拿不到真实 IP → 全局大桶兜底
