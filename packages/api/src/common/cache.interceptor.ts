@@ -68,7 +68,7 @@ export class CacheInterceptor implements NestInterceptor {
     if (req.method !== 'GET') return next.handle();
 
     const url = (req.originalUrl || req.url || '') as string;
-    const path = url.split('?')[0];
+    const [path, rawQuery] = url.split('?');
     if (!isCacheable(path)) return next.handle();
 
     const ttl = TTL_OVERRIDE[path] ?? DEFAULT_TTL;
@@ -77,7 +77,17 @@ export class CacheInterceptor implements NestInterceptor {
     const uid = auth
       ? 'u' + createHash('sha256').update(auth).digest('hex').slice(0, 16)
       : 'anon';
-    const key = `cache:v1:${path}:${uid}`;
+    /*
+     * 查询参数必须进缓存 key（排序保证稳定）：
+     * 之前 key 只有 path，导致 /api/leaderboard 的 type/period 四种组合、
+     * /api/skills 的搜索/分页/排序全部共用同一份缓存（60s/30s TTL），
+     * 榜单互相串数据、首页人气榜被别的组合污染。
+     * v1 → v2 换前缀，避免部署后继续命中已被污染的旧 key。
+     */
+    const queryKey = rawQuery
+      ? rawQuery.split('&').filter(Boolean).sort().join('&')
+      : '';
+    const key = `cache:v2:${path}:${queryKey}:${uid}`;
 
     if (!this.redis) return next.handle();
 
