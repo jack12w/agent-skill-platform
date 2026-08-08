@@ -18,8 +18,9 @@ export class LeaderboardService {
    * Real-time aggregation directly from skill_stats + users/teams.
    * Snapshot table is no longer used for reads (kept for future cron use).
    *
-   * weekly: counts only events from last 7 days
-   * all:    counts everything
+   * weekly: only subjects with like/download events in last 7 days;
+   *         skill_count / likes / downloads / score ALL derived from those weekly events.
+   * all:    every published skill counted; totals from skill_stats columns.
    */
   async getSnapshot(type: LeaderboardType, period: LeaderboardPeriod) {
     const isWeekly = period === LeaderboardPeriod.WEEKLY;
@@ -61,10 +62,10 @@ export class LeaderboardService {
         SELECT
           ${subjectIdCol}::text                              AS subject_id,
           COALESCE(subj.name, 'Anonymous')                   AS name,
-          COUNT(DISTINCT s.id)                               AS skill_count,
+          COUNT(DISTINCT s.id) FILTER (WHERE ea.skill_id IS NOT NULL) AS skill_count,
           COALESCE(SUM(ea.likes), 0)                         AS likes,
           COALESCE(SUM(ea.downloads), 0)                     AS downloads,
-          LOG(2, COUNT(DISTINCT s.id) + 1) * 5
+          LOG(2, COUNT(DISTINCT s.id) FILTER (WHERE ea.skill_id IS NOT NULL) + 1) * 5
             + COALESCE(SUM(ea.likes), 0) * 0.3
             + COALESCE(SUM(ea.downloads), 0) * 0.3           AS score
         FROM skills s
@@ -72,6 +73,7 @@ export class LeaderboardService {
         LEFT JOIN ${subjectTable} subj ON subj.id = ${subjectIdCol}
         WHERE ${subjectIdCol} IS NOT NULL AND s.status = 'published' ${teamFilter}
         GROUP BY ${subjectIdCol}, subj.name
+        HAVING COALESCE(SUM(ea.likes), 0) + COALESCE(SUM(ea.downloads), 0) > 0
         ORDER BY score DESC
         LIMIT 50
         `,
