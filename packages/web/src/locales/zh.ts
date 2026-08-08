@@ -88,6 +88,7 @@ const zh = {
     reviewBanner: '此技能正在审核中，暂未公开',
     subscribe: '订阅',
     subscribed: '已订阅',
+    cannotSubscribeSelf: '不能订阅自己',
   },
   edit: {
     title: '编辑技能',

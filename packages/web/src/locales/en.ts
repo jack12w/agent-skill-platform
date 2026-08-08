@@ -88,6 +88,7 @@ const en = {
     reviewBanner: 'This skill is under review and not yet public',
     subscribe: 'Subscribe',
     subscribed: 'Subscribed',
+    cannotSubscribeSelf: 'Cannot subscribe to yourself',
   },
   edit: {
     title: 'Edit Skill',
