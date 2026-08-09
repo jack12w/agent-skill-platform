@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, InternalServerErrorException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 
@@ -157,17 +157,27 @@ export class WechatPayService {
   private async request(method: string, urlPath: string, bodyObj?: any): Promise<any> {
     const body = bodyObj ? JSON.stringify(bodyObj) : '';
     const auth = this.buildAuthorization(method, urlPath, body);
-    const res = await fetch(`${this.base}${urlPath}`, {
-      method: method.toUpperCase(),
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: auth,
-        'User-Agent': 'SkillDepot/1.0',
-      },
-      body: method.toUpperCase() === 'GET' ? undefined : body,
-      signal: AbortSignal.timeout(10_000),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${this.base}${urlPath}`, {
+        method: method.toUpperCase(),
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          Authorization: auth,
+          'User-Agent': 'SkillDepot/1.0',
+        },
+        body: method.toUpperCase() === 'GET' ? undefined : body,
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch (e: any) {
+      // 网络层异常（DNS 失败 / 连接拒绝 / 10s 超时 AbortError）：不是 HttpException，
+      // 若直接冒泡到 Nest 默认过滤器会变成裸 500 + 堆栈。统一转成友好错误并打原始
+      // 错误日志，既保证前端拿到可读提示，又保留根因线索（容器出网 / 微信侧抖动）。
+      const msg = e?.message || String(e);
+      this.logger.error(`微信支付网络请求失败 (${method} ${urlPath}): ${msg}`, e?.stack);
+      throw new InternalServerErrorException('微信支付渠道连接失败，请稍后重试');
+    }
     const text = await res.text();
     if (!res.ok) {
       this.logger.error('微信支付接口错误', text);

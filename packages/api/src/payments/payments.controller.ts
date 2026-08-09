@@ -8,6 +8,7 @@ import {
   Query,
   Req,
   UseGuards,
+  Logger,
   BadRequestException,
   ForbiddenException,
   NotFoundException,
@@ -27,6 +28,7 @@ import { Team } from '../teams/team.entity';
 @Controller('pay')
 @UseGuards(AuthGuard)
 export class PaymentsController {
+  private readonly logger = new Logger(PaymentsController.name);
   constructor(
     private readonly orders: OrdersService,
     private readonly membership: MembershipService,
@@ -48,7 +50,15 @@ export class PaymentsController {
   /** 创建订单并发起支付 */
   @Post('orders')
   async createOrder(@Req() req: Request, @Body() body: any) {
-    return this.orders.createOrder(this.uid(req), body);
+    try {
+      return await this.orders.createOrder(this.uid(req), body);
+    } catch (e: any) {
+      // 包装一层：Nest 默认过滤器只打 "ExceptionsHandler" 单行、吞掉堆栈，
+      // 排查下单 500 时看不到根因。这里带请求 body + 完整 stack 落日志。
+      const masked = { ...(body || {}), skillId: body?.skillId ? '***' : body?.skillId };
+      this.logger.error(`[create-order-500] uid=${(req as any).user?.sub} body=${JSON.stringify(masked)}`, e?.stack || e?.message || String(e));
+      throw e;
+    }
   }
 
   /** 查询订单状态（前端轮询；卡住自动查单） */
