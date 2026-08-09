@@ -2,27 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import useTranslation from '../hooks/useTranslation';
 import SkillUpdateBadge from './components/SkillUpdateBadge';
+import { useGoWithAuth } from '../lib/auth';
 
 export default function Home() {
   const { t } = useTranslation();
-  const router = useRouter();
-  // 登录检测：未登录点「上传技能」先跳登录页并带 redirect，登录后直接去提交技能页
-  const goWithAuth = (target: string) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) {
-      // 微信内置浏览器：走静默授权一键登录（无需邮箱登录页）；其余环境走邮箱登录并带 redirect 回目标页
-      if (typeof navigator !== 'undefined' && /MicroMessenger/i.test(navigator.userAgent)) {
-        window.location.href = '/api/auth/wechat/mp/url?redirect=' + encodeURIComponent(target);
-        return;
-      }
-      router.push('/auth?redirect=' + encodeURIComponent(target));
-      return;
-    }
-    router.push(target);
-  };
+  // 登录检测：未登录点「上传技能」先跳登录页并带 redirect，登录后直接去提交技能页；
+  // 手机微信且微信登录启用时走公众号静默登录（逻辑见 lib/auth.ts）
+  const goWithAuth = useGoWithAuth();
   const [trending, setTrending] = useState<any[]>([]);
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
 
