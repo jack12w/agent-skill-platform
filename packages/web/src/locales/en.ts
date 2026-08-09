@@ -20,6 +20,7 @@ const en = {
     noData: 'No data yet.',
     skills: 'Skills',
     score: 'pts',
+    uploadSkill: 'Upload Skill',
   },
   auth: {
     title: 'Login',
@@ -189,6 +190,9 @@ const en = {
     memberTotal: '{n} members',
     members: 'members',
     creator: 'Creator',
+    createTeamCardTitle: 'Create Team',
+    createTeamCardHint: 'No team yet? Create one so your skills rank under your team.',
+    uploadSkill: 'Upload Skill',
   },
   dashboard: {
     mySkills: 'My Skills',

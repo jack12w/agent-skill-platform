@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import useTranslation from '../../hooks/useTranslation';
 
 const AVATAR_GRADIENT = 'linear-gradient(135deg, #7C3AED, #06B6D4)';
@@ -23,6 +24,16 @@ function Crown() {
 
 export default function Leaderboard() {
   const { t } = useTranslation();
+  const router = useRouter();
+  // 登录检测：未登录点 CTA 先跳登录页并带 redirect，登录后直接落地目标页
+  const goWithAuth = (target: string) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) {
+      router.push('/auth?redirect=' + encodeURIComponent(target));
+      return;
+    }
+    router.push(target);
+  };
   const [tab, setTab] = useState<'personal' | 'team'>('personal');
   const [period, setPeriod] = useState<'weekly' | 'all'>('weekly');
   // 每个视图（个人/团队 × 周/总）独立缓存一份数据：切换时互不串、且命中缓存秒切不闪白
@@ -204,6 +215,25 @@ export default function Leaderboard() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+            {/* CTA：引导创建团队 / 上传技能 */}
+            {isTeam ? (
+              <button
+                onClick={() => goWithAuth('/dashboard')}
+                className="mt-8 w-full flex flex-col items-center gap-1 rounded-2xl border-2 border-dashed border-brand-200 bg-white/60 px-6 py-8 text-center hover:border-brand-400 hover:bg-brand-50/50 transition"
+              >
+                <span className="text-lg font-bold text-brand-700">+ {t('leaderboard.createTeamCardTitle')}</span>
+                <span className="text-sm text-neutral-500">{t('leaderboard.createTeamCardHint')}</span>
+              </button>
+            ) : (
+              <div className="mt-8 text-center">
+                <button
+                  onClick={() => goWithAuth('/submit')}
+                  className="px-8 py-3 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700"
+                >
+                  {t('leaderboard.uploadSkill')}
+                </button>
               </div>
             )}
           </>

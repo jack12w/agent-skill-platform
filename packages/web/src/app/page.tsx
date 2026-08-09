@@ -2,11 +2,22 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import useTranslation from '../hooks/useTranslation';
 import SkillUpdateBadge from './components/SkillUpdateBadge';
 
 export default function Home() {
   const { t } = useTranslation();
+  const router = useRouter();
+  // 登录检测：未登录点「上传技能」先跳登录页并带 redirect，登录后直接去提交技能页
+  const goWithAuth = (target: string) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) {
+      router.push('/auth?redirect=' + encodeURIComponent(target));
+      return;
+    }
+    router.push(target);
+  };
   const [trending, setTrending] = useState<any[]>([]);
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
 
@@ -80,6 +91,14 @@ export default function Home() {
                 <span className="font-bold text-brand-600">{parseFloat(item.score).toFixed(1)} {t('home.score')}</span>
               </div>
             ))}
+          </div>
+          <div className="mt-6 text-center">
+            <button
+              onClick={() => goWithAuth('/submit')}
+              className="px-8 py-3 bg-brand-600 text-white rounded-lg font-medium hover:bg-brand-700"
+            >
+              {t('home.uploadSkill')}
+            </button>
           </div>
         </section>
       </div>

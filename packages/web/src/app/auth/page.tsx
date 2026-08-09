@@ -14,6 +14,15 @@ function closePopupRobustly(win: Window | null) {
 
 export default function AuthPage() {
   const router = useRouter();
+  // 登录后落地页：来源页可带 ?redirect=/submit 之类，登录完成直接去目标页；
+  // 未带则回个人中心 /dashboard（与历史行为一致）。
+  const [redirect, setRedirect] = useState('');
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      setRedirect(params.get('redirect') || '');
+    } catch {}
+  }, []);
   const { t } = useTranslation();
   const [tab, setTab] = useState<'login' | 'register' | 'forgot'>('login');
   const [form, setForm] = useState({ email: '', password: '', name: '', code: '' });
@@ -35,8 +44,8 @@ export default function AuthPage() {
     popupRef.current = null;
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(user));
-    router.push('/dashboard');
-  }, [router]);
+    router.push(redirect || '/dashboard');
+  }, [router, redirect]);
 
   // 兜底通道：跨标签页 storage 事件（不依赖 window.opener 在多次 302 后是否存活）
   useEffect(() => {
@@ -114,7 +123,7 @@ export default function AuthPage() {
       if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
       localStorage.setItem('token', data.access_token);
       localStorage.setItem('user', JSON.stringify(data.user));
-      router.push('/dashboard');
+      router.push(redirect || '/dashboard');
     } catch (err: any) {
       alert((tab === 'login' ? t('auth.loginFailed') : t('auth.registerFailed')) + ': ' + (err.message || String(err)));
     } finally { setLoading(false); }
@@ -156,7 +165,7 @@ export default function AuthPage() {
       if (!res.ok) throw new Error(data.message);
       localStorage.setItem('token', data.access_token);
       localStorage.setItem('user', JSON.stringify(data.user));
-      router.push('/dashboard');
+      router.push(redirect || '/dashboard');
     } catch { alert('模拟登录失败'); }
   };
 

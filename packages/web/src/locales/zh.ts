@@ -20,6 +20,7 @@ const zh = {
     noData: '暂无数据。',
     skills: '个技能',
     score: '分',
+    uploadSkill: '上传技能',
   },
   auth: {
     title: '登录',
@@ -189,6 +190,9 @@ const zh = {
     memberTotal: '共 {n} 人',
     members: '成员',
     creator: '创作者',
+    createTeamCardTitle: '创建团队',
+    createTeamCardHint: '还没有团队？创建一个，让你的技能以团队身份上榜',
+    uploadSkill: '上传技能',
   },
   dashboard: {
     mySkills: '我的技能',
