@@ -90,8 +90,8 @@ export class AuthController {
     return res.redirect(url);
   }
 
-  // 微信授权回调：用 code 换 openid → 查/建用户 → 下发 token，直接返回 HTML 写 localStorage 并跳目标页。
-  // 与 PC 微信登录不同，这里不依赖缺失的前端 /auth/wechat-callback 页面，由后端同域 HTML 闭环。
+  // 微信授权回调：用 code 换 openid → 查/建用户 → Set-Cookie 下发 token/user + 302 跳目标页。
+  // 与 PC 微信登录不同，这里不依赖缺失的前端 /auth/wechat-callback 页面，由后端同域闭环。
   @Get('wechat/mp-callback')
   async wechatMpCallback(
     @Query('code') code: string,
@@ -107,21 +107,20 @@ export class AuthController {
         const { url } = await this.authService.getWechatMpAuthUrl(result.redirect, 'snsapi_userinfo');
         return res.redirect(url);
       }
-      // 防御性渲染：可见文案 + 延迟兜底跳转 + 错误提示，避免「白屏无信息」
+      // 成功：用 Http Cookie 携带 token/user（同源可读），并 302 跳目标页。
+      // 关键修复：微信内置浏览器（尤其 Android X5 内核）在 OAuth 回调页用 JS 执行
+      // window.location.href 跳转 SPA 路由时经常不触发导航，导致卡在 mp-callback 白屏。
+      // 服务端 302 重定向在微信里 100% 可靠，不再依赖客户端 location.href。
+      // 前端 AuthProvider 会在渲染期把 Cookie 同步回 localStorage（前端统一读 localStorage）。
       const safeRedirect = result.redirect && result.redirect.startsWith('/') ? result.redirect : '/';
-      const html = `<!doctype html><html><head><meta charset="utf-8"><title>登录成功</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;color:#666;background:#fff"><div id="tip" style="text-align:center;padding:20px">登录成功，正在跳转…</div><script>
-        var target = ${JSON.stringify(safeRedirect)};
-        try {
-          localStorage.setItem('token', ${JSON.stringify(result.access_token)});
-          localStorage.setItem('user', ${JSON.stringify(JSON.stringify(result.user))});
-          setTimeout(function(){ window.location.href = target; }, 60);
-        } catch (e) {
-          document.getElementById('tip').textContent = '登录成功，但自动跳转失败，正在返回首页…';
-          setTimeout(function(){ window.location.href = ${JSON.stringify(base + '/')}; }, 800);
-        }
-      </script></body></html>`;
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      return res.send(html);
+      const maxAge = 7 * 24 * 3600 * 1000;
+      res.cookie('token', result.access_token, { path: '/', sameSite: 'lax', maxAge });
+      res.cookie('user', encodeURIComponent(JSON.stringify(result.user)), {
+        path: '/',
+        sameSite: 'lax',
+        maxAge,
+      });
+      return res.redirect(safeRedirect);
     } catch (err) {
       const message = err instanceof Error ? err.message : '微信登录失败';
       const html = `<!doctype html><html><head><meta charset="utf-8"><title>登录失败</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script>alert(${JSON.stringify(message)});window.location.href=${JSON.stringify(base + '/')};</script></body></html>`;
