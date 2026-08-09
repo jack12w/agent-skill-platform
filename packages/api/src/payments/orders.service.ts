@@ -206,6 +206,9 @@ export class OrdersService implements OnModuleInit {
       status: 'PENDING_PAY',
       total_cents: total,
       paid_cents: 0,
+      // 该列在迁移与实体中均为 NOT NULL（default 0 仅在建表时生效，运行时 save 不会自动填充），
+      // 漏设会导致插入传 NULL → 触发约束报错 500。与 paid_cents 对称显式赋值。
+      refunded_cents: 0,
       commission_rate_bp_snapshot: commissionBp,
       expire_at: new Date(Date.now() + 15 * 60_000),
     });
