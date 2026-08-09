@@ -26,10 +26,8 @@ export default function AgreementPage() {
           </section>
         ))}
       </div>
-      <div className="mt-8 p-4 rounded-lg bg-neutral-50 border text-sm">
-        <a href="/help" className="text-brand-600 hover:underline font-medium">
-          {t('agreement.termsLink')}
-        </a>
+      <div className="mt-8 p-4 rounded-lg bg-neutral-50 border text-sm text-neutral-600">
+        {t('agreement.finalInterpretation')}
       </div>
     </div>
   );

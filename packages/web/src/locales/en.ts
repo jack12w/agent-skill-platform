@@ -701,6 +701,7 @@ const en = {
     s7Body: 'Skill content is the creator\'s own responsibility; the platform only provides transaction matching and technical support. Disputes over skill quality or copyright are resolved by the creator and the user through negotiation; if that fails, they may submit to platform mediation.',
     viewTerms: 'View full Terms of Service',
     termsLink: 'View the full Terms of Service & Subscription Agreement',
+    finalInterpretation: 'The final right of interpretation belongs to SkillDepot.',
   },
 };
 
