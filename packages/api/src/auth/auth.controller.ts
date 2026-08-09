@@ -85,8 +85,8 @@ export class AuthController {
   // ── 微信内网页授权静默登录（snsapi_base） ──
   // 前端「操作触发登录」在微信环境下跳转至此，302 到微信授权页；授权后微信回调 mp-callback。
   @Get('wechat/mp/url')
-  getWechatMpUrl(@Query('redirect') redirect: string, @Res() res: Response) {
-    const { url } = this.authService.getWechatMpAuthUrl(redirect);
+  async getWechatMpUrl(@Query('redirect') redirect: string, @Res() res: Response) {
+    const { url } = await this.authService.getWechatMpAuthUrl(redirect);
     return res.redirect(url);
   }
 

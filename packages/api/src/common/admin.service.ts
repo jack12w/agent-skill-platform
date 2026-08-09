@@ -335,7 +335,7 @@ export class AdminService {
       version: '1.0',
       dbHost: process.env.DB_HOST?.replace(/\./g, '*') || '***',
       smtpUser: process.env.SMTP_USER || '(not set)',
-      wechatEnabled: !!process.env.WECHAT_APPSECRET,
+      wechatEnabled: !!(process.env.WECHAT_APPSECRET || process.env.WECHAT_OA_APPSECRET),
       wechatLoginEnabled: process.env.WECHAT_LOGIN_ENABLED === 'true',
       publicBaseUrl: process.env.PUBLIC_BASE_URL || '',
       nodeEnv: process.env.NODE_ENV || 'development',

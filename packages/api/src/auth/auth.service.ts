@@ -346,7 +346,13 @@ export class AuthService {
     if (!redirect || !redirect.startsWith('/')) {
       throw new BadRequestException('非法跳转地址');
     }
-    const appId = process.env.WECHAT_APPID || 'wxb2537aa7600236a7'; // 必须为公众号 AppID（网页授权域名配在该公众号下）
+    // 公众号网页授权（snsapi_base）必须用「公众号」凭证 WECHAT_OA_APPID：
+    // 网页授权域名配在该公众号下，且与 PC 网站应用扫码登录(WECHAT_APPID / wx4e9b…) 是两套独立 AppID / OpenID 命名空间，不可混用。
+    const appId = process.env.WECHAT_OA_APPID || 'wxb2537aa7600236a7';
+    const appSecret = process.env.WECHAT_OA_APPSECRET;
+    if (!appId || !appSecret) {
+      throw new BadRequestException('公众号网页授权未配置（WECHAT_OA_APPID / WECHAT_OA_APPSECRET）');
+    }
     const base = process.env.PUBLIC_BASE_URL || 'https://skills.rehomi.com';
     const callbackUri = encodeURIComponent(`${base}/api/auth/wechat/mp-callback?rd=${encodeURIComponent(redirect)}`);
     const state = crypto.randomBytes(16).toString('hex');
@@ -366,9 +372,9 @@ export class AuthService {
     if (!redirect || !redirect.startsWith('/')) {
       throw new BadRequestException('非法跳转地址');
     }
-    const appId = process.env.WECHAT_APPID || 'wxb2537aa7600236a7';
-    const appSecret = process.env.WECHAT_APPSECRET;
-    if (!appSecret) throw new BadRequestException('WeChat AppSecret not configured');
+    const appId = process.env.WECHAT_OA_APPID || 'wxb2537aa7600236a7';
+    const appSecret = process.env.WECHAT_OA_APPSECRET;
+    if (!appSecret) throw new BadRequestException('公众号 AppSecret(WECHAT_OA_APPSECRET) 未配置');
     // snsapi_base 静默授权：仅换 openid（关注后才会带 unionid），不返回昵称/头像
     const tokenRes = await fetch(
       `https://api.weixin.qq.com/sns/oauth2/access_token?appid=${appId}&secret=${appSecret}&code=${code}&grant_type=authorization_code`
