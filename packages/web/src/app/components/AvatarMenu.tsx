@@ -41,7 +41,8 @@ export default function AvatarMenu() {
 
   if (!mounted) return null;
   if (!user) {
-    return <Link href="/auth" className="px-4 py-2 border border-brand-600 text-brand-600 rounded-md hover:bg-brand-50 text-sm font-medium">{t('nav.login')}</Link>;
+    // 移动端隐藏常驻登录按钮：登录改为「操作触发式」（点创建团队/上传技能等需要登录的动作时由 goWithAuth 引导），桌面端保留
+    return <Link href="/auth" className="hidden md:inline-block px-4 py-2 border border-brand-600 text-brand-600 rounded-md hover:bg-brand-50 text-sm font-medium">{t('nav.login')}</Link>;
   }
 
   const initial = (user.name || user.email || 'U')[0].toUpperCase();

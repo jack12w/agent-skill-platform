@@ -36,6 +36,13 @@ export default function Leaderboard() {
   };
   const [tab, setTab] = useState<'personal' | 'team'>('personal');
   const [period, setPeriod] = useState<'weekly' | 'all'>('weekly');
+  // 支持 URL ?type=team 直达团队榜（海报二维码落地页）
+  useEffect(() => {
+    try {
+      const type = new URLSearchParams(window.location.search).get('type');
+      if (type === 'team') setTab('team');
+    } catch {}
+  }, []);
   // 每个视图（个人/团队 × 周/总）独立缓存一份数据：切换时互不串、且命中缓存秒切不闪白
   const cacheRef = useRef<Record<string, any[]>>({});
   const reqIdRef = useRef(0);

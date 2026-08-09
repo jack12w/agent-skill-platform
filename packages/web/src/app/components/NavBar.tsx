@@ -66,7 +66,7 @@ export default function NavBar() {
         </button>
         <NotificationBell />
         <AvatarMenu />
-        <ShareButton />
+        <div className="hidden md:block"><ShareButton /></div>
         <button onClick={() => setMenuOpen(!menuOpen)} className="p-2 -mr-2 text-neutral-600 hover:text-neutral-900" aria-label="Menu">
           {menuOpen ? (
             <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
