@@ -107,12 +107,18 @@ export class AuthController {
         const { url } = await this.authService.getWechatMpAuthUrl(result.redirect, 'snsapi_userinfo');
         return res.redirect(url);
       }
-      const html = `<!doctype html><html><head><meta charset="utf-8"><title>登录中</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script>
+      // 防御性渲染：可见文案 + 延迟兜底跳转 + 错误提示，避免「白屏无信息」
+      const safeRedirect = result.redirect && result.redirect.startsWith('/') ? result.redirect : '/';
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>登录成功</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;color:#666;background:#fff"><div id="tip" style="text-align:center;padding:20px">登录成功，正在跳转…</div><script>
+        var target = ${JSON.stringify(safeRedirect)};
         try {
           localStorage.setItem('token', ${JSON.stringify(result.access_token)});
           localStorage.setItem('user', ${JSON.stringify(JSON.stringify(result.user))});
-          window.location.href = ${JSON.stringify(result.redirect)};
-        } catch (e) { window.location.href = ${JSON.stringify(base + '/')}; }
+          setTimeout(function(){ window.location.href = target; }, 60);
+        } catch (e) {
+          document.getElementById('tip').textContent = '登录成功，但自动跳转失败，正在返回首页…';
+          setTimeout(function(){ window.location.href = ${JSON.stringify(base + '/')}; }, 800);
+        }
       </script></body></html>`;
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       return res.send(html);
