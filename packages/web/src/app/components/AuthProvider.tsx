@@ -14,7 +14,9 @@ function getCookie(name: string): string | undefined {
 function hydrateTokenFromCookie() {
   if (typeof window === 'undefined') return;
   const ckToken = getCookie('token');
-  if (ckToken && !localStorage.getItem('token')) {
+  // Cookie 来自最近一次登录/登出操作，优先级高于 localStorage；只要 Cookie 存在就同步，
+  // 避免部分浏览器 302 后 localStorage 为空导致子组件误判未登录。
+  if (ckToken) {
     localStorage.setItem('token', ckToken);
     const ckUser = getCookie('user');
     if (ckUser) {

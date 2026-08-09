@@ -6,6 +6,14 @@ import { useRouter } from 'next/navigation';
 import useTranslation from '../../hooks/useTranslation';
 import { fetchTagGroups } from '../../lib/tag-groups';
 
+function getCookie(name: string): string | undefined {
+  const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+  return m ? m[1] : undefined;
+}
+function eraseCookie(name: string) {
+  document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const { t } = useTranslation();
@@ -55,23 +63,34 @@ export default function Dashboard() {
     if (res.ok) { const data = await res.json(); setSkills(Array.isArray(data) ? data : data?.items ?? []); }
   };
   useEffect(() => {
-    const userData = localStorage.getItem('user'); const token = localStorage.getItem('token');
-    if (userData && userData !== 'undefined') { try { setUser(JSON.parse(userData)); } catch {} }
-    if (token) {
-      loadTeams(token); reloadSkills();
-      // 拉取最新个人资料，避免 localStorage 与服务器不一致（如换头像后 bio/tags 丢失）
-      fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (data) {
-            const fresh = { ...(userData ? JSON.parse(userData) : {}), ...data };
-            setUser(fresh);
-            localStorage.setItem('user', JSON.stringify(fresh));
-          }
-        })
-        .catch(() => {});
+    // 兜底：微信静默登录经 302 + Cookie 下发 token，但部分浏览器（尤其 iOS 微信）
+    // 在 302 中可能没及时把 Cookie 同步到 localStorage，目标页首屏会误判为未登录。
+    // 这里从 localStorage 或 Cookie 读 token，存在则保持 loading 直到 /api/auth/me 返回。
+    const token = localStorage.getItem('token') || getCookie('token');
+    if (!token) {
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+    localStorage.setItem('token', token);
+    loadTeams(token);
+    reloadSkills();
+    // 拉取最新个人资料，避免 localStorage 与服务器不一致（如换头像后 bio/tags 丢失）
+    fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) {
+          setUser(data);
+          localStorage.setItem('user', JSON.stringify(data));
+        } else {
+          // getMe 失败（如 token 已失效），清掉脏状态
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          eraseCookie('token');
+          eraseCookie('user');
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   // 页面获得焦点时刷新数据（用户从编辑页等子页面返回时）
@@ -220,6 +239,7 @@ export default function Dashboard() {
     setShowOnboarding(false);
   };
 
+  if (loading) return <div className="p-24 text-center text-neutral-500">加载中…</div>;
   if (!user) return <div className="p-24 text-center">Please <Link href="/auth" className="text-brand-600">login</Link> to view your dashboard.</div>;
 
   return (
