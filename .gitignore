@@ -47,6 +47,8 @@ ProductHunt-MakerComment.md
 知乎文章-阿里国际站AI提效.md
 poster.html
 qrcode.png
+# 本地生成产物目录（海报脚本/二维码图片/宣传文案等，不推送）
+outputs/
 # google 站点验证（服务器本地文件）
 packages/web/public/google*.html
 # 本地辅助脚本（不推送，非产品代码）
