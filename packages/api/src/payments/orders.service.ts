@@ -111,9 +111,11 @@ export class OrdersService implements OnModuleInit {
   /** 创建订单并发起微信支付 */
   async createOrder(userId: string, input: CreateOrderInput): Promise<any> {
     // 先取用户（决定支付方式 NATIVE/JSAPI/H5，并用于复用订单的通道一致性判断）
-    const user = await this.userRepo.findOne({ where: { id: userId } });
+    // JSAPI 的付款人 openid 必须是公众号命名空间（支付 AppID=公众号）→ 读 wechat_openid_oa，
+    // 且它是 select:false 字段，必须显式 select，否则永远 undefined、JSAPI 永远走不通。
+    const user = await this.userRepo.findOne({ where: { id: userId }, select: ['id', 'wechat_openid_oa'] });
     const desiredTradeType: 'NATIVE' | 'JSAPI' | 'H5' =
-      input.tradeType === 'JSAPI' && user?.wechat_openid ? 'JSAPI' : input.tradeType === 'H5' ? 'H5' : 'NATIVE';
+      input.tradeType === 'JSAPI' && user?.wechat_openid_oa ? 'JSAPI' : input.tradeType === 'H5' ? 'H5' : 'NATIVE';
 
     // 防重复下单：有未过期的同商品待支付订单直接复用（返回结构与新建一致，前端无感）。
     // 但若复用订单的支付通道与本次期望不一致（如用户先扫码、后拿到 openid 想走 JSAPI），
@@ -235,7 +237,7 @@ export class OrdersService implements OnModuleInit {
       outTradeNo: orderNo,
       amountCents: total,
       tradeType,
-      openid: user?.wechat_openid,
+      openid: user?.wechat_openid_oa,
     });
 
     const payment = this.payRepo.create({

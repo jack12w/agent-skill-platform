@@ -38,6 +38,15 @@ export class User {
   @Column({ nullable: true, select: false })
   wechat_unionid: string;
 
+  // 公众号 AppID 命名空间的 openid：微信内网页授权登录写入；支付收款(JSAPI/商家转账)必须用本列。
+  // select:false 沿用 last_seen_at 的降级设计：未跑迁移 0018 时默认查询不引用本列。
+  @Column({ nullable: true, select: false })
+  wechat_openid_oa: string;
+
+  // 网站应用 AppID 命名空间的 openid：PC 扫码登录(qrconnect)/微信绑定写入。
+  @Column({ nullable: true, select: false })
+  wechat_openid_site: string;
+
   @CreateDateColumn()
   created_at: Date;
 

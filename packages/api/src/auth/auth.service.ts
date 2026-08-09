@@ -104,7 +104,7 @@ export class AuthService {
   async getMe(userId: string) {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      select: ['id', 'email', 'name', 'avatar_url', 'bio', 'tags', 'role', 'email_verified', 'wechat_openid', 'password_hash'],
+      select: ['id', 'email', 'name', 'avatar_url', 'bio', 'tags', 'role', 'email_verified', 'wechat_openid', 'wechat_openid_oa', 'wechat_openid_site', 'password_hash'],
     });
     if (!user) throw new NotFoundException('User not found');
     return {
@@ -115,7 +115,7 @@ export class AuthService {
       bio: user.bio,
       tags: user.tags,
       role: user.role,
-      wechatBound: !!user.wechat_openid,
+      wechatBound: !!(user.wechat_openid || user.wechat_openid_oa || user.wechat_openid_site),
       emailVerified: user.email_verified,
       hasPassword: !!user.password_hash,
     };
@@ -270,6 +270,34 @@ export class AuthService {
     };
   }
 
+  // ── 微信身份统一查找（双 openid 命名空间 + unionid 归并） ──
+  // 公众号(oa) 与 网站应用(site) 的 openid 互不通用；同一微信用户跨入口靠 unionid 归并。
+  // 旧列 wechat_openid 仅作历史兜底（单列时代留下的账号），新流程不再写入。
+  private async findUserByWechatIdentity(ids: { oaOpenid?: string; siteOpenid?: string; unionid?: string }) {
+    const select: (keyof User)[] = [
+      'id', 'email', 'name', 'avatar_url',
+      'wechat_openid', 'wechat_openid_oa', 'wechat_openid_site', 'wechat_unionid', 'role',
+    ];
+    if (ids.oaOpenid) {
+      const u = await this.userRepository.findOne({ where: { wechat_openid_oa: ids.oaOpenid }, select });
+      if (u) return u;
+    }
+    if (ids.siteOpenid) {
+      const u = await this.userRepository.findOne({ where: { wechat_openid_site: ids.siteOpenid }, select });
+      if (u) return u;
+    }
+    if (ids.unionid) {
+      const u = await this.userRepository.findOne({ where: { wechat_unionid: ids.unionid }, select });
+      if (u) return u;
+    }
+    const legacyOpenid = ids.oaOpenid || ids.siteOpenid;
+    if (legacyOpenid) {
+      const u = await this.userRepository.findOne({ where: { wechat_openid: legacyOpenid }, select });
+      if (u) return u;
+    }
+    return null;
+  }
+
   async wechatCallback(code: string, state: string) {
     this.assertWechatLoginEnabled();
     // Verify state to prevent CSRF attacks
@@ -300,30 +328,21 @@ export class AuthService {
     const wechatUser = await userRes.json();
 
     // 3. 查找或创建用户
-    // 优先按 openid 查找；但 openid 随微信应用(appid)不同而变化，若未命中再用 unionid 兜底，
-    // 避免同一微信用户在网站应用/公众号等不同入口登录时分裂成多个账号（各自 role 不同，
+    // PC 扫码(网站应用) openid 落 wechat_openid_site 列；同一微信的公众号入口靠 unionid 归并，
+    // 避免同一用户在 PC/微信内两个入口分裂成两个账号（各自 role 不同，
     // 典型表现：邮箱登录是 admin，微信登录却落到 role='user' 的小号）。
-    let user = await this.userRepository.findOne({
-      where: { wechat_openid: openid },
-      select: ['id', 'email', 'name', 'avatar_url', 'wechat_openid', 'wechat_unionid', 'role'],
-    });
-    if (!user && unionid) {
-      user = await this.userRepository.findOne({
-        where: { wechat_unionid: unionid },
-        select: ['id', 'email', 'name', 'avatar_url', 'wechat_openid', 'wechat_unionid', 'role'],
-      });
-      // 命中但 openid 不同（多应用导致）→ 同步为最新 openid，防止下次又按旧 openid 分裂
-      if (user && user.wechat_openid !== openid) {
-        user.wechat_openid = openid;
-        await this.userRepository.save(user);
-      }
-    }
-    if (!user) {
+    let user = await this.findUserByWechatIdentity({ siteOpenid: openid, unionid });
+    if (user) {
+      let dirty = false;
+      if (user.wechat_openid_site !== openid) { user.wechat_openid_site = openid; dirty = true; }
+      if (unionid && user.wechat_unionid !== unionid) { user.wechat_unionid = unionid; dirty = true; }
+      if (dirty) await this.userRepository.save(user);
+    } else {
       user = this.userRepository.create({
         email: null,
         password_hash: '',
         name: wechatUser.nickname || '微信用户',
-        wechat_openid: openid,
+        wechat_openid_site: openid,
         wechat_unionid: unionid || null,
         email_verified: false,
         avatar_url: wechatUser.headimgurl || null,
@@ -341,7 +360,9 @@ export class AuthService {
   // ── 微信内网页授权静默登录（snsapi_base，微信内置浏览器用） ──
   // 与 PC 弹窗扫码(qrconnect)不同：用户在微信内打开网页时，点需要登录的操作(创建团队/上传技能)
   // 直接静默授权，无需跳转邮箱登录页；openid 查/建逻辑复用下方同一套，避免账号分裂。
-  async getWechatMpAuthUrl(redirect: string) {
+  // scope 说明：snsapi_base 静默无感但拿不到 unionid；snsapi_userinfo 弹一次授权页、可拿 unionid。
+  // 流程默认 base 先行（老用户无感），新用户由 mp-callback 识别后升级为 userinfo 再授权一次。
+  async getWechatMpAuthUrl(redirect: string, scope: 'snsapi_base' | 'snsapi_userinfo' = 'snsapi_base') {
     this.assertWechatLoginEnabled();
     if (!redirect || !redirect.startsWith('/')) {
       throw new BadRequestException('非法跳转地址');
@@ -358,7 +379,7 @@ export class AuthService {
     const state = crypto.randomBytes(16).toString('hex');
     wechatStates.set(state, { expiresAt: Date.now() + 5 * 60 * 1000 });
     return {
-      url: `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appId}&redirect_uri=${callbackUri}&response_type=code&scope=snsapi_base&state=${state}#wechat_redirect`,
+      url: `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appId}&redirect_uri=${callbackUri}&response_type=code&scope=${scope}&state=${state}#wechat_redirect`,
     };
   }
 
@@ -375,36 +396,61 @@ export class AuthService {
     const appId = process.env.WECHAT_OA_APPID || 'wxb2537aa7600236a7';
     const appSecret = process.env.WECHAT_OA_APPSECRET;
     if (!appSecret) throw new BadRequestException('公众号 AppSecret(WECHAT_OA_APPSECRET) 未配置');
-    // snsapi_base 静默授权：仅换 openid（关注后才会带 unionid），不返回昵称/头像
+    // 官方文档：unionid 仅当 scope=snsapi_userinfo 时返回；snsapi_base 静默授权只给 openid。
     const tokenRes = await fetch(
       `https://api.weixin.qq.com/sns/oauth2/access_token?appid=${appId}&secret=${appSecret}&code=${code}&grant_type=authorization_code`
     );
     const tokenData = await tokenRes.json();
     if (tokenData.errcode) throw new BadRequestException(`微信登录失败: ${tokenData.errmsg}`);
-    const { openid, unionid } = tokenData;
+    const { openid, unionid, access_token } = tokenData;
+    const isUserinfoScope = String(tokenData.scope || '').includes('snsapi_userinfo');
 
-    let user = await this.userRepository.findOne({
-      where: { wechat_openid: openid },
-      select: ['id', 'email', 'name', 'avatar_url', 'wechat_openid', 'wechat_unionid', 'role'],
-    });
-    if (!user && unionid) {
-      user = await this.userRepository.findOne({
-        where: { wechat_unionid: unionid },
-        select: ['id', 'email', 'name', 'avatar_url', 'wechat_openid', 'wechat_unionid', 'role'],
-      });
-      if (user && user.wechat_openid !== openid) {
-        user.wechat_openid = openid;
+    // 1) 公众号 openid 命中 → 老用户直接登录（snsapi_base 全程无感）
+    let user = await this.findUserByWechatIdentity({ oaOpenid: openid });
+    if (user) {
+      if (user.wechat_openid_oa !== openid) {
+        user.wechat_openid_oa = openid;
         await this.userRepository.save(user);
       }
+      const payload = { sub: user.id, email: user.email, role: user.role };
+      return {
+        access_token: await this.jwtService.signAsync(payload),
+        user: { id: user.id, email: user.email, name: user.name, avatar_url: user.avatar_url },
+        redirect,
+      };
     }
-    if (!user) {
+
+    // 2) 查无此人且拿不到 unionid（snsapi_base）→ 通知调用方升级为 snsapi_userinfo 再授权一次，
+    //    拿到 unionid 才能与 PC 扫码登录的账号归并。若已是 userinfo 仍无 unionid
+    //    （公众号未绑定开放平台），不再循环升级，按公众号 openid 兜底建号。
+    if (!unionid && !isUserinfoScope) {
+      return { needUserinfoAuth: true as const, redirect };
+    }
+
+    // 3) snsapi_userinfo：可拉昵称/头像；按 unionid 归并 PC 账号或新建
+    let wechatUser: { nickname?: string; headimgurl?: string } = {};
+    if (isUserinfoScope) {
+      const userRes = await fetch(
+        `https://api.weixin.qq.com/sns/userinfo?access_token=${access_token}&openid=${openid}`
+      );
+      wechatUser = await userRes.json();
+    }
+
+    user = unionid ? await this.findUserByWechatIdentity({ unionid }) : null;
+    if (user) {
+      let dirty = false;
+      if (user.wechat_openid_oa !== openid) { user.wechat_openid_oa = openid; dirty = true; }
+      if (unionid && user.wechat_unionid !== unionid) { user.wechat_unionid = unionid; dirty = true; }
+      if (dirty) await this.userRepository.save(user);
+    } else {
       user = this.userRepository.create({
         email: null,
         password_hash: '',
-        name: '微信用户',
-        wechat_openid: openid,
+        name: wechatUser.nickname || '微信用户',
+        wechat_openid_oa: openid,
         wechat_unionid: unionid || null,
         email_verified: false,
+        avatar_url: wechatUser.headimgurl || null,
       });
       await this.userRepository.save(user);
     }
@@ -514,19 +560,20 @@ export class AuthService {
     );
     const wechatUser = await userRes.json();
 
-    // 冲突检查：该微信已落在其他账号（openid 或 unionid 兜底，多应用 openid 不一致时仍能识别同一微信）
-    let conflict = await this.userRepository.findOne({ where: { wechat_openid: openid } });
-    if (!conflict && unionid) {
-      conflict = await this.userRepository.findOne({ where: { wechat_unionid: unionid } });
-    }
+    // 冲突检查：该微信已落在其他账号（公众号/网站应用 openid 或 unionid 任一命中即视为同一微信）
+    const conflict = await this.findUserByWechatIdentity({ siteOpenid: openid, unionid });
     if (conflict && conflict.id !== userId) {
       // 已绑在无邮箱的微信小号 → 合并进当前(邮箱)账号；已绑在有邮箱的真实账号 → 拒绝
       if (conflict.email) throw new BadRequestException('该微信已绑定其他账号');
       await this.mergeAccounts(conflict.id, userId);
     }
 
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    user.wechat_openid = openid;
+    // PC 绑定(网站应用) openid 落 wechat_openid_site 列；显式 select 以便读取既有 unionid 做兜底
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'wechat_openid_site', 'wechat_unionid', 'avatar_url'],
+    });
+    user.wechat_openid_site = openid;
     user.wechat_unionid = unionid || user.wechat_unionid || null;
     if (wechatUser.headimgurl) user.avatar_url = wechatUser.headimgurl;
     await this.userRepository.save(user);
@@ -536,20 +583,24 @@ export class AuthService {
   // ── 绑定邮箱（已登录会话发起；邮箱已属他人时自动合并账号） ──
   async bindEmail(userId: string, email: string, code: string, password?: string) {
     await this.verifyCode(email, code);
-    // ⚠️ 必须 select wechat_openid，否则普通绑定分支 save() 时该 select:false 字段因未加载而被清空，
-    // 导致微信小号绑邮箱后丢失微信身份（下次微信登录又生成新小号）。
+    // ⚠️ 必须显式 select 微信身份列（select:false 字段默认不加载），否则冲突判断读不到值，
+    // 会导致已绑微信的邮箱账号在合并时被错误覆盖微信身份。
     const currentUser = await this.userRepository.findOne({
       where: { id: userId },
-      select: ['id', 'email', 'name', 'avatar_url', 'email_verified', 'password_hash', 'wechat_openid'],
+      select: ['id', 'email', 'name', 'avatar_url', 'email_verified', 'password_hash', 'wechat_openid', 'wechat_openid_oa', 'wechat_openid_site', 'wechat_unionid'],
     });
     if (!currentUser) throw new NotFoundException('User not found');
 
-    // ⚠️ existing.wechat_openid 用于冲突判断，必须显式 select，否则 select:false 字段读不到，
-    // 该拦截时未拦截，会导致已绑微信的邮箱账号在合并时被错误清空微信身份。
-    const existing = await this.userRepository.findOne({ where: { email }, select: ['id', 'wechat_openid'] });
+    const existing = await this.userRepository.findOne({
+      where: { email },
+      select: ['id', 'wechat_openid', 'wechat_openid_oa', 'wechat_openid_site', 'wechat_unionid'],
+    });
     if (existing && existing.id !== userId) {
-      // 邮箱已被另一账号占用：把当前(多为微信小号)账号合并进该邮箱账号
-      if (existing.wechat_openid && existing.wechat_openid !== currentUser.wechat_openid) {
+      // 邮箱已被另一账号占用：把当前(多为微信小号)账号合并进该邮箱账号。
+      // 双方都持有微信身份且完全不重叠（双 openid + unionid 无一相同）→ 是两个不同微信用户，拒绝合并。
+      const curIds = [currentUser.wechat_openid, currentUser.wechat_openid_oa, currentUser.wechat_openid_site, currentUser.wechat_unionid].filter(Boolean);
+      const exIds = [existing.wechat_openid, existing.wechat_openid_oa, existing.wechat_openid_site, existing.wechat_unionid].filter(Boolean);
+      if (exIds.length > 0 && !exIds.some((v) => curIds.includes(v))) {
         throw new BadRequestException('该邮箱已绑定其他微信账号，无法合并');
       }
       await this.mergeAccounts(userId, existing.id);
@@ -625,16 +676,19 @@ export class AuthService {
       await manager.query(`UPDATE events SET user_id = $2 WHERE user_id = $1`, [fromId, toId]);
       await manager.query(`UPDATE feedbacks SET user_id = $2 WHERE user_id = $1`, [fromId, toId]);
 
-      // 迁移微信身份到目标（仅当目标尚未绑定）
-      // ⚠️ wechat_openid/unionid 是 select:false 字段，普通 findOne 读不到，必须显式 select，
-      // 否则 from.wechat_openid 为 undefined，会把目标微信身份错误清空，导致合并后微信登录失效。
-      const from = await userRepo.findOne({ where: { id: fromId }, select: ['id', 'wechat_openid', 'wechat_unionid', 'avatar_url'] });
-      const to = await userRepo.findOne({ where: { id: toId }, select: ['id', 'wechat_openid', 'wechat_unionid', 'avatar_url'] });
-      if (from && to && !to.wechat_openid) {
-        to.wechat_openid = from.wechat_openid;
-        to.wechat_unionid = from.wechat_unionid ?? to.wechat_unionid;
-        to.avatar_url = to.avatar_url || from.avatar_url;
-        await userRepo.save(to);
+      // 迁移微信身份到目标（仅填补目标缺失项，不覆盖已有身份）
+      // ⚠️ wechat_* 是 select:false 字段，普通 findOne 读不到，必须显式 select，
+      // 否则 from.wechat_* 为 undefined，合并后微信身份丢失、微信登录失效。
+      const from = await userRepo.findOne({ where: { id: fromId }, select: ['id', 'wechat_openid', 'wechat_openid_oa', 'wechat_openid_site', 'wechat_unionid', 'avatar_url'] });
+      const to = await userRepo.findOne({ where: { id: toId }, select: ['id', 'wechat_openid', 'wechat_openid_oa', 'wechat_openid_site', 'wechat_unionid', 'avatar_url'] });
+      if (from && to) {
+        let dirty = false;
+        if (!to.wechat_openid && from.wechat_openid) { to.wechat_openid = from.wechat_openid; dirty = true; }
+        if (!to.wechat_openid_oa && from.wechat_openid_oa) { to.wechat_openid_oa = from.wechat_openid_oa; dirty = true; }
+        if (!to.wechat_openid_site && from.wechat_openid_site) { to.wechat_openid_site = from.wechat_openid_site; dirty = true; }
+        if (!to.wechat_unionid && from.wechat_unionid) { to.wechat_unionid = from.wechat_unionid; dirty = true; }
+        if (!to.avatar_url && from.avatar_url) { to.avatar_url = from.avatar_url; dirty = true; }
+        if (dirty) await userRepo.save(to);
       }
       await userRepo.delete({ id: fromId });
     });

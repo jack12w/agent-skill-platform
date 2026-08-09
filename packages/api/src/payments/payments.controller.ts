@@ -185,12 +185,13 @@ export class PaymentsController {
     const uid = this.uid(req);
     const bal = await this.balRepo.findOne({ where: { user_id: uid } });
     const txns = await this.txRepo.find({ where: { user_id: uid }, order: { created_at: 'DESC' }, take: 50 });
-    const user = await this.userRepo.findOne({ where: { id: uid } });
+    // 提现收款走商家转账 → 需要公众号 openid（支付 AppID=公众号），故读 wechat_openid_oa 并显式 select（select:false 默认不加载）
+    const user = await this.userRepo.findOne({ where: { id: uid }, select: ['id', 'wechat_openid_oa'] });
     return {
       balance: bal || { available_cents: 0, frozen_cents: 0, total_earned_cents: 0, total_withdrawn_cents: 0 },
       transactions: txns,
       withdrawMinCents: await this.settings.getWithdrawMinCents(),
-      wechatBound: !!user?.wechat_openid,
+      wechatBound: !!user?.wechat_openid_oa,
       // 结算冻结期后的实际可提额度，前端据此展示与禁用按钮
       withdrawable: await this.balance.getWithdrawableInfo(uid),
     };
@@ -200,8 +201,8 @@ export class PaymentsController {
   @Post('withdrawals')
   async createWithdrawal(@Req() req: Request, @Body() body: any) {
     const uid = this.uid(req);
-    const user = await this.userRepo.findOne({ where: { id: uid } });
-    if (!user?.wechat_openid) throw new BadRequestException('请先在账号绑定微信');
+    const user = await this.userRepo.findOne({ where: { id: uid }, select: ['id', 'wechat_openid_oa'] });
+    if (!user?.wechat_openid_oa) throw new BadRequestException('请先在微信内打开本站完成一次登录（商家转账收款需要微信身份）');
     const amount = Math.round(Number(body.amountCents));
     const min = await this.settings.getWithdrawMinCents();
     if (!amount || amount < min) throw new BadRequestException(`最低提现 ${min / 100} 元`);
@@ -229,7 +230,7 @@ export class PaymentsController {
       fee_cents: 0,
       status: 'PENDING',
       channel: 'wechat_transfer',
-      target_openid: user.wechat_openid,
+      target_openid: user.wechat_openid_oa,
       real_name: body.realName || (user as any).real_name || null,
       out_bill_no: outBillNo,
     });

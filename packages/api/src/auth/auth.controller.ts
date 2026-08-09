@@ -102,6 +102,11 @@ export class AuthController {
     const base = process.env.PUBLIC_BASE_URL || 'https://skills.rehomi.com';
     try {
       const result = await this.authService.wechatMpLogin(code, state, rd);
+      // snsapi_base 拿不到 unionid（官方：仅 snsapi_userinfo 返回）；新用户升级授权一次以归并 PC 账号
+      if ('needUserinfoAuth' in result) {
+        const { url } = await this.authService.getWechatMpAuthUrl(result.redirect, 'snsapi_userinfo');
+        return res.redirect(url);
+      }
       const html = `<!doctype html><html><head><meta charset="utf-8"><title>登录中</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script>
         try {
           localStorage.setItem('token', ${JSON.stringify(result.access_token)});
