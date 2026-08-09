@@ -29,6 +29,11 @@ export default function Leaderboard() {
   const goWithAuth = (target: string) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) {
+      // 微信内置浏览器：走静默授权一键登录（无需邮箱登录页）；其余环境走邮箱登录并带 redirect 回目标页
+      if (typeof navigator !== 'undefined' && /MicroMessenger/i.test(navigator.userAgent)) {
+        window.location.href = '/api/auth/wechat/mp/url?redirect=' + encodeURIComponent(target);
+        return;
+      }
       router.push('/auth?redirect=' + encodeURIComponent(target));
       return;
     }

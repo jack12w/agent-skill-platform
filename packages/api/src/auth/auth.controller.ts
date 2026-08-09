@@ -82,6 +82,43 @@ export class AuthController {
     return this.authService.getUnreadComments(req.user.sub, since);
   }
 
+  // ── 微信内网页授权静默登录（snsapi_base） ──
+  // 前端「操作触发登录」在微信环境下跳转至此，302 到微信授权页；授权后微信回调 mp-callback。
+  @Get('wechat/mp/url')
+  getWechatMpUrl(@Query('redirect') redirect: string, @Res() res: Response) {
+    const { url } = this.authService.getWechatMpAuthUrl(redirect);
+    return res.redirect(url);
+  }
+
+  // 微信授权回调：用 code 换 openid → 查/建用户 → 下发 token，直接返回 HTML 写 localStorage 并跳目标页。
+  // 与 PC 微信登录不同，这里不依赖缺失的前端 /auth/wechat-callback 页面，由后端同域 HTML 闭环。
+  @Get('wechat/mp-callback')
+  async wechatMpCallback(
+    @Query('code') code: string,
+    @Query('state') state: string,
+    @Query('rd') rd: string,
+    @Res() res: Response,
+  ) {
+    const base = process.env.PUBLIC_BASE_URL || 'https://skills.rehomi.com';
+    try {
+      const result = await this.authService.wechatMpLogin(code, state, rd);
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>登录中</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script>
+        try {
+          localStorage.setItem('token', ${JSON.stringify(result.access_token)});
+          localStorage.setItem('user', ${JSON.stringify(JSON.stringify(result.user))});
+          window.location.href = ${JSON.stringify(result.redirect)};
+        } catch (e) { window.location.href = ${JSON.stringify(base + '/')}; }
+      </script></body></html>`;
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.send(html);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '微信登录失败';
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>登录失败</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script>alert(${JSON.stringify(message)});window.location.href=${JSON.stringify(base + '/')};</script></body></html>`;
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.send(html);
+    }
+  }
+
   // ── 本地开发模拟微信登录 ──────────────────
   @Post('wechat/mock-login')
   async mockWechatLogin(@Body() body: { nickname?: string }) {

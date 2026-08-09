@@ -338,6 +338,79 @@ export class AuthService {
     };
   }
 
+  // ── 微信内网页授权静默登录（snsapi_base，微信内置浏览器用） ──
+  // 与 PC 弹窗扫码(qrconnect)不同：用户在微信内打开网页时，点需要登录的操作(创建团队/上传技能)
+  // 直接静默授权，无需跳转邮箱登录页；openid 查/建逻辑复用下方同一套，避免账号分裂。
+  async getWechatMpAuthUrl(redirect: string) {
+    this.assertWechatLoginEnabled();
+    if (!redirect || !redirect.startsWith('/')) {
+      throw new BadRequestException('非法跳转地址');
+    }
+    const appId = process.env.WECHAT_APPID || 'wxb2537aa7600236a7'; // 必须为公众号 AppID（网页授权域名配在该公众号下）
+    const base = process.env.PUBLIC_BASE_URL || 'https://skills.rehomi.com';
+    const callbackUri = encodeURIComponent(`${base}/api/auth/wechat/mp-callback?rd=${encodeURIComponent(redirect)}`);
+    const state = crypto.randomBytes(16).toString('hex');
+    wechatStates.set(state, { expiresAt: Date.now() + 5 * 60 * 1000 });
+    return {
+      url: `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appId}&redirect_uri=${callbackUri}&response_type=code&scope=snsapi_base&state=${state}#wechat_redirect`,
+    };
+  }
+
+  async wechatMpLogin(code: string, state: string, redirect: string) {
+    this.assertWechatLoginEnabled();
+    const stored = wechatStates.get(state);
+    if (!stored || Date.now() > stored.expiresAt) {
+      throw new BadRequestException('state 无效或已过期');
+    }
+    wechatStates.delete(state);
+    if (!redirect || !redirect.startsWith('/')) {
+      throw new BadRequestException('非法跳转地址');
+    }
+    const appId = process.env.WECHAT_APPID || 'wxb2537aa7600236a7';
+    const appSecret = process.env.WECHAT_APPSECRET;
+    if (!appSecret) throw new BadRequestException('WeChat AppSecret not configured');
+    // snsapi_base 静默授权：仅换 openid（关注后才会带 unionid），不返回昵称/头像
+    const tokenRes = await fetch(
+      `https://api.weixin.qq.com/sns/oauth2/access_token?appid=${appId}&secret=${appSecret}&code=${code}&grant_type=authorization_code`
+    );
+    const tokenData = await tokenRes.json();
+    if (tokenData.errcode) throw new BadRequestException(`微信登录失败: ${tokenData.errmsg}`);
+    const { openid, unionid } = tokenData;
+
+    let user = await this.userRepository.findOne({
+      where: { wechat_openid: openid },
+      select: ['id', 'email', 'name', 'avatar_url', 'wechat_openid', 'wechat_unionid', 'role'],
+    });
+    if (!user && unionid) {
+      user = await this.userRepository.findOne({
+        where: { wechat_unionid: unionid },
+        select: ['id', 'email', 'name', 'avatar_url', 'wechat_openid', 'wechat_unionid', 'role'],
+      });
+      if (user && user.wechat_openid !== openid) {
+        user.wechat_openid = openid;
+        await this.userRepository.save(user);
+      }
+    }
+    if (!user) {
+      user = this.userRepository.create({
+        email: null,
+        password_hash: '',
+        name: '微信用户',
+        wechat_openid: openid,
+        wechat_unionid: unionid || null,
+        email_verified: false,
+      });
+      await this.userRepository.save(user);
+    }
+
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    return {
+      access_token: await this.jwtService.signAsync(payload),
+      user: { id: user.id, email: user.email, name: user.name, avatar_url: user.avatar_url },
+      redirect,
+    };
+  }
+
   // ── 本地开发：模拟微信登录 ───────────────
   async mockWechatLogin(nickname?: string) {
     const mockOpenId = 'dev_mock_openid_' + Date.now();
