@@ -21,6 +21,24 @@ export default function HelpCenterPage() {
   const [fbContent, setFbContent] = useState('');
   const [fbSent, setFbSent] = useState(false);
   const [fbSending, setFbSending] = useState(false);
+  // 团队订阅链接目标：1 个团队→团队设置页；0/多个团队或未登录→个人中心
+  const [teamHref, setTeamHref] = useState('/dashboard');
+
+  useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return; // 未登录 → 个人中心
+    fetch('/api/teams/my', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const teams = Array.isArray(data) ? data : [];
+        if (teams.length === 1 && teams[0]?.team?.id) {
+          setTeamHref(`/teams/${teams[0].team.id}/settings`);
+        } else {
+          setTeamHref('/dashboard'); // 0 个或多个团队 → 个人中心
+        }
+      })
+      .catch(() => setTeamHref('/dashboard'));
+  }, []);
 
   useEffect(() => {
     const hash = window.location.hash?.replace('#', '');
@@ -193,7 +211,7 @@ tags: [搜索, 数据分析]
               <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pCreatorMemberDescPrefix')}<Link href="/account/membership" className="text-brand-600 hover:underline font-medium">「{t('help.pCreatorMemberDescLink')}」</Link>{t('help.pCreatorMemberDescSuffix')}</p>
 
               <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.pVsAdmin')}</h2>
-              <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pVsAdminDesc')}</p>
+              <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pVsAdminDescPrefix')}<Link href={teamHref} className="text-brand-600 hover:underline font-medium">「{t('help.pCreatorMemberDescLink')}」</Link>{t('help.pVsAdminDescSuffix')}</p>
 
               <h2 className="text-lg font-semibold mt-6 mb-2">{t('help.pEarnTitle')}</h2>
               <p className="text-neutral-600 text-sm leading-relaxed">{t('help.pEarnDesc')}</p>

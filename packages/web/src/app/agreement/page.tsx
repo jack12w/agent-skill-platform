@@ -1,9 +1,23 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import useTranslation from '../../hooks/useTranslation';
 
 export default function AgreementPage() {
   const { t } = useTranslation();
+  // 平台抽成（basis point）：默认值 1000 = 10%，拿到后端真实值后校正
+  const [commissionBp, setCommissionBp] = useState<number>(1000);
+
+  useEffect(() => {
+    fetch('/api/pay/commission')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (j && typeof j.commissionRateBp === 'number') setCommissionBp(j.commissionRateBp);
+      })
+      .catch(() => {/* 失败则用默认 10%，不影响协议展示 */});
+  }, []);
+
+  const rateText = (commissionBp / 100).toString();
   const sections = [
     ['agreement.s1Title', 'agreement.s1Body'],
     ['agreement.s2Title', 'agreement.s2Body'],
@@ -22,7 +36,9 @@ export default function AgreementPage() {
         {sections.map(([titleKey, bodyKey]) => (
           <section key={titleKey}>
             <h2 className="text-base font-semibold mb-1">{t(titleKey)}</h2>
-            <p className="text-sm text-neutral-600 leading-relaxed">{t(bodyKey)}</p>
+            <p className="text-sm text-neutral-600 leading-relaxed">
+              {t(bodyKey, bodyKey === 'agreement.s3Body' ? { rate: rateText } : undefined)}
+            </p>
           </section>
         ))}
       </div>

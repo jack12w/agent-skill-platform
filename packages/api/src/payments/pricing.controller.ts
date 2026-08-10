@@ -67,6 +67,12 @@ export class PricingController {
     return this.settings.getMembershipPrices();
   }
 
+  /** 公开：当前平台抽成比例（basis point），供订阅协议等公开页引用真实值 */
+  @Get('commission')
+  async commission() {
+    return { commissionRateBp: await this.settings.getCommissionBp() };
+  }
+
   /**
    * 某创作者 / 团队是否设置了付费会员套餐（公开，未登录可读）。
    * 前端据此决定「订阅」按钮行为：无套餐→免费关注（POST /api/subscriptions）；
