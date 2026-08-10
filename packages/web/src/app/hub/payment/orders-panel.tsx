@@ -67,6 +67,8 @@ export default function OrdersPanel() {
         setRefundMsg(`退款已提交：${j.out_refund_no}（状态 ${j.status}）`);
         setRefundTarget(null); setRefundAmt(''); setRefundReason('');
         fetchData();
+        // 服务端事件驱动退避链会在数秒至数十秒内回写终态，延迟刷新一次以呈现最新状态
+        setTimeout(() => fetchData(), 6000);
       } else {
         setRefundMsg(j.message || '退款失败');
       }

@@ -128,7 +128,10 @@ export class RefundService implements OnModuleInit {
       if (r?.status === 'SUCCESS') {
         await this.finalizeRefund(outRefundNo);
       }
-      return this.refundRepo.findOne({ where: { out_refund_no: outRefundNo } });
+      // 仍 PENDING（微信已受理、待回调/待查单）→ 启动事件驱动退避链自动收口
+      const saved = await this.refundRepo.findOne({ where: { out_refund_no: outRefundNo } });
+      if (saved && saved.status === 'PENDING') this.scheduleReconcile(outRefundNo);
+      return saved;
     } catch (e: any) {
       // 微信官方规范：退款失败重试必须复用原 out_refund_no（换新单号 = 可能退两次）。
       // 因此这里要区分失败性质：
@@ -147,13 +150,15 @@ export class RefundService implements OnModuleInit {
             return this.refundRepo.findOne({ where: { out_refund_no: outRefundNo } });
           }
           // PROCESSING / ABNORMAL 等：微信已受理，保留 PENDING 等退款回调收口
-          this.logger.warn(`退款已被微信受理（${q?.status || '未知状态'}），保留 PENDING 等待回调: ${outRefundNo}`);
+          this.logger.warn(`退款已被微信受理（${q?.status || '未知状态'}），启动事件链收口: ${outRefundNo}`);
+          this.scheduleReconcile(outRefundNo);
           return this.refundRepo.findOne({ where: { out_refund_no: outRefundNo } });
         } catch (qe: any) {
           if (!(qe instanceof WechatApiError && qe.wechatStatus === 404)) {
             // 查单本身也失败（网络抖动等）：无法确定受理状态，保留 PENDING，
-            // 由退款回调或管理员在「退款记录」人工核实，额度保持占用以防超退。
-            this.logger.warn(`退款申请与查单结果均不确定，保留 PENDING 待回调/人工核实: ${outRefundNo}`);
+            // 由事件链退避重试或管理员在「退款记录」人工核实，额度保持占用以防超退。
+            this.logger.warn(`退款申请与查单结果均不确定，启动事件链退避重试: ${outRefundNo}`);
+            this.scheduleReconcile(outRefundNo);
             return this.refundRepo.findOne({ where: { out_refund_no: outRefundNo } });
           }
           // 404 = 微信确认无此退款单 → 未受理，fallthrough 标 FAILED
@@ -285,39 +290,85 @@ export class RefundService implements OnModuleInit {
   }
 
   /**
-   * 退款对账兜底（轻量定时器，零新依赖）。
+   * 事件驱动退款对账（主路径，零新依赖）。
    *
-   * 退款终态原本 100% 依赖微信异步退款回调；但回调可能延迟/丢失，或因
-   * WECHAT_PAY_PLATFORM_CERT 未配置导致 verifySignature fail-closed 被丢弃，
-   * 此时 refund 卡在 PENDING、订单永远停在 PAID，无任何自愈（支付有前端轮询兜底，退款没有）。
+   * 设计动机：退款终态原本 100% 依赖微信异步退款回调；但回调可能延迟/丢失，或
+   * WECHAT_PAY_PLATFORM_CERT 未配置导致 verifySignature fail-closed 被丢弃，此时 refund
+   * 卡在 PENDING、订单永远停在 PAID。原先用一个 60–120s 常驻定时器兜底，但「永远在跑」
+   * 不符合「空闲零开销」的诉求，故改为**事件驱动**：管理员点击「确认退款」且微信已受理
+   * （退款单留在 PENDING）后，由本方法启动一条内存退避查单链，平时完全不占用任何资源。
    *
-   * 设计要点（轻量 + 零开销）：
-   * - 定时器每 60–120s 随机触发一次（递归 setTimeout，避免多实例/多轮同步打库）。
-   * - reconcileRefunds 先用 `count` 做一次极轻量计数；若无 PENDING 退款单，直接返回，
-   *   完全不查微信、也不查 100 条明细——即「无 PENDING 时零开销」。
-   * - 仅当确实存在 PENDING 时，才对每个 PENDING 调微信 queryRefund：
-   *   SUCCESS→finalizeRefund 回写订单（复用回调同款幂等逻辑），
-   *   CLOSED/ABNORMAL 等终态→标 FAILED，避免无限悬挂。PROCESSING 等中间态保持 PENDING 等下次。
+   * 退避链：起点 5s（满足「等 5 秒查一次」），随后 20s→60s→3m→10m→30m，封顶 6 次。
+   * 每次 `reconcileOne`：SUCCESS→finalizeRefund 收口；CLOSED/ABNORMAL→标 FAILED；
+   * PROCESSING 或网络抖动（超时/5xx）→ 进入下一次退避重试。链用尽仍非终态则清理标记，
+   * 交给 onModuleInit 的慢速安全网兜底。
+   *
+   * 网络抖动处理：queryRefund 抛错（超时/连接重置/微信 5xx）时只记日志、保持 PENDING，
+   * 由退避链自动重试，无需人工介入。
    */
-  onModuleInit() {
-    const schedule = () => {
-      const delay = 60_000 + Math.floor(Math.random() * 60_000); // 60s–120s 随机
-      setTimeout(() => {
-        this.reconcileRefunds()
-          .catch((e) => this.logger.warn('定时对账退款状态失败', e))
-          .finally(schedule);
-      }, delay).unref();
+  private scheduled = new Set<string>();
+  private readonly reconcileDelays = [5_000, 20_000, 60_000, 180_000, 600_000, 1_800_000];
+
+  private scheduleReconcile(outRefundNo: string): void {
+    if (this.scheduled.has(outRefundNo)) return; // 同一单不重复起链
+    this.scheduled.add(outRefundNo);
+    let attempt = 0;
+    const run = () => {
+      this.reconcileOne(outRefundNo)
+        .catch((e) => this.logger.warn(`事件驱动退款对账失败 ${outRefundNo}: ${e?.message}`))
+        .finally(() => {
+          attempt++;
+          if (attempt < this.reconcileDelays.length) {
+            setTimeout(run, this.reconcileDelays[attempt]).unref();
+          } else {
+            // 退避链用尽仍非终态：交慢速安全网兜底，清理本链标记
+            this.scheduled.delete(outRefundNo);
+          }
+        });
     };
-    schedule();
+    setTimeout(run, this.reconcileDelays[0]).unref();
   }
 
-  async reconcileRefunds(): Promise<void> {
-    // 无 PENDING 退款单时，仅一次轻量计数查询后返回，零微信开销、不查明细
-    const pendingCount = await this.refundRepo.count({ where: { status: 'PENDING' } });
-    if (pendingCount === 0) return;
+  /** 单次退款查单 + 状态收口（事件链与安全网共用）。已终态/无单则只查不动。 */
+  private async reconcileOne(outRefundNo: string): Promise<void> {
+    const rf = await this.refundRepo.findOne({ where: { out_refund_no: outRefundNo } });
+    if (!rf || rf.status !== 'PENDING') {
+      this.scheduled.delete(outRefundNo); // 已被回调/其他路径收口，退出链
+      return;
+    }
+    try {
+      const q = await this.wechat.queryRefund(outRefundNo);
+      if (!q) return; // 无结果：保持 PENDING，等下次
+      if (q.status === 'SUCCESS') {
+        await this.finalizeRefund(outRefundNo);
+      } else if (q.status === 'CLOSED' || q.status === 'ABNORMAL') {
+        await this.refundRepo.update(
+          { out_refund_no: outRefundNo },
+          { status: 'FAILED', reason: `${rf.reason || ''} | 微信终态:${q.status}`.slice(0, 200) },
+        );
+      }
+      // PROCESSING 等中间态：保持 PENDING，等下次退避或回调收口
+    } catch (e: any) {
+      // 网络抖动/微信 5xx：记录后保持 PENDING，由退避链或安全网继续重试
+      this.logger.warn(`退款查单网络异常 ${outRefundNo}: ${e?.message}`);
+    }
+  }
 
+  /**
+   * 慢速安全网（兜底，非主路径）。每 5 分钟只查「不在活跃退避链中的孤儿 PENDING」：
+   * 即 api 进程重启丢失的链、或退避链用尽仍非终态的退款，防止其永久卡在 PENDING。
+   * 平时几乎零开销（无孤儿 PENDING 时仅一次轻量 find 即返回，不碰微信接口）。
+   */
+  onModuleInit() {
+    setInterval(() => {
+      this.reconcileStuckRefunds().catch((e) => this.logger.warn('安全网对账退款失败', e));
+    }, 300_000).unref();
+  }
+
+  async reconcileStuckRefunds(): Promise<void> {
     const pending = await this.refundRepo.find({ where: { status: 'PENDING' }, take: 100 });
     for (const rf of pending) {
+      if (this.scheduled.has(rf.out_refund_no)) continue; // 事件链还在跑，跳过避免重复查单
       try {
         const q = await this.wechat.queryRefund(rf.out_refund_no);
         if (!q) continue;
@@ -329,9 +380,9 @@ export class RefundService implements OnModuleInit {
             { status: 'FAILED', reason: `${rf.reason || ''} | 微信终态:${q.status}`.slice(0, 200) },
           );
         }
-        // PROCESSING 等中间态：保持 PENDING，等下次对账或回调收口
+        // PROCESSING 等中间态：保持 PENDING，等下次安全网或回调收口
       } catch (e: any) {
-        this.logger.warn(`退款对账查单失败 ${rf.out_refund_no}: ${e?.message}`);
+        this.logger.warn(`安全网查单失败 ${rf.out_refund_no}: ${e?.message}`);
       }
     }
   }
