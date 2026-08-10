@@ -35,17 +35,13 @@ export default function MembershipPriceEditor({ targetType, targetId }: { target
         }
         if (p?.hasPlan && p.plans) {
           setMyPlan({
-            monthly: String((p.plans.monthly || 0) / 100),
-            quarterly: String((p.plans.quarterly || 0) / 100),
-            yearly: String((p.plans.yearly || 0) / 100),
+            monthly: (p.plans.monthly || 0) > 0 ? String((p.plans.monthly || 0) / 100) : '',
+            quarterly: (p.plans.quarterly || 0) > 0 ? String((p.plans.quarterly || 0) / 100) : '',
+            yearly: (p.plans.yearly || 0) > 0 ? String((p.plans.yearly || 0) / 100) : '',
           });
         } else {
-          // 未设置时默认填入后端推荐价，用户可修改后再保存
-          setMyPlan({
-            monthly: String(suggested.monthly),
-            quarterly: String(suggested.quarterly),
-            yearly: String(suggested.yearly),
-          });
+          // 未设置时全部留空，placeholder 显示建议价，避免被误解为已填好的价格
+          setMyPlan({ monthly: '', quarterly: '', yearly: '' });
         }
       })
       .catch(() => {})
@@ -80,9 +76,9 @@ export default function MembershipPriceEditor({ targetType, targetId }: { target
       ) : (
         <>
           <div className="space-y-3">
-            <PriceRow label={t('admin.membershipPriceMonthly')} value={myPlan.monthly} placeholder={`推荐 ¥${suggested.monthly}`} onChange={(v) => setMyPlan((p) => ({ ...p, monthly: v }))} />
-            <PriceRow label={t('admin.membershipPriceQuarterly')} value={myPlan.quarterly} placeholder={`推荐 ¥${suggested.quarterly}`} onChange={(v) => setMyPlan((p) => ({ ...p, quarterly: v }))} />
-            <PriceRow label={t('admin.membershipPriceYearly')} value={myPlan.yearly} placeholder={`推荐 ¥${suggested.yearly}`} onChange={(v) => setMyPlan((p) => ({ ...p, yearly: v }))} />
+            <PriceRow label={t('admin.membershipPriceMonthly')} value={myPlan.monthly} placeholder={`建议${suggested.monthly}`} onChange={(v) => setMyPlan((p) => ({ ...p, monthly: v }))} />
+            <PriceRow label={t('admin.membershipPriceQuarterly')} value={myPlan.quarterly} placeholder={`建议${suggested.quarterly}`} onChange={(v) => setMyPlan((p) => ({ ...p, quarterly: v }))} />
+            <PriceRow label={t('admin.membershipPriceYearly')} value={myPlan.yearly} placeholder={`建议${suggested.yearly}`} onChange={(v) => setMyPlan((p) => ({ ...p, yearly: v }))} />
           </div>
           <button onClick={saveMyPlan} disabled={savingPlan} className="mt-4 px-4 py-1.5 bg-brand-600 text-white text-sm rounded hover:bg-brand-700 disabled:opacity-50">
             {t('admin.saveSettings')}
@@ -104,7 +100,7 @@ function PriceRow({ label, value, placeholder, onChange }: { label: string; valu
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="px-3 py-1.5 text-sm border rounded-lg w-32"
+        className="px-3 py-1.5 text-sm border rounded-lg w-32 placeholder:text-neutral-400"
       />
     </div>
   );
