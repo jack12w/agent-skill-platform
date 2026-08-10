@@ -26,6 +26,7 @@ export default function AgreementPage() {
     ['agreement.s5Title', 'agreement.s5Body'],
     ['agreement.s6Title', 'agreement.s6Body'],
     ['agreement.s7Title', 'agreement.s7Body'],
+    ['agreement.s8Title', 'agreement.s8Body'],
   ];
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">

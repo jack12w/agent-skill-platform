@@ -693,7 +693,7 @@ const en = {
   },
   agreement: {
     title: 'Terms of Service & Subscription Agreement',
-    updated: 'Last updated: 2026-08-02',
+    updated: 'Last updated: 2026-08-11',
     intro: 'This agreement applies to all paid activities on SkillDepot, including one-time skill purchases (paid download) and creator membership subscriptions. By completing a payment, you are deemed to have read, understood, and agreed to all the terms below.',
     s1Title: '1. Service Description',
     s1Body: 'SkillDepot is an AI Agent skill marketplace where creators publish skills and set prices. After payment you obtain a usage right to the purchased skill — a permanent download right for one-time purchase, or a within-subscription download right for membership — which does not transfer the skill\'s intellectual property.',
@@ -709,6 +709,8 @@ const en = {
     s6Body: 'A creator\'s one-time shares and membership fees, after commission deduction and the settlement hold, can be withdrawn to WeChat in "My Earnings"; the minimum withdrawal is set by the platform.',
     s7Title: '7. Liability & Disputes',
     s7Body: 'Skill content is the creator\'s own responsibility; the platform only provides transaction matching and technical support. Disputes over skill quality or copyright are resolved by the creator and the user through negotiation; if that fails, they may submit to platform mediation.',
+    s8Title: '8. Tax Responsibility',
+    s8Body: 'Taxes related to income a creator earns through the platform — including one-time purchase shares and membership subscription fees (such as personal income tax) — are declared and paid by the creator. The platform acts only as a transaction-matching and technical service provider and does not withhold or remit any taxes. Creators must comply with the tax laws of their jurisdiction, and any liability arising from tax matters rests solely with the creator.',
     viewTerms: 'View full Terms of Service',
     termsLink: 'View the full Terms of Service & Subscription Agreement',
     finalInterpretation: 'The final right of interpretation belongs to SkillDepot.',
