@@ -248,7 +248,7 @@ const en = {
     membershipTitle: 'Team Membership Pricing',
     membershipHint: 'Set your team membership price. Subscribers can download all team skills for free during the subscription.',
     membershipSaved: 'Team membership pricing saved',
-    membershipRecommended: 'Recommended prices are pre-filled when unset (Monthly ¥29 / Quarterly ¥79 / Yearly ¥268). You can edit and save anytime.',
+    membershipRecommended: 'Suggested prices: Monthly ¥29 / Quarterly ¥79 / Yearly ¥268. Leave an input blank to disable that tier.',
   },
   avatar: {
     dashboard: 'Dashboard',

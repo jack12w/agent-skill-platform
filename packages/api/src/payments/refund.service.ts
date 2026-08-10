@@ -285,21 +285,37 @@ export class RefundService implements OnModuleInit {
   }
 
   /**
-   * 退款对账兜底（与提现 syncProcessingWithdrawals 同一 setInterval 风格，零新依赖）。
+   * 退款对账兜底（轻量定时器，零新依赖）。
    *
    * 退款终态原本 100% 依赖微信异步退款回调；但回调可能延迟/丢失，或因
    * WECHAT_PAY_PLATFORM_CERT 未配置导致 verifySignature fail-closed 被丢弃，
    * 此时 refund 卡在 PENDING、订单永远停在 PAID，无任何自愈（支付有前端轮询兜底，退款没有）。
-   * 这里每 90s 主动查微信退款单：SUCCESS→finalizeRefund 回写订单（复用回调同款幂等逻辑），
-   * CLOSED/ABNORMAL 等终态→标 FAILED，避免无限悬挂。PROCESSING 等中间态保持 PENDING 等下次。
+   *
+   * 设计要点（轻量 + 零开销）：
+   * - 定时器每 60–120s 随机触发一次（递归 setTimeout，避免多实例/多轮同步打库）。
+   * - reconcileRefunds 先用 `count` 做一次极轻量计数；若无 PENDING 退款单，直接返回，
+   *   完全不查微信、也不查 100 条明细——即「无 PENDING 时零开销」。
+   * - 仅当确实存在 PENDING 时，才对每个 PENDING 调微信 queryRefund：
+   *   SUCCESS→finalizeRefund 回写订单（复用回调同款幂等逻辑），
+   *   CLOSED/ABNORMAL 等终态→标 FAILED，避免无限悬挂。PROCESSING 等中间态保持 PENDING 等下次。
    */
   onModuleInit() {
-    setInterval(() => {
-      this.reconcileRefunds().catch((e) => this.logger.warn('定时对账退款状态失败', e));
-    }, 90_000).unref();
+    const schedule = () => {
+      const delay = 60_000 + Math.floor(Math.random() * 60_000); // 60s–120s 随机
+      setTimeout(() => {
+        this.reconcileRefunds()
+          .catch((e) => this.logger.warn('定时对账退款状态失败', e))
+          .finally(schedule);
+      }, delay).unref();
+    };
+    schedule();
   }
 
   async reconcileRefunds(): Promise<void> {
+    // 无 PENDING 退款单时，仅一次轻量计数查询后返回，零微信开销、不查明细
+    const pendingCount = await this.refundRepo.count({ where: { status: 'PENDING' } });
+    if (pendingCount === 0) return;
+
     const pending = await this.refundRepo.find({ where: { status: 'PENDING' }, take: 100 });
     for (const rf of pending) {
       try {

@@ -248,7 +248,7 @@ const zh = {
     membershipTitle: '团队会员定价',
     membershipHint: '设置团队会员订阅价格，订阅用户在有效期内可免费下载本团队的全部技能。',
     membershipSaved: '团队会员定价已保存',
-    membershipRecommended: '未设置时默认填入推荐价（月 ¥29 / 季 ¥79 / 年 ¥268），可随时修改后保存。',
+    membershipRecommended: '建议价格：月 ¥29 / 季 ¥79 / 年 ¥268。输入框留空表示不开放该档位。',
   },
   avatar: {
     dashboard: '个人中心',

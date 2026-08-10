@@ -50,17 +50,13 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
             : RECOMMENDED_PLAN;
           if (p?.hasPlan && p.plans) {
             setTeamPlan({
-              monthly: String((p.plans.monthly || 0) / 100),
-              quarterly: String((p.plans.quarterly || 0) / 100),
-              yearly: String((p.plans.yearly || 0) / 100),
+              monthly: (p.plans.monthly || 0) > 0 ? String((p.plans.monthly || 0) / 100) : '',
+              quarterly: (p.plans.quarterly || 0) > 0 ? String((p.plans.quarterly || 0) / 100) : '',
+              yearly: (p.plans.yearly || 0) > 0 ? String((p.plans.yearly || 0) / 100) : '',
             });
           } else {
-            // 未设置时默认填入推荐价，用户可修改后再保存
-            setTeamPlan({
-              monthly: String(ref.monthly),
-              quarterly: String(ref.quarterly),
-              yearly: String(ref.yearly),
-            });
+            // 未设置时全部留空，placeholder 显示建议价，避免被误解为已填好的价格
+            setTeamPlan({ monthly: '', quarterly: '', yearly: '' });
           }
         })
         .catch(() => {})
@@ -276,9 +272,9 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
             <div className="text-sm text-neutral-400">加载中…</div>
           ) : (
             <div className="space-y-3 max-w-md">
-              <PlanRow label={t('pay.planMonthly')} value={teamPlan.monthly} placeholder={`推荐 ¥${RECOMMENDED_PLAN.monthly}`} onChange={(v) => setTeamPlan((p) => ({ ...p, monthly: v }))} />
-              <PlanRow label={t('pay.planQuarterly')} value={teamPlan.quarterly} placeholder={`推荐 ¥${RECOMMENDED_PLAN.quarterly}`} onChange={(v) => setTeamPlan((p) => ({ ...p, quarterly: v }))} />
-              <PlanRow label={t('pay.planYearly')} value={teamPlan.yearly} placeholder={`推荐 ¥${RECOMMENDED_PLAN.yearly}`} onChange={(v) => setTeamPlan((p) => ({ ...p, yearly: v }))} />
+              <PlanRow label={t('pay.planMonthly')} value={teamPlan.monthly} placeholder={`建议${RECOMMENDED_PLAN.monthly}`} onChange={(v) => setTeamPlan((p) => ({ ...p, monthly: v }))} />
+              <PlanRow label={t('pay.planQuarterly')} value={teamPlan.quarterly} placeholder={`建议${RECOMMENDED_PLAN.quarterly}`} onChange={(v) => setTeamPlan((p) => ({ ...p, quarterly: v }))} />
+              <PlanRow label={t('pay.planYearly')} value={teamPlan.yearly} placeholder={`建议${RECOMMENDED_PLAN.yearly}`} onChange={(v) => setTeamPlan((p) => ({ ...p, yearly: v }))} />
               <button onClick={handleSavePlan} disabled={savingPlan}
                 className="mt-1 px-4 py-2 bg-brand-600 text-white text-sm rounded hover:bg-brand-700 disabled:opacity-50">
                 {savingPlan ? t('team.saving') : t('team.save')}
@@ -306,7 +302,7 @@ function PlanRow({ label, value, placeholder, onChange }: { label: string; value
       <div className="flex items-center gap-1.5">
         <span className="text-sm text-neutral-400">¥</span>
         <input type="number" step="0.01" min="0" value={value} placeholder={placeholder || '0'} onChange={(e) => onChange(e.target.value)}
-          className="px-3 py-1.5 text-sm border rounded-lg w-32" />
+          className="px-3 py-1.5 text-sm border rounded-lg w-32 placeholder:text-neutral-400" />
       </div>
     </div>
   );
