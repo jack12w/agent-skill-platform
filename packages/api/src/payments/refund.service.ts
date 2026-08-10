@@ -326,7 +326,9 @@ export class RefundService implements OnModuleInit {
           }
         });
     };
-    setTimeout(run, this.reconcileDelays[0]).unref();
+    // 首次延迟加 0–3s 随机抖动，打散「短时间批量退款」导致的第 5 秒同刻爆发（避免触发微信频限）
+    const firstDelay = this.reconcileDelays[0] + Math.floor(Math.random() * 3000);
+    setTimeout(run, firstDelay).unref();
   }
 
   /** 单次退款查单 + 状态收口（事件链与安全网共用）。已终态/无单则只查不动。 */
