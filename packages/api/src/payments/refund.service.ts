@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Not } from 'typeorm';
 import {
@@ -28,7 +28,7 @@ import { BalanceService } from './balance.service';
  * 保证部分退款也不会多扣或少扣。
  */
 @Injectable()
-export class RefundService {
+export class RefundService implements OnModuleInit {
   private readonly logger = new Logger(RefundService.name);
 
   constructor(
@@ -282,6 +282,42 @@ export class RefundService {
       .set({ status: 'SUCCESS', refunded_at: new Date() })
       .where('out_refund_no = :no AND status <> :s', { no: outRefundNo, s: 'SUCCESS' })
       .execute();
+  }
+
+  /**
+   * 退款对账兜底（与提现 syncProcessingWithdrawals 同一 setInterval 风格，零新依赖）。
+   *
+   * 退款终态原本 100% 依赖微信异步退款回调；但回调可能延迟/丢失，或因
+   * WECHAT_PAY_PLATFORM_CERT 未配置导致 verifySignature fail-closed 被丢弃，
+   * 此时 refund 卡在 PENDING、订单永远停在 PAID，无任何自愈（支付有前端轮询兜底，退款没有）。
+   * 这里每 90s 主动查微信退款单：SUCCESS→finalizeRefund 回写订单（复用回调同款幂等逻辑），
+   * CLOSED/ABNORMAL 等终态→标 FAILED，避免无限悬挂。PROCESSING 等中间态保持 PENDING 等下次。
+   */
+  onModuleInit() {
+    setInterval(() => {
+      this.reconcileRefunds().catch((e) => this.logger.warn('定时对账退款状态失败', e));
+    }, 90_000).unref();
+  }
+
+  async reconcileRefunds(): Promise<void> {
+    const pending = await this.refundRepo.find({ where: { status: 'PENDING' }, take: 100 });
+    for (const rf of pending) {
+      try {
+        const q = await this.wechat.queryRefund(rf.out_refund_no);
+        if (!q) continue;
+        if (q.status === 'SUCCESS') {
+          await this.finalizeRefund(rf.out_refund_no);
+        } else if (q.status === 'CLOSED' || q.status === 'ABNORMAL') {
+          await this.refundRepo.update(
+            { out_refund_no: rf.out_refund_no },
+            { status: 'FAILED', reason: `${rf.reason || ''} | 微信终态:${q.status}`.slice(0, 200) },
+          );
+        }
+        // PROCESSING 等中间态：保持 PENDING，等下次对账或回调收口
+      } catch (e: any) {
+        this.logger.warn(`退款对账查单失败 ${rf.out_refund_no}: ${e?.message}`);
+      }
+    }
   }
 
   /** 某订单的退款记录（管理端展示） */

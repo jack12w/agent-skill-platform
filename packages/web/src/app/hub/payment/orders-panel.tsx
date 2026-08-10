@@ -87,6 +87,16 @@ export default function OrdersPanel() {
       PARTIAL_REFUNDED: 'bg-orange-100 text-orange-700',
     } as Record<string, string>)[s] || 'bg-neutral-100 text-neutral-600';
 
+  const statusLabel = (s: string) =>
+    ({
+      PENDING_PAY: t('pay.stPendingPay'),
+      PAID: t('pay.stPaid'),
+      DELIVERED: t('pay.stDelivered'),
+      CLOSED: t('pay.stClosed'),
+      REFUNDED: t('pay.stRefunded'),
+      PARTIAL_REFUNDED: t('pay.stPartialRefunded'),
+    } as Record<string, string>)[s] || s;
+
   return (
     <div>
       <div className="flex gap-2 mb-4">
@@ -161,12 +171,12 @@ export default function OrdersPanel() {
       <div className="flex items-center gap-3 mb-4">
         <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} className="px-3 py-1.5 text-sm border rounded-lg">
           <option value="">{t('admin.allStatus')}</option>
-          <option value="PENDING_PAY">PENDING_PAY</option>
-          <option value="PAID">PAID</option>
-          <option value="DELIVERED">DELIVERED</option>
-          <option value="CLOSED">CLOSED</option>
-          <option value="REFUNDED">REFUNDED</option>
-          <option value="PARTIAL_REFUNDED">PARTIAL_REFUNDED</option>
+          <option value="PENDING_PAY">{t('pay.stPendingPay')}</option>
+          <option value="PAID">{t('pay.stPaid')}</option>
+          <option value="DELIVERED">{t('pay.stDelivered')}</option>
+          <option value="CLOSED">{t('pay.stClosed')}</option>
+          <option value="REFUNDED">{t('pay.stRefunded')}</option>
+          <option value="PARTIAL_REFUNDED">{t('pay.stPartialRefunded')}</option>
         </select>
       </div>
       <div className="bg-white border rounded-xl overflow-hidden">
@@ -196,7 +206,7 @@ export default function OrdersPanel() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <span className={`px-2 py-0.5 rounded-full text-xs ${statusColor(o.status)}`}>{o.status}</span>
+                    <span className={`px-2 py-0.5 rounded-full text-xs ${statusColor(o.status)}`}>{statusLabel(o.status)}</span>
                   </td>
                   <td className="px-4 py-3 text-right font-medium">¥{yuan(o.total_cents)}</td>
                   <td className="px-4 py-3 text-neutral-500">{new Date(o.created_at).toLocaleString()}</td>
