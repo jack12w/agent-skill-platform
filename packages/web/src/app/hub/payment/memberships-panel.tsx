@@ -5,6 +5,12 @@ function getToken() { try { return localStorage.getItem('token'); } catch { retu
 
 export default function MembershipsPanel() {
   const { t } = useTranslation();
+  const statusLabel = (s: string) =>
+    ({
+      active: t('pay.memActive'),
+      expired: t('pay.memExpired'),
+      cancelled: t('pay.memCancelled'),
+    } as Record<string, string>)[s] || s;
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('');
@@ -31,9 +37,9 @@ export default function MembershipsPanel() {
       <div className="flex items-center gap-3 mb-4">
         <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} className="px-3 py-1.5 text-sm border rounded-lg">
           <option value="">{t('admin.allStatus')}</option>
-          <option value="active">active</option>
-          <option value="expired">expired</option>
-          <option value="cancelled">cancelled</option>
+          <option value="active">{t('pay.memActive')}</option>
+          <option value="expired">{t('pay.memExpired')}</option>
+          <option value="cancelled">{t('pay.memCancelled')}</option>
         </select>
       </div>
       <div className="bg-white border rounded-xl overflow-hidden">
@@ -56,7 +62,7 @@ export default function MembershipsPanel() {
                 <td className="px-4 py-3">{m.target_type === 'team' ? `团队：${m.target_name}` : m.target_name}</td>
                 <td className="px-4 py-3">{m.plan}</td>
                 <td className="px-4 py-3 text-right">¥{((m.price_cents || 0) / 100).toFixed(2)}</td>
-                <td className="px-4 py-3 text-center"><span className="px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-600">{m.status}</span></td>
+                <td className="px-4 py-3 text-center"><span className="px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-600">{statusLabel(m.status)}</span></td>
                 <td className="px-4 py-3 text-neutral-500">{new Date(m.started_at).toLocaleDateString()}</td>
                 <td className="px-4 py-3 text-neutral-500">{new Date(m.expires_at).toLocaleDateString()}</td>
               </tr>

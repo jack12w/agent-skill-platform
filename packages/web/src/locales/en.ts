@@ -551,6 +551,8 @@ const en = {
     wdProcessing: 'Processing',
     wdSuccess: 'Paid',
     wdFailed: 'Failed',
+    wdReviewing: 'In Review',
+    wdCancelled: 'Cancelled',
     bindWechatFirst: 'Please link your WeChat account before withdrawing',
     // ── Membership ──
     membershipTitle: 'Pro Membership',
@@ -558,6 +560,9 @@ const en = {
     memberUntil: 'Valid until {date}',
     openMember: 'Subscribe / Renew',
     memberBenefits: 'Download all member-included skills for free. Your downloads also reward the skill authors.',
+    memActive: 'Active',
+    memExpired: 'Expired',
+    memCancelled: 'Cancelled',
   },
   member: {
     title: 'Subscribe',

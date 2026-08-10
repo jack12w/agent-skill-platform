@@ -6,6 +6,15 @@ function yuan(c: number) { return ((c || 0) / 100).toFixed(2); }
 
 export default function WithdrawalsPanel() {
   const { t } = useTranslation();
+  const statusLabel = (s: string) =>
+    ({
+      PENDING: t('pay.wdPending'),
+      REVIEWING: t('pay.wdReviewing'),
+      PROCESSING: t('pay.wdProcessing'),
+      PAID: t('pay.wdSuccess'),
+      FAILED: t('pay.wdFailed'),
+      CANCELLED: t('pay.wdCancelled'),
+    } as Record<string, string>)[s] || s;
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('');
@@ -49,12 +58,12 @@ export default function WithdrawalsPanel() {
       <div className="flex items-center gap-3 mb-4">
         <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} className="px-3 py-1.5 text-sm border rounded-lg">
           <option value="">{t('admin.allStatus')}</option>
-          <option value="PENDING">PENDING</option>
-          <option value="REVIEWING">REVIEWING</option>
-          <option value="PROCESSING">PROCESSING</option>
-          <option value="PAID">PAID</option>
-          <option value="FAILED">FAILED</option>
-          <option value="CANCELLED">CANCELLED</option>
+          <option value="PENDING">{t('pay.wdPending')}</option>
+          <option value="REVIEWING">{t('pay.wdReviewing')}</option>
+          <option value="PROCESSING">{t('pay.wdProcessing')}</option>
+          <option value="PAID">{t('pay.wdSuccess')}</option>
+          <option value="FAILED">{t('pay.wdFailed')}</option>
+          <option value="CANCELLED">{t('pay.wdCancelled')}</option>
         </select>
         {msg && <span className="text-xs text-green-600">{msg}</span>}
       </div>
@@ -74,7 +83,7 @@ export default function WithdrawalsPanel() {
               <tr key={w.id} className="hover:bg-neutral-100">
                 <td className="px-4 py-3 font-mono text-xs">{w.user_id}</td>
                 <td className="px-4 py-3 text-right font-medium">¥{yuan(w.amount_cents)}</td>
-                <td className="px-4 py-3 text-center"><span className="px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-600">{w.status}</span></td>
+                <td className="px-4 py-3 text-center"><span className="px-2 py-0.5 rounded-full text-xs bg-neutral-100 text-neutral-600">{statusLabel(w.status)}</span></td>
                 <td className="px-4 py-3 text-neutral-500">{new Date(w.applied_at).toLocaleString()}</td>
                 <td className="px-4 py-3 text-right">
                   {w.status === 'PENDING' && (

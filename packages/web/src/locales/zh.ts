@@ -553,6 +553,8 @@ const zh = {
     wdProcessing: '打款中',
     wdSuccess: '已到账',
     wdFailed: '打款失败',
+    wdReviewing: '审核中',
+    wdCancelled: '已取消',
     bindWechatFirst: '请先在账号设置中绑定微信后再申请提现',
     // ── 会员 ──
     membershipTitle: 'Pro 会员',
@@ -560,6 +562,9 @@ const zh = {
     memberUntil: '有效期至 {date}',
     openMember: '开通 / 续费',
     memberBenefits: '会员期内可免费下载全部「会员包含」技能，你的下载还会为技能作者带来收益。',
+    memActive: '生效中',
+    memExpired: '已过期',
+    memCancelled: '已取消',
   },
   member: {
     title: '订阅',
