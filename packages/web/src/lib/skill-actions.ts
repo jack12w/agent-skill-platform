@@ -40,6 +40,25 @@ export async function likeSkill(skillId: string, token: string | null): Promise<
  * - redirect：已放行，url 为 OSS 公开直链
  * - error：网络异常 / 其它状态码
  */
+/**
+ * 未登录（或登录态失效）时，在新标签页打开登录页，而不是在当前页跳转。
+ * - 用 window.open('/auth', '_blank')，并加 noopener,noreferrer 防 opener 泄漏。
+ * - 若浏览器弹窗拦截导致返回 null，兜底改为当前页跳转（保证用户不会卡死）。
+ */
+export function openLoginInNewTab(): void {
+  if (typeof window === 'undefined') return;
+  let win: Window | null = null;
+  try {
+    win = window.open('/auth', '_blank', 'noopener,noreferrer');
+  } catch {
+    win = null;
+  }
+  if (!win) {
+    // 弹窗被拦截时的兜底：退化为当前页跳转
+    window.location.href = '/auth';
+  }
+}
+
 export async function startDownload(skillId: string, token: string | null): Promise<DownloadOutcome> {
   if (!token) return { kind: 'unauthorized' };
 

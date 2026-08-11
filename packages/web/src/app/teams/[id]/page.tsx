@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import useTranslation from '../../../hooks/useTranslation';
 import { setShareConfig, resetShareConfig } from '../../../lib/share';
-import { likeSkill, startDownload } from '../../../lib/skill-actions';
+import { likeSkill, startDownload, openLoginInNewTab } from '../../../lib/skill-actions';
 import SkillUpdateBadge from '../../components/SkillUpdateBadge';
 import MembershipModal from '../../components/MembershipModal';
 import CheckoutModal from '../../components/CheckoutModal';
@@ -190,7 +190,7 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
   // 卡片点赞：调共享 likeSkill；本地乐观 +1（字段在 s.stats 下）
   const handleLike = async (s: any) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) { alert(t('detail.loginFirst')); router.push('/auth'); return; }
+    if (!token) { alert(t('detail.loginFirst')); openLoginInNewTab(); return; }
     setLikingId(s.id);
     try {
       await likeSkill(s.id, token);
@@ -200,7 +200,7 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
           x.id === s.id ? { ...x, stats: { ...(x.stats ?? {}), likes_total: (x.stats?.likes_total ?? 0) + 1 } } : x),
       } : prev);
     } catch (e: any) {
-      if (e?.message === 'UNAUTHORIZED') { alert(t('detail.loginExpired')); router.push('/auth'); return; }
+      if (e?.message === 'UNAUTHORIZED') { alert(t('detail.loginExpired')); openLoginInNewTab(); return; }
       alert(t('detail.likeFailed') + ': ' + (e?.message || 'unknown error'));
     } finally {
       setLikingId(null);
@@ -210,13 +210,13 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
   // 卡片下载：调共享 startDownload → 按 outcome 分流
   const handleDownload = async (s: any) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) { alert(t('detail.loginFirst')); router.push('/auth'); return; }
+    if (!token) { alert(t('detail.loginFirst')); openLoginInNewTab(); return; }
     setDownloadingId(s.id);
     try {
       const result = await startDownload(s.id, token);
       if (result.kind === 'unauthorized') {
         alert(t('detail.loginExpired'));
-        router.push('/auth');
+        openLoginInNewTab();
         return;
       }
       if (result.kind === 'payment-required') {
