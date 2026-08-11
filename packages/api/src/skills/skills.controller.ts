@@ -1,5 +1,4 @@
-import { Controller, Post, Patch, Delete, Get, Body, UseGuards, Request, Param, Query, UseInterceptors, UploadedFile, UploadedFiles, BadRequestException, Res } from '@nestjs/common';
-import { Response } from 'express';
+import { Controller, Post, Patch, Delete, Get, Body, UseGuards, Request, Param, Query, UseInterceptors, UploadedFile, UploadedFiles, BadRequestException } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { JwtService } from '@nestjs/jwt';
 import { SkillsService } from './skills.service';
@@ -160,39 +159,6 @@ export class SkillsController {
   @UseGuards(AuthGuard)
   like(@Param('id') id: string, @Request() req: any) {
     return this.skillsService.recordEvent(id, EventType.LIKE, req.user.sub);
-  }
-
-  @UseGuards(AuthGuard)
-  @Get(':id/download/file')
-  async downloadFile(@Param('id') id: string, @Request() req: any, @Res() res: Response) {
-    const isAdmin = req.user?.role === 'admin';
-    const dlInfo = await this.skillsService.getDownloadUrl(id, undefined, req.user.sub, isAdmin);
-    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub, undefined, { version_id: dlInfo.version_id, version: dlInfo.version });
-    const { buffer, filename, raw } = await this.skillsService.streamDownload(id, undefined, req.user.sub, isAdmin);
-    res.set({
-      'Content-Type': 'application/zip',
-      'Content-Disposition': `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(raw)}`,
-    });
-    res.send(buffer);
-  }
-
-  @UseGuards(AuthGuard)
-  @Get(':id/versions/:versionId/download/file')
-  async downloadVersionFile(
-    @Param('id') id: string,
-    @Param('versionId') versionId: string,
-    @Request() req: any,
-    @Res() res: Response,
-  ) {
-    const isAdmin = req.user?.role === 'admin';
-    const dlInfo = await this.skillsService.getDownloadUrl(id, versionId, req.user.sub, isAdmin);
-    await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub, undefined, { version_id: dlInfo.version_id, version: dlInfo.version });
-    const { buffer, filename, raw } = await this.skillsService.streamDownload(id, versionId, req.user.sub, isAdmin);
-    res.set({
-      'Content-Type': 'application/zip',
-      'Content-Disposition': `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(raw)}`,
-    });
-    res.send(buffer);
   }
 
   @UseGuards(AuthGuard)

@@ -10,7 +10,7 @@ import CommentSection from '../../components/CommentSection';
 import SkillUpdateBadge from '../../components/SkillUpdateBadge';
 import CheckoutModal from '../../components/CheckoutModal';
 import MembershipModal from '../../components/MembershipModal';
-import { startDownload, openLoginInNewTab } from '../../../lib/skill-actions';
+import { likeSkill, startDownload, openLoginInNewTab } from '../../../lib/skill-actions';
 
 function decodeUserId(): string | null {
   // 从登录令牌 (JWT) 的 sub 字段解析当前用户 id（权威身份，由后端签发）。
@@ -160,14 +160,15 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   const handleLike = async () => {
     if (!skill) return;
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) { alert(t('detail.loginFirst')); router.push('/auth'); return; }
+    if (!token) { alert(t('detail.loginFirst')); openLoginInNewTab(); return; }
     setActing('like');
     try {
-      const res = await fetch(`/api/skills/${skill.id}/like`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
-      if (res.status === 401) { alert(t('detail.loginExpired')); router.push('/auth'); return; }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // 复用共享 likeSkill（与主页/团队页一致）；401 走新窗口登录
+      await likeSkill(skill.id, token);
       await reload();
-    } catch (e: any) { alert(t('detail.likeFailed') + ': ' + (e.message || 'unknown error')); }
+    } catch (e: any) {
+      if (e?.message === 'UNAUTHORIZED') { alert(t('detail.loginExpired')); openLoginInNewTab(); return; }
+      alert(t('detail.likeFailed') + ': ' + (e?.message || 'unknown error')); }
     finally { setActing(null); }
   };
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import useTranslation from '../../../hooks/useTranslation';
+import { startDownload, openLoginInNewTab } from '../../../lib/skill-actions';
 
 function getToken() { try { return localStorage.getItem('token'); } catch { return null; } }
 
@@ -29,29 +30,20 @@ export default function HubReviewsPage() {
   };
 
   const handleDownload = async (skillId: string) => {
-    const token = getToken(); if (!token) return;
+    const token = getToken(); if (!token) { openLoginInNewTab(); return; }
     setDownloading(skillId);
     try {
-      const res = await fetch(`/api/skills/${skillId}/download/file`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const disposition = res.headers.get('Content-Disposition');
-      let filename = 'skill.zip';
-      if (disposition) {
-        const utf8Match = disposition.match(/filename\*=UTF-8''(.+)/);
-        if (utf8Match) filename = decodeURIComponent(utf8Match[1]);
-        else {
-          const match = disposition.match(/filename="(.+)"/);
-          if (match) filename = match[1];
-        }
+      const result = await startDownload(skillId, token);
+      if (result.kind === 'redirect') {
+        // 后端返回 OSS 公开直链，浏览器直接拉取，不再把 zip 读进内存
+        window.location.href = result.url;
+      } else if (result.kind === 'unauthorized') {
+        openLoginInNewTab();
+      } else if (result.kind === 'payment-required') {
+        alert('下载失败: 该技能设置了付费限制');
+      } else {
+        alert('下载失败: ' + (result.message || '未知错误'));
       }
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = filename;
-      document.body.appendChild(a); a.click(); a.remove();
-      window.URL.revokeObjectURL(url);
     } catch (e: any) {
       alert('下载失败: ' + (e.message || '未知错误'));
     } finally {

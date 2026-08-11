@@ -718,27 +718,6 @@ export class SkillsService {
     };
   }
 
-  /**
-   * Proxy-download: fetch the zip from OSS server-side (no CORS) and return
-   * the buffer + a human-readable filename for the Content-Disposition header.
-   */
-  async streamDownload(skillId: string, versionId?: string, userId?: string, isAdmin = false) {
-    const result = await this.getDownloadUrl(skillId, versionId, userId, isAdmin);
-    const skill = await this.findOne(skillId, undefined, true);
-    const raw = `${skill.name || 'skill'}-v${result.version}.zip`;
-    // Sanitize ASCII fallback (for old browsers), keep UTF-8 name in filename*= param
-    const ascii = skill.name
-      ? skill.name.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'skill'
-      : 'skill';
-    const filename = `${ascii}-v${result.version}.zip`;
-
-    const res = await fetch(result.url);
-    if (!res.ok) throw new NotFoundException('File not found on storage');
-    const buffer = Buffer.from(await res.arrayBuffer());
-
-    return { buffer, filename, raw };
-  }
-
   async deleteVersion(skillId: string, versionId: string, userId: string) {
     const skill = await this.findOne(skillId, undefined, true);
     if (!(await this.isSkillManager(skill, userId))) throw new ForbiddenException('Not authorized');
