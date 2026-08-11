@@ -41,6 +41,17 @@ const TEAM_VISIBLE_SQL = `
 
 @Injectable()
 export class SkillsService {
+  /**
+   * 详情页公开视图的内存缓存（按 id/slug）。
+   * - 只缓存「不含任何个人字段」的公开数据：skill / versions / pricing / hasPlan。
+   *   取数时一律传 userId=undefined，findOne 不会注入 has_update 等个人字段，
+   *   listVersions 对非 owner 会自动剥掉 package_url → 结果对所有非 owner 访客完全一致、可安全共享。
+   * - 会员订阅状态（membershipStatus / isTeamMember）与 has_update 永远 per-request 取，绝不进缓存，
+   *   因此对订阅/会员鉴权零影响。
+   * - 30s TTL；单进程内存，多实例各自缓存（数据相同，仅放大一点点内存，无正确性问题）。
+   */
+  private coreCache = new Map<string, { value: any; exp: number }>();
+
   constructor(
     @InjectRepository(Skill)
     private skillRepository: Repository<Skill>,
@@ -533,28 +544,76 @@ export class SkillsService {
    * 复用既有查询逻辑（findOne / listVersions / 定价与套餐的 DB 存在性判断），
    * 行为与原分散接口一致；缺失/无权限由 findOne / assertSkillTeamVisible 抛出 404/403。
    */
-  async getDetail(idOrSlug: string, userId?: string, isAdmin = false) {
-    const skill = await this.findOne(idOrSlug, userId, false, isAdmin);
-    await this.assertSkillTeamVisible(idOrSlug, userId, isAdmin);
+  /**
+   * 详情页「公开视图」共享缓存：只取不含个人字段的数据（userId=undefined）。
+   * 同一进程内 30s 内重复拉取同一技能只打 1 次源站，登录并发时把 DB 查询量从
+   * 「每用户 ×N 次」降到「每 30s ×1 次」，彻底解决培训现场登录用户同点详情页打爆 DB 的问题。
+   * owner / admin 的正确视图（含 package_url、has_update、pending 版本）不进此缓存，见 getDetail。
+   */
+  private async getSkillCoreCached(idOrSlug: string) {
+    const now = Date.now();
+    const hit = this.coreCache.get(idOrSlug);
+    if (hit && hit.exp > now) return hit.value;
 
+    const skill = await this.findOne(idOrSlug, undefined, false, false);
+    const versions = await this.listVersions(idOrSlug, undefined, false);
     const ownerType = skill.owner_team_id ? 'team' : 'user';
     const ownerId = skill.owner_team_id || skill.owner_user_id;
     const hasPlan = await this.hasCreatorPlan(ownerType, ownerId);
+    const pricing = await this.getPricingObject(idOrSlug);
 
-    const [versions, pricing] = await Promise.all([
-      this.listVersions(idOrSlug, userId, isAdmin),
-      this.getPricingObject(idOrSlug),
-    ]);
+    const value = { skill, versions, pricing, hasPlan };
+    this.coreCache.set(idOrSlug, { value, exp: now + 30_000 });
+    // 简单容量保护：超过 1000 条时淘汰最旧一条，避免内存无限增长
+    if (this.coreCache.size > 1000) {
+      const oldest = this.coreCache.keys().next().value;
+      if (oldest !== undefined) this.coreCache.delete(oldest);
+    }
+    return value;
+  }
 
+  async getDetail(idOrSlug: string, userId?: string, isAdmin = false) {
+    // 可见性校验（每请求执行，安全关键；私有团队技能在此 403，绝不进缓存）
+    await this.assertSkillTeamVisible(idOrSlug, userId, isAdmin);
+
+    // 公开视图走共享缓存（不含个人字段，可安全跨用户复用）
+    const core = await this.getSkillCoreCached(idOrSlug);
+    let skill = core.skill;
+    let versions = core.versions;
+
+    // owner / admin 需要正确视图（含 package_url、has_update、pending 版本），跳过共享缓存直接取
+    if (isAdmin) {
+      skill = await this.findOne(idOrSlug, userId, false, true);
+      versions = await this.listVersions(idOrSlug, userId, true);
+    } else if (userId) {
+      const isOwner =
+        skill.owner_user_id === userId ||
+        (skill.owner_team_id &&
+          !!(await this.teamMemberRepository.findOne({ where: { team_id: skill.owner_team_id, user_id: userId } })));
+      if (isOwner) {
+        skill = await this.findOne(idOrSlug, userId, false, false);
+        versions = await this.listVersions(idOrSlug, userId, false);
+      }
+    }
+
+    // 非 owner 访客的 has_update（「你有更新」提示）需 per-request 计算，且不能污染缓存对象
+    let displaySkill = skill;
+    if (userId && !isAdmin && skill.owner_user_id !== userId) {
+      displaySkill = JSON.parse(JSON.stringify(skill));
+      await this.attachUpdateInfo([displaySkill], userId);
+    }
+
+    const ownerType = skill.owner_team_id ? 'team' : 'user';
+    const ownerId = skill.owner_team_id || skill.owner_user_id;
     const membershipStatus = userId
-      ? await this.getMembershipStatus(ownerType, ownerId, userId, hasPlan)
+      ? await this.getMembershipStatus(ownerType, ownerId, userId, core.hasPlan)
       : null;
 
     const isTeamMember = skill.owner_team_id && userId
       ? !!(await this.teamMemberRepository.findOne({ where: { team_id: skill.owner_team_id, user_id: userId } }))
       : false;
 
-    return { skill, versions, pricing, hasPlan, membershipStatus, isTeamMember };
+    return { skill: displaySkill, versions, pricing: core.pricing, hasPlan: core.hasPlan, membershipStatus, isTeamMember };
   }
 
   /** 复制 PricingController.pricing 的公开查询 + 免费降级 */
