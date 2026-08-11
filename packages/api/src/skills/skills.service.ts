@@ -24,6 +24,18 @@ function sanitizeAvatarUrl(url: string | null | undefined): string | null {
 }
 
 /**
+ * 防付费墙绕过：剥离版本对象里的 package_url（OSS 公开直链）。
+ * 凡把 SkillVersion 实体直接返回给「非作者/非管理员」的接口都必须经过它，
+ * 否则任何人读响应里的 package_url 即可绕过付费墙直接下载付费技能。
+ * 下载一律走 getDownloadUrl（含 entitlement 付费墙校验），前端从不消费 package_url。
+ */
+function stripPackageUrl(v: any): any {
+  if (!v) return v ?? null;
+  const { package_url, ...rest } = v;
+  return rest;
+}
+
+/**
  * 团队「对外展示」可见性条件（公共列表用）：
  * 技能满足以下任一条件才对当前访客可见：
  *   - 不属于任何团队（个人技能）
@@ -48,7 +60,7 @@ export class SkillsService {
    *   listVersions 对非 owner 会自动剥掉 package_url → 结果对所有非 owner 访客完全一致、可安全共享。
    * - 会员订阅状态（membershipStatus / isTeamMember）与 has_update 永远 per-request 取，绝不进缓存，
    *   因此对订阅/会员鉴权零影响。
-   * - 30s TTL；单进程内存，多实例各自缓存（数据相同，仅放大一点点内存，无正确性问题）。
+   * - 10s TTL；单进程内存，多实例各自缓存（数据相同，仅放大一点点内存，无正确性问题）。
    */
   private coreCache = new Map<string, { value: any; exp: number }>();
 
@@ -246,10 +258,16 @@ export class SkillsService {
     const skills = await qb.getMany();
 
     const compute = (likes: number, downloads: number) => 5 + likes * 0.3 + downloads * 0.3;
+    // 公开列表（owner !== 'me'）：访客非技能作者，版本对象需剥离 package_url 防付费墙绕过
+    const isPublicList = owner !== 'me';
     for (const s of skills) {
       // For non-owners (public list), show published_version as latest_version
       if (s.published_version) {
         (s as any).latest_version = s.published_version;
+      }
+      if (isPublicList) {
+        (s as any).latest_version = stripPackageUrl((s as any).latest_version);
+        (s as any).published_version = stripPackageUrl((s as any).published_version);
       }
       if (s.stats) {
         s.stats.total_score = compute(Number(s.stats.likes_total) || 0, Number(s.stats.downloads_total) || 0);
@@ -546,8 +564,8 @@ export class SkillsService {
    */
   /**
    * 详情页「公开视图」共享缓存：只取不含个人字段的数据（userId=undefined）。
-   * 同一进程内 30s 内重复拉取同一技能只打 1 次源站，登录并发时把 DB 查询量从
-   * 「每用户 ×N 次」降到「每 30s ×1 次」，彻底解决培训现场登录用户同点详情页打爆 DB 的问题。
+   * 同一进程内 10s 内重复拉取同一技能只打 1 次源站，登录并发时把 DB 查询量从
+   * 「每用户 ×N 次」降到「每 10s ×1 次」，彻底解决培训现场登录用户同点详情页打爆 DB 的问题。
    * owner / admin 的正确视图（含 package_url、has_update、pending 版本）不进此缓存，见 getDetail。
    */
   private async getSkillCoreCached(idOrSlug: string) {
@@ -563,7 +581,7 @@ export class SkillsService {
     const pricing = await this.getPricingObject(idOrSlug);
 
     const value = { skill, versions, pricing, hasPlan };
-    this.coreCache.set(idOrSlug, { value, exp: now + 30_000 });
+    this.coreCache.set(idOrSlug, { value, exp: now + 10_000 });
     // 简单容量保护：超过 1000 条时淘汰最旧一条，避免内存无限增长
     if (this.coreCache.size > 1000) {
       const oldest = this.coreCache.keys().next().value;
@@ -814,7 +832,8 @@ export class SkillsService {
           where: { id: skill.published_version_id },
         });
         if (pubVersion) {
-          (skill as any).latest_version = pubVersion;
+          // 剥离 package_url，防付费墙绕过（对齐 listVersions 的非 owner 处理）
+          (skill as any).latest_version = stripPackageUrl(pubVersion);
         }
       }
     }
