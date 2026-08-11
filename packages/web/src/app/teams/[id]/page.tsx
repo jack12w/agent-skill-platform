@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import useTranslation from '../../../hooks/useTranslation';
 import { setShareConfig, resetShareConfig } from '../../../lib/share';
+import { likeSkill, startDownload } from '../../../lib/skill-actions';
 import SkillUpdateBadge from '../../components/SkillUpdateBadge';
 import MembershipModal from '../../components/MembershipModal';
+import CheckoutModal from '../../components/CheckoutModal';
 
 export default function TeamShowcase({ params }: { params: { id: string } }) {
   const { t } = useTranslation();
@@ -30,6 +32,13 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
   const currentUserId = (() => {
     try { const u = JSON.parse(localStorage.getItem('user') || 'null'); return u?.id || null; } catch { return null; }
   })();
+
+  // ── 卡片点赞 / 下载（主页直通 OSS，不走详情页加载链）──
+  const [likingId, setLikingId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [pendingSkill, setPendingSkill] = useState<any>(null);
+  const [pendingPricing, setPendingPricing] = useState<any>(null);
 
   const load = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -176,6 +185,61 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
   const handleSubscribeClick = () => {
     if (hasPlan) setMemberModalOpen(true);
     else toggleFollow();
+  };
+
+  // 卡片点赞：调共享 likeSkill；本地乐观 +1（字段在 s.stats 下）
+  const handleLike = async (s: any) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) { alert(t('detail.loginFirst')); router.push('/auth'); return; }
+    setLikingId(s.id);
+    try {
+      await likeSkill(s.id, token);
+      setTeam((prev: any) => prev ? {
+        ...prev,
+        skills: (prev.skills ?? []).map((x: any) =>
+          x.id === s.id ? { ...x, stats: { ...(x.stats ?? {}), likes_total: (x.stats?.likes_total ?? 0) + 1 } } : x),
+      } : prev);
+    } catch (e: any) {
+      if (e?.message === 'UNAUTHORIZED') { alert(t('detail.loginExpired')); router.push('/auth'); return; }
+      alert(t('detail.likeFailed') + ': ' + (e?.message || 'unknown error'));
+    } finally {
+      setLikingId(null);
+    }
+  };
+
+  // 卡片下载：调共享 startDownload → 按 outcome 分流
+  const handleDownload = async (s: any) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) { alert(t('detail.loginFirst')); router.push('/auth'); return; }
+    setDownloadingId(s.id);
+    try {
+      const result = await startDownload(s.id, token);
+      if (result.kind === 'unauthorized') {
+        alert(t('detail.loginExpired'));
+        router.push('/auth');
+        return;
+      }
+      if (result.kind === 'payment-required') {
+        setPendingPricing(result.pricing);
+        setPendingSkill(s);
+        setCheckoutOpen(true);
+        return;
+      }
+      if (result.kind === 'redirect') {
+        window.location.href = result.url;
+        setTeam((prev: any) => prev ? {
+          ...prev,
+          skills: (prev.skills ?? []).map((x: any) =>
+            x.id === s.id ? { ...x, stats: { ...(x.stats ?? {}), downloads_total: (x.stats?.downloads_total ?? 0) + 1 } } : x),
+        } : prev);
+        return;
+      }
+      alert(t('detail.downloadFailed') + ': ' + result.message);
+    } catch (e: any) {
+      alert(t('detail.downloadFailed') + ': ' + (e?.message || 'unknown error'));
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   if (loading) {
@@ -391,18 +455,30 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
                         <span className="max-w-[80px] truncate" title={s.owner_user.name}>{s.owner_user.name}</span>
                       </span>
                     )}
-                  <span className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleLike(s); }}
+                    disabled={likingId === s.id}
+                    aria-label={t('detail.likes')}
+                    className="flex items-center gap-1 hover:text-rose-500 transition-colors disabled:opacity-50"
+                  >
                     <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="#F43F5E">
                       <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
                     </svg>
                     {s.stats?.likes_total ?? 0}
-                  </span>
-                  <span className="flex items-center gap-1">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDownload(s); }}
+                    disabled={downloadingId === s.id}
+                    aria-label={t('detail.downloads')}
+                    className="flex items-center gap-1 hover:text-blue-500 transition-colors disabled:opacity-50"
+                  >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="#5C85FF" strokeWidth="2" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
                     </svg>
                     {s.stats?.downloads_total ?? 0}
-                  </span>
+                  </button>
                   </div>
                   <span className="text-right shrink-0">
                     {s.latest_version ? `v${s.latest_version.version}` : '—'}
@@ -424,6 +500,20 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
           onPaid={() => {
             setMemberModalOpen(false);
             refreshMemberState();
+          }}
+        />
+      )}
+
+      {checkoutOpen && pendingSkill && (
+        <CheckoutModal
+          skillId={pendingSkill.id}
+          skillName={pendingSkill.name}
+          initialPricing={pendingPricing}
+          onClose={() => setCheckoutOpen(false)}
+          onPaid={() => {
+            setCheckoutOpen(false);
+            // 支付成功后自动重试下载该技能（此时 entitlement 已放行）
+            handleDownload(pendingSkill);
           }}
         />
       )}
