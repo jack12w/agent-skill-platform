@@ -12,25 +12,115 @@ function fmtUptime(s: number): string {
   return `${h}h ${m}m ${sec}s`;
 }
 
-/** 极简 SVG 折线图（无依赖） */
-function Sparkline({ data, color = '#2563eb' }: { data: number[]; color?: string }) {
-  if (!data || data.length < 2) {
+/** 把当天 5 分钟槽序号转成 HH:MM 标签 */
+function slotLabel(i: number): string {
+  const mins = i * 5;
+  const hh = String(Math.floor(mins / 60)).padStart(2, '0');
+  const mm = String(mins % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+type Pt = { value: number; label?: string; ts?: number };
+
+/**
+ * 折线图：带 Y 轴刻度、横向网格线、hover Tooltip（显示时间 + 数值）。
+ * 无第三方依赖，纯 SVG + React 状态实现。
+ */
+function Sparkline({ points, color = '#2563eb', height = 96, unit = '' }: {
+  points: Pt[];
+  color?: string;
+  height?: number;
+  unit?: string;
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+
+  if (!points || points.length < 2) {
     return <span className="text-xs text-neutral-400">—</span>;
   }
-  const w = 260;
-  const h = 44;
-  const max = Math.max(...data, 1);
-  const pts = data
-    .map((v, i) => `${(i / (data.length - 1)) * w},${h - (v / max) * (h - 4) - 2}`)
-    .join(' ');
-  const last = data[data.length - 1];
+
+  const w = 320;
+  const h = height;
+  const padL = 38;
+  const padR = 8;
+  const padT = 10;
+  const padB = 18;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+
+  const max = Math.max(...points.map((p) => p.value), 1);
+  const x = (i: number) => padL + (i / (points.length - 1)) * plotW;
+  const y = (v: number) => padT + plotH - (v / max) * plotH;
+  const linePts = points.map((p, i) => `${x(i)},${y(p.value)}`).join(' ');
+  const areaPts = `${padL},${padT + plotH} ${linePts} ${w - padR},${padT + plotH}`;
+
+  const gridN = 4;
+  const gridVals = Array.from({ length: gridN + 1 }, (_, i) => Math.round((max / gridN) * i));
+  const xLabelIdx = [0, Math.floor((points.length - 1) / 2), points.length - 1];
+
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const relX = ((e.clientX - rect.left) / rect.width) * w;
+    let idx = Math.round(((relX - padL) / plotW) * (points.length - 1));
+    idx = Math.max(0, Math.min(points.length - 1, idx));
+    setHover(idx);
+  };
+
   return (
-    <svg width={w} height={h} className="overflow-visible">
-      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} />
-      <text x={w} y={h - 4} textAnchor="end" fontSize="10" fill="#9ca3af">
-        {last}
-      </text>
-    </svg>
+    <div className="relative w-full">
+      <svg
+        width="100%"
+        viewBox={`0 0 ${w} ${h}`}
+        preserveAspectRatio="none"
+        className="overflow-visible"
+        onMouseMove={onMove}
+        onMouseLeave={() => setHover(null)}
+      >
+        {/* 横向网格 + Y 轴刻度 */}
+        {gridVals.map((gv, i) => {
+          const gy = y(gv);
+          return (
+            <g key={`g${i}`}>
+              <line x1={padL} y1={gy} x2={w - padR} y2={gy} stroke="#eee" strokeWidth={1} />
+              <text x={padL - 5} y={gy + 3} textAnchor="end" fontSize="9" fill="#9ca3af">
+                {gv}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* X 轴标签（首 / 中 / 尾） */}
+        {xLabelIdx.map((i) => (
+          <text key={`x${i}`} x={x(i)} y={h - 4} textAnchor="middle" fontSize="9" fill="#9ca3af">
+            {points[i]?.label ?? ''}
+          </text>
+        ))}
+
+        {/* 面积 + 折线 */}
+        <polygon points={areaPts} fill={color} opacity={0.08} />
+        <polyline points={linePts} fill="none" stroke={color} strokeWidth={1.5} />
+
+        {/* hover 指示线 + 圆点 */}
+        {hover != null && (
+          <>
+            <line x1={x(hover)} y1={padT} x2={x(hover)} y2={padT + plotH} stroke={color} strokeDasharray="3 2" strokeWidth={1} />
+            <circle cx={x(hover)} cy={y(points[hover].value)} r={3} fill={color} />
+          </>
+        )}
+      </svg>
+
+      {hover != null && (
+        <div
+          className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md bg-neutral-900 px-2 py-1 text-[11px] leading-tight text-white shadow"
+          style={{ left: `${(x(hover) / w) * 100}%`, top: `${(y(points[hover].value) / h) * 100}%` }}
+        >
+          <div className="opacity-80">{points[hover].label ?? points[hover].ts ? new Date(points[hover].ts!).toLocaleTimeString() : ''}</div>
+          <div className="font-semibold">
+            {points[hover].value}
+            {unit}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -44,9 +134,12 @@ export default function HubSettingsPage() {
     if (!token) return;
     const h = { Authorization: `Bearer ${token}` };
     fetch('/api/admin/settings', { headers: h })
-      .then(r => r.json()).then(setCfg);
+      .then((r) => r.json())
+      .then(setCfg);
     fetch('/api/admin/system-metrics', { headers: h })
-      .then(r => r.json()).then(setMetrics).catch(() => setMetrics(null));
+      .then((r) => r.json())
+      .then(setMetrics)
+      .catch(() => setMetrics(null));
   }, []);
 
   if (!cfg) return null;
@@ -61,6 +154,23 @@ export default function HubSettingsPage() {
     { label: t('admin.thWechatLogin'), value: cfg.wechatLoginEnabled ? 'Enabled' : 'Disabled' },
   ];
 
+  const realtimePoints = metrics?.requests?.history
+    ? metrics.requests.history.map((hh: any) => ({
+        value: hh.count,
+        label: new Date(hh.ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+        ts: hh.ts,
+      }))
+    : [];
+  const dailyPoints = metrics?.requests?.dailyHistory
+    ? metrics.requests.dailyHistory.map((d: any) => ({ value: d.count, label: d.date.slice(5) }))
+    : [];
+  const todayReqPoints = metrics?.requests?.todayRequests
+    ? metrics.requests.todayRequests.map((v: number, i: number) => ({ value: v, label: slotLabel(i) }))
+    : [];
+  const todayConcPoints = metrics?.requests?.todayConcurrency
+    ? metrics.requests.todayConcurrency.map((v: number, i: number) => ({ value: v, label: slotLabel(i) }))
+    : [];
+
   const metricRows = metrics
     ? [
         { label: t('admin.metricsUptime'), value: fmtUptime(metrics.process.uptime) },
@@ -68,6 +178,8 @@ export default function HubSettingsPage() {
         { label: t('admin.metricsLoad'), value: `${metrics.system.loadavg1} / ${metrics.system.cpuCores} cores` },
         { label: t('admin.metricsReqPerMin'), value: metrics.requests.perMinute },
         { label: t('admin.metricsReqPerSec'), value: metrics.requests.perSecond },
+        { label: t('admin.metricsInFlight'), value: metrics.requests.inFlight },
+        { label: t('admin.metricsPeakConc'), value: metrics.requests.peakInFlightToday },
         { label: t('admin.metricsDbConns'), value: metrics.database.activeConnections ?? '—' },
         {
           label: t('admin.metricsQueue'),
@@ -82,7 +194,7 @@ export default function HubSettingsPage() {
     <div>
       <h1 className="text-xl font-bold text-neutral-900 mb-4">{t('admin.settings')}</h1>
       <div className="bg-white border rounded-xl divide-y divide-neutral-100">
-        {settingRows.map(r => (
+        {settingRows.map((r) => (
           <div key={r.label} className="flex items-center justify-between px-5 py-3">
             <span className="text-sm text-neutral-600">{r.label}</span>
             <span className="text-sm font-medium text-neutral-900">{String(r.value)}</span>
@@ -94,31 +206,57 @@ export default function HubSettingsPage() {
         <>
           <h2 className="text-lg font-bold text-neutral-900 mt-8 mb-4">{t('admin.metricsTitle')}</h2>
           <div className="bg-white border rounded-xl divide-y divide-neutral-100">
-            {metricRows.map(r => (
+            {metricRows.map((r) => (
               <div key={r.label} className="flex items-center justify-between px-5 py-3">
                 <span className="text-sm text-neutral-600">{r.label}</span>
                 <span className="text-sm font-medium text-neutral-900">{String(r.value)}</span>
               </div>
             ))}
 
-            {metrics.requests?.history ? (
+            {realtimePoints.length >= 2 ? (
               <div className="px-5 py-4">
                 <div className="text-sm text-neutral-600 mb-2">{t('admin.metricsRealtime')}</div>
-                <Sparkline data={metrics.requests.history.map((h: any) => h.count)} />
+                <Sparkline points={realtimePoints} />
               </div>
             ) : null}
 
-            {metrics.requests?.dailyHistory ? (
+            {dailyPoints.length >= 2 ? (
               <div className="px-5 py-4">
                 <div className="text-sm text-neutral-600 mb-2">{t('admin.metrics7d')}</div>
-                <Sparkline
-                  data={metrics.requests.dailyHistory.map((d: any) => d.count)}
-                  color="#16a34a"
-                />
+                <Sparkline points={dailyPoints} color="#16a34a" />
               </div>
             ) : (
               <div className="px-5 py-4 text-xs text-neutral-400">{t('admin.metricsNoRedis')}</div>
             )}
+
+            {todayReqPoints.length >= 2 ? (
+              <div className="px-5 py-4">
+                <div className="text-sm text-neutral-600 mb-2">
+                  {t('admin.metricsTodayReq')}
+                  {metrics.requests.todayDate ? `（${metrics.requests.todayDate}）` : ''}
+                </div>
+                <Sparkline points={todayReqPoints} color="#7c3aed" />
+              </div>
+            ) : null}
+
+            {todayConcPoints.length >= 2 ? (
+              <div className="px-5 py-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-sm text-neutral-600">{t('admin.metricsTodayConc')}</div>
+                  <div className="flex items-center gap-4 text-xs">
+                    <span className="text-neutral-500">
+                      {t('admin.metricsConcNow')}：
+                      <b className="text-neutral-900">{metrics.requests.inFlight}</b>
+                    </span>
+                    <span className="text-neutral-500">
+                      {t('admin.metricsConcPeak')}：
+                      <b className="text-neutral-900">{metrics.requests.peakInFlightToday}</b>
+                    </span>
+                  </div>
+                </div>
+                <Sparkline points={todayConcPoints} color="#ea580c" />
+              </div>
+            ) : null}
           </div>
         </>
       )}
