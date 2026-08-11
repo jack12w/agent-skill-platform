@@ -180,20 +180,28 @@ export class BalanceService {
   /* ============ 可提现额度（结算冻结期，无定时任务） ============ */
 
   /**
-   * 仍在结算冻结期内的收入合计。
-   * 退款走 direction='out' 不在此统计内，因此该值只会偏大 → 额度只会偏保守，方向安全。
+   * 仍在结算冻结期内的收入净额合计。
+   * 同一时间窗口内的退款（direction='out' biz_type='refund_deduct'）需从冻结额中扣除，
+   * 否则「结算中」会虚高、可提现被多扣（退款只减 available、不减冻结，导致重复减扣）。
+   * 仅减退款流水，不减提现（withdraw）流水；窗口外的退款不影响冻结额（其入账 in 流水已过期）。
    */
   async getFrozenIncomeCents(user_id: string, delayDays: number): Promise<number> {
     if (!delayDays || delayDays <= 0) return 0;
     const since = new Date(Date.now() - delayDays * 86_400_000);
     const row = await this.txRepo
       .createQueryBuilder('t')
-      .select('COALESCE(SUM(t.amount_cents), 0)', 'sum')
+      .select(
+        `COALESCE(SUM(CASE WHEN t.direction = 'in' THEN t.amount_cents ELSE 0 END), 0) ` +
+        `- COALESCE(SUM(CASE WHEN t.direction = 'out' AND t.biz_type = 'refund_deduct' THEN t.amount_cents ELSE 0 END), 0)`,
+        'sum',
+      )
       .where('t.user_id = :uid', { uid: user_id })
-      .andWhere("t.direction = 'in'")
+      .andWhere(
+        "(t.direction = 'in' OR (t.direction = 'out' AND t.biz_type = 'refund_deduct'))",
+      )
       .andWhere('t.created_at > :since', { since })
       .getRawOne<{ sum: string }>();
-    return Number(row?.sum || 0);
+    return Math.max(0, Number(row?.sum || 0));
   }
 
   /**

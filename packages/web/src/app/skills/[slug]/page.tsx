@@ -165,7 +165,8 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
     try {
       // 复用共享 likeSkill（与主页/团队页一致）；401 走新窗口登录
       await likeSkill(skill.id, token);
-      await reload();
+      // 乐观 +1：详情页 getDetail 有 10s 共享缓存，reload 会命中旧值导致不刷新，故直接更新 state（与主页/团队页一致）
+      setSkill((prev: any) => prev ? { ...prev, stats: { ...prev.stats, likes_total: (prev.stats?.likes_total || 0) + 1 } } : prev);
     } catch (e: any) {
       if (e?.message === 'UNAUTHORIZED') { alert(t('detail.loginExpired')); openLoginInNewTab(); return; }
       alert(t('detail.likeFailed') + ': ' + (e?.message || 'unknown error')); }
