@@ -65,10 +65,21 @@ async function bootstrap() {
   // ── 请求计数中间件（用于系统监控 QPS）────
   // 仅统计 /api 路径且排除健康检查，避免污染指标
   const metrics = app.get(SystemMetricsService);
-  app.use((req, _res, next) => {
+  app.use((req, res: any, next) => {
     const url = (req.originalUrl || req.url || '') as string;
     if (url.startsWith('/api') && !url.includes('/api/health')) {
       metrics.recordRequest();
+      metrics.incInFlight();
+      // finish / close 都可能触发，用 ended 标志保证只减一次，避免 inFlight 泄露
+      let ended = false;
+      const dec = () => {
+        if (!ended) {
+          ended = true;
+          metrics.decInFlight();
+        }
+      };
+      res.on('finish', dec);
+      res.on('close', dec);
     }
     next();
   });

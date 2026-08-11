@@ -12,14 +12,22 @@ function ymd(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/** 全天 5 分钟一档 = 288 槽 */
+const TODAY_SLOTS = 288;
+
 /**
  * 轻量系统指标收集（用于管理后台「系统设置」展示）。
  * - 请求计数：每收到一个 API 请求调用 recordRequest()，维护滑动窗口算 QPS / 每分钟。
+ * - 并发计数：incInFlight()/decInFlight() 在请求开始 / 结束时调用，统计当前在飞请求数（inFlight）
+ *   与今日并发峰值（peakInFlight）；并在每个 5 分钟槽记录并发峰值，用于「今日并发走势」。
+ * - 当天曲线：todayReq / todayConc 两个 288 槽数组，从 00:00 起每 5 分钟累计，用于「今日请求走势」。
  * - 进程/系统采样：内存占用、系统负载。
  * - 依赖外部：通过 DataSource 查 pg_stat_activity 取 DB 活动连接；
  *   通过 MailQueueService 取 Bull 邮件队列积压（未用 Redis 时为 null）。
- * - 持久化：每分钟聚合值写入 Redis（ZSET metrics:reqpermin），服务重启时回填，避免「重启归零」。
- *   实时 QPS（秒级）走内存桶、重启自愈，不落盘。
+ * - 持久化：每分钟聚合值写入 Redis（ZSET metrics:reqpermin），服务重启时回填，避免「重启归零」；
+ *   当天曲线与并发峰值写入 Redis Hash（metrics:today:req / metrics:today:conc / metrics:peak），
+ *   重启时回填 todayReq / todayConc / peakInFlight。
+ *   实时 QPS（秒级）与 inFlight（当前在飞）走内存、重启自愈，不落盘（瞬时值无意义持久化）。
  * 只读、无副作用，失败均吞掉返回 null，不影响主流程；REDIS_URL 缺失时自动降级（不持久化）。
  */
 @Injectable()
@@ -38,6 +46,13 @@ export class SystemMetricsService implements OnModuleInit {
   private redis: Redis | null = null;
   private readonly redisKey = 'metrics:reqpermin';
   private readonly historyMinutes = 60;
+
+  // ── 并发 & 当天曲线（inFlight/peak 走内存，当天曲线 Redis 持久化）──
+  private inFlight = 0; // 当前在飞请求数（Node 单线程，++/-- 天然原子）
+  private peakInFlight = 0; // 今日并发峰值
+  private todayDate = ymd(new Date());
+  private todayReq = new Array<number>(TODAY_SLOTS).fill(0); // 当天每 5 分钟请求数
+  private todayConc = new Array<number>(TODAY_SLOTS).fill(0); // 当天每 5 分钟并发峰值
 
   constructor(
     private readonly dataSource: DataSource,
@@ -62,7 +77,7 @@ export class SystemMetricsService implements OnModuleInit {
     }
   }
 
-  /** 启动回填：从 Redis 读回最近 N 分钟，避免重启后面板归零/空白 */
+  /** 启动回填：从 Redis 读回最近 N 分钟 + 当天曲线 + 并发峰值，避免重启后面板归零/空白 */
   async onModuleInit() {
     if (!this.redis) return;
     try {
@@ -88,6 +103,21 @@ export class SystemMetricsService implements OnModuleInit {
         // 用最近一分钟的历史值作为初始 lastPerMinute，避免首屏显示 0
         this.lastPerMinute = hist[hist.length - 1].count;
       }
+
+      // 回填当天曲线 + 并发峰值
+      const today = ymd(new Date());
+      const reqHash = await this.redis.hgetall(`metrics:today:req:${today}`);
+      const concHash = await this.redis.hgetall(`metrics:today:conc:${today}`);
+      for (const [k, v] of Object.entries(reqHash)) {
+        const idx = Number(k);
+        if (idx >= 0 && idx < TODAY_SLOTS) this.todayReq[idx] = Number(v) || 0;
+      }
+      for (const [k, v] of Object.entries(concHash)) {
+        const idx = Number(k);
+        if (idx >= 0 && idx < TODAY_SLOTS) this.todayConc[idx] = Number(v) || 0;
+      }
+      const peakRaw = await this.redis.get(`metrics:peak:${today}`);
+      this.peakInFlight = peakRaw ? Number(peakRaw) || 0 : 0;
     } catch {
       /* 静默降级 */
     }
@@ -111,6 +141,24 @@ export class SystemMetricsService implements OnModuleInit {
       // 异步持久化到 Redis（不阻塞请求处理）
       void this.persistPerMinute(this.lastPerMinute);
     }
+    // 当天请求曲线
+    this.bumpTodayReq();
+  }
+
+  /** 请求进入时调用：当前在飞 +1，更新并发峰值与当前 5 分钟槽的并发峰值 */
+  incInFlight(): void {
+    this.ensureToday();
+    this.inFlight++;
+    if (this.inFlight > this.peakInFlight) this.peakInFlight = this.inFlight;
+    const slot = this.slotIndex();
+    if (slot >= 0 && slot < TODAY_SLOTS && this.inFlight > this.todayConc[slot]) {
+      this.todayConc[slot] = this.inFlight;
+    }
+  }
+
+  /** 请求结束时调用：当前在飞 -1（不会减到负数） */
+  decInFlight(): void {
+    if (this.inFlight > 0) this.inFlight--;
   }
 
   /** 把某一分钟的请求数写入 Redis，并清理旧数据 */
@@ -125,9 +173,69 @@ export class SystemMetricsService implements OnModuleInit {
       const dayKey = `metrics:reqperday:${ymd(new Date())}`;
       await this.redis.incrby(dayKey, count);
       await this.redis.expire(dayKey, 30 * 24 * 3600);
+      // 当天曲线 + 并发峰值落盘
+      void this.persistToday(this.todayDate, this.todayReq, this.todayConc, this.peakInFlight);
     } catch {
       /* 静默降级 */
     }
+  }
+
+  /** 把当天曲线（请求 / 并发）与并发峰值写入 Redis；服务重启后可回填 */
+  private async persistToday(
+    date: string,
+    req: number[],
+    conc: number[],
+    peak: number,
+  ): Promise<void> {
+    if (!this.redis) return;
+    try {
+      const reqKey = `metrics:today:req:${date}`;
+      const concKey = `metrics:today:conc:${date}`;
+      const reqArgs: (string | number)[] = [];
+      const concArgs: (string | number)[] = [];
+      for (let i = 0; i < req.length; i++) {
+        if (req[i] > 0) reqArgs.push(i, req[i]);
+      }
+      for (let i = 0; i < conc.length; i++) {
+        if (conc[i] > 0) concArgs.push(i, conc[i]);
+      }
+      if (reqArgs.length) {
+        await this.redis.hset(reqKey, ...reqArgs);
+        await this.redis.expire(reqKey, 2 * 24 * 3600);
+      }
+      if (concArgs.length) {
+        await this.redis.hset(concKey, ...concArgs);
+        await this.redis.expire(concKey, 2 * 24 * 3600);
+      }
+      await this.redis.set(`metrics:peak:${date}`, peak, 'EX', 2 * 24 * 3600);
+    } catch {
+      /* 静默降级 */
+    }
+  }
+
+  /** 当天 00:00 起的第几个 5 分钟槽（0..287），越界则夹紧 */
+  private slotIndex(ts = Date.now()): number {
+    const d = new Date(ts);
+    const secOfDay = d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
+    return Math.max(0, Math.min(TODAY_SLOTS - 1, Math.floor(secOfDay / 300)));
+  }
+
+  /** 跨天：先持久化旧的一天，再重置当天数组与并发峰值 */
+  private ensureToday(): void {
+    const today = ymd(new Date());
+    if (today !== this.todayDate) {
+      void this.persistToday(this.todayDate, this.todayReq, this.todayConc, this.peakInFlight);
+      this.todayDate = today;
+      this.todayReq = new Array<number>(TODAY_SLOTS).fill(0);
+      this.todayConc = new Array<number>(TODAY_SLOTS).fill(0);
+      this.peakInFlight = 0;
+    }
+  }
+
+  private bumpTodayReq(): void {
+    this.ensureToday();
+    const slot = this.slotIndex();
+    if (slot >= 0 && slot < TODAY_SLOTS) this.todayReq[slot]++;
   }
 
   async getMetrics() {
@@ -183,6 +291,11 @@ export class SystemMetricsService implements OnModuleInit {
       }
     }
 
+    // 当天曲线只取到「当前槽」，避免画出未来的空点
+    const slotNow = this.slotIndex();
+    const todayRequests = this.todayReq.slice(0, slotNow + 1);
+    const todayConcurrency = this.todayConc.slice(0, slotNow + 1);
+
     return {
       timestamp: new Date().toISOString(),
       process: {
@@ -203,6 +316,11 @@ export class SystemMetricsService implements OnModuleInit {
         perSecond: Number(perSecond.toFixed(2)),
         history,
         dailyHistory,
+        inFlight: this.inFlight,
+        peakInFlightToday: this.peakInFlight,
+        todayDate: this.todayDate,
+        todayRequests,
+        todayConcurrency,
       },
       database: { activeConnections: dbConnections },
       mailQueue,
