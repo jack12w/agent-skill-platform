@@ -10,6 +10,7 @@ import CommentSection from '../../components/CommentSection';
 import SkillUpdateBadge from '../../components/SkillUpdateBadge';
 import CheckoutModal from '../../components/CheckoutModal';
 import MembershipModal from '../../components/MembershipModal';
+import { startDownload, openLoginInNewTab } from '../../../lib/skill-actions';
 
 function decodeUserId(): string | null {
   // 从登录令牌 (JWT) 的 sub 字段解析当前用户 id（权威身份，由后端签发）。
@@ -208,24 +209,25 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   const handleDownload = async (versionId?: string) => {
     if (!skill) return;
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) { alert(t('detail.loginFirst')); router.push('/auth'); return; }
+    if (!token) { alert(t('detail.loginFirst')); openLoginInNewTab(); return; }
     const key = versionId ? `dl:${versionId}` : 'download';
     setActing(key);
     try {
-      const url = versionId ? `/api/skills/${skill.id}/versions/${versionId}/download/file` : `/api/skills/${skill.id}/download/file`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.status === 401) { alert(t('detail.loginExpired')); router.push('/auth'); return; }
+      // 直接拿 OSS 直链（JSON），浏览器 window.location 直拉，Node 不再 buffer zip
+      const result = await startDownload(skill.id, token, versionId);
+      if (result.kind === 'unauthorized') {
+        alert(t('detail.loginExpired'));
+        openLoginInNewTab();
+        return;
+      }
       // ▼▼ 付费墙：后端返回 402 时弹出收银台，支付成功后自动重试下载
-      if (res.status === 402) {
-        const info = await res.json().catch(() => ({} as any));
-        if (info?.pricing) setPricing(info.pricing);
+      if (result.kind === 'payment-required') {
+        if (result.pricing) setPricing(result.pricing);
         setPendingVersionId(versionId);
         // 会员技能：引导订阅该创作者会员（订阅后整个创作者全部技能可下）
         // 但作者若未设置付费会员套餐，会员弹窗是死路 → 回退到单技能购买
         let planExists = hasPlan;
-        if (info?.pricing?.member_included && info?.owner) {
+        if (result.pricing?.member_included && result.owner) {
           try {
             const oType = skill.owner_team_id ? 'team' : 'user';
             const oId = skill.owner_team_id || skill.owner_user_id;
@@ -236,7 +238,7 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
             }
           } catch { /* 保持已有判断 */ }
         }
-        if (info?.pricing?.member_included && info?.owner && planExists) {
+        if (result.pricing?.member_included && result.owner && planExists) {
           setMemberSubOpen(true);
         } else {
           setCheckoutOpen(true);
@@ -244,27 +246,9 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
         return;
       }
       // ▲▲
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const disposition = res.headers.get('Content-Disposition');
-      let filename = 'skill.zip';
-      if (disposition) {
-        const utf8Match = disposition.match(/filename\*=UTF-8''(.+)/);
-        if (utf8Match) {
-          filename = decodeURIComponent(utf8Match[1]);
-        } else {
-          const match = disposition.match(/filename="(.+)"/);
-          if (match) filename = match[1];
-        }
-      }
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(downloadUrl);
+      if (result.kind === 'error') throw new Error(result.message || `HTTP ${result.status}`);
+      // 200：浏览器直拉 OSS，Node 零内存压力
+      window.location.href = result.url;
     } catch (e: any) {
       alert('下载失败: ' + (e.message || '未知错误'));
     } finally {

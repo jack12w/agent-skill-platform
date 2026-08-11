@@ -59,12 +59,20 @@ export function openLoginInNewTab(): void {
   }
 }
 
-export async function startDownload(skillId: string, token: string | null): Promise<DownloadOutcome> {
+export async function startDownload(
+  skillId: string,
+  token: string | null,
+  versionId?: string,
+): Promise<DownloadOutcome> {
   if (!token) return { kind: 'unauthorized' };
+
+  const path = versionId
+    ? `/api/skills/${skillId}/versions/${versionId}/download`
+    : `/api/skills/${skillId}/download`;
 
   let res: Response;
   try {
-    res = await fetch(`/api/skills/${skillId}/download`, {
+    res = await fetch(path, {
       headers: authHeaders(token),
     });
   } catch (e: any) {
