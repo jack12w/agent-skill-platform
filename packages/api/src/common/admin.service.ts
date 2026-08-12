@@ -487,7 +487,12 @@ export class AdminService {
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
 
-    const [totalPV, todayPV, dailyPV, topPages] = await Promise.all([
+    // 实时在线口径：最近 5 分钟。PresenceMiddleware 每 5 分钟节流刷新登录用户的
+    // last_seen_at；page_views 每次请求都写。故「在线」含匿名访客（去重IP），
+    // 「登录」为在线中的已认证子集，两者天然不重叠。
+    const fiveMinAgo = new Date(now.getTime() - 5 * 60 * 1000);
+
+    const [totalPV, todayPV, dailyPV, topPages, onlineRaw, loggedInUsers] = await Promise.all([
       this.pvRepo.count(),
       this.pvRepo.createQueryBuilder('pv')
         .where('pv.created_at >= :d', { d: new Date(now.getFullYear(), now.getMonth(), now.getDate()) })
@@ -508,6 +513,15 @@ export class AdminService {
         .orderBy('count', 'DESC')
         .limit(10)
         .getRawMany(),
+      // 当前在线用户总数：最近 5 分钟 page_views 去重 IP（含匿名访客）
+      this.pvRepo.createQueryBuilder('pv')
+        .select('COUNT(DISTINCT pv.ip_hash)::int', 'c')
+        .where('pv.created_at >= :d', { d: fiveMinAgo })
+        .getRawOne(),
+      // 当前登录用户总数：最近 5 分钟活跃的登录用户（last_seen_at 由 PresenceMiddleware 维护）
+      this.userRepo.createQueryBuilder('u')
+        .where('u.last_seen_at >= :d', { d: fiveMinAgo })
+        .getCount(),
     ]);
 
     const uniqueIPs7d = await this.pvRepo.createQueryBuilder('pv')
@@ -519,6 +533,8 @@ export class AdminService {
       totalPV,
       todayPV,
       uv7d: Number(uniqueIPs7d?.uv) || 0,
+      onlineUsers: Number(onlineRaw?.c) || 0,
+      loggedInUsers: Number(loggedInUsers) || 0,
       trends: dailyPV,
       topPages,
     };

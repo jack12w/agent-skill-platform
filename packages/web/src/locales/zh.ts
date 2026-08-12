@@ -358,6 +358,8 @@ const zh = {
     totalPV: '总 PV',
     todayPV: '今日 PV',
     sevenDayUV: '7 日 UV',
+    onlineUsers: '当前在线用户',
+    loggedInUsers: '登录用户',
     pvUvTrend: 'PV / UV 趋势',
     topPages: '热门页面 (7日)',
     logTableHint: '可能需要先在数据库创建 admin_logs 表',

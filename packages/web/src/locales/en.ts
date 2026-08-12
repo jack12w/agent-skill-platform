@@ -358,6 +358,8 @@ const en = {
     totalPV: 'Total PV',
     todayPV: 'Today PV',
     sevenDayUV: '7-Day UV',
+    onlineUsers: 'Online Users',
+    loggedInUsers: 'Logged-in Users',
     pvUvTrend: 'PV / UV Trend',
     topPages: 'Top Pages (7d)',
     logTableHint: 'admin_logs table may need to be created first',

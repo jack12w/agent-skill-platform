@@ -15,6 +15,7 @@ interface Stats {
 
 interface Analytics {
   totalPV: number; todayPV: number; uv7d: number;
+  onlineUsers: number; loggedInUsers: number;
   trends: { date: string; count: number; uv: number }[];
   topPages: { path: string; count: number }[];
 }
@@ -197,7 +198,7 @@ export default function HubPage() {
       {analytics && (
         <>
           <h2 className="text-sm font-semibold text-neutral-700 mb-3 mt-8">{t('admin.websiteAnalytics')}</h2>
-          <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="grid grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
             <div className="bg-accent-50 border border-accent-200 rounded-xl p-3 text-center">
               <p className="text-2xl font-bold text-accent-700">{analytics.totalPV.toLocaleString()}</p>
               <p className="text-xs text-accent-500">{t('admin.totalPV')}</p>
@@ -209,6 +210,14 @@ export default function HubPage() {
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
               <p className="text-2xl font-bold text-amber-700">{analytics.uv7d.toLocaleString()}</p>
               <p className="text-xs text-amber-500">{t('admin.sevenDayUV')}</p>
+            </div>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-emerald-700">{analytics.onlineUsers.toLocaleString()}</p>
+              <p className="text-xs text-emerald-500">{t('admin.onlineUsers')}</p>
+            </div>
+            <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-sky-700">{analytics.loggedInUsers.toLocaleString()}</p>
+              <p className="text-xs text-sky-500">{t('admin.loggedInUsers')}</p>
             </div>
           </div>
 
