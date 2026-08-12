@@ -70,4 +70,33 @@ export class OssService {
       this.logger.warn(`OSS delete failed for ${url}: ${e.message}`);
     }
   }
+
+  /**
+   * 生成带 Content-Disposition（下载文件名）覆盖的「签名」下载 URL。
+   *
+   * 关键：OSS 对匿名（public-read）请求不允许用 response-* 覆盖响应头，
+   * 直接拼 ?response-content-disposition 会被拒绝
+   * （InvalidRequest: Can not override response header for an anonymous user）。
+   * 只有「签名请求」才视为已认证、允许覆盖，故此处走 signatureUrl。
+   *
+   * disposition 需为原始字符串（可含中文），SDK 会自动做百分号编码并参与签名。
+   * 未配置 OSS（client 为空，如本地无密钥）时返回 null，调用方回退原始直链。
+   */
+  async signDownloadWithDisposition(
+    objectKey: string,
+    disposition: string,
+    expiresSec = 3600,
+  ): Promise<string | null> {
+    if (!this.client) return null;
+    const key = objectKey.replace(/^\/+/, '');
+    try {
+      return this.client.signatureUrl(key, {
+        expires: expiresSec,
+        response: { 'content-disposition': disposition },
+      });
+    } catch (e: any) {
+      this.logger.warn(`signDownloadWithDisposition failed for ${key}: ${e?.message}`);
+      return null;
+    }
+  }
 }

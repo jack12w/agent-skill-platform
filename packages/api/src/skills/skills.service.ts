@@ -728,8 +728,9 @@ export class SkillsService {
       throw new NotFoundException('No published versions available for this skill yet.');
     }
 
-    // 下载文件名：技能名 + 版本号（直链下载，避免只剩版本号）。
-    // 通过 OSS response-content-disposition 响应头覆盖，跨域也生效（不是 anchor 的 download 属性）。
+    // 下载文件名：技能名 + 版本号（避免只剩版本号）。
+    // OSS 匿名公开读请求禁止用 response-* 覆盖响应头，必须以「签名 URL」承载
+    // Content-Disposition（签名请求视为已认证，覆盖才生效）。未配置 OSS 时回退原始直链。
     const skillName = skill.name || 'skill';
     const asciiName = skillName
       .replace(/[^a-zA-Z0-9_-]/g, '_')
@@ -737,8 +738,9 @@ export class SkillsService {
       .replace(/^_|_$/g, '') || 'skill';
     const rawName = `${skillName}-v${version.version}.zip`;
     const dispValue = `attachment; filename="${asciiName}-v${version.version}.zip"; filename*=UTF-8''${rawName}`;
-    const sep = version.package_url.includes('?') ? '&' : '?';
-    const url = `${version.package_url}${sep}response-content-disposition=${encodeURIComponent(dispValue)}`;
+    const objectKey = `skills/${skill.id}/${version.version}.zip`;
+    const signedUrl = await this.ossService.signDownloadWithDisposition(objectKey, dispValue);
+    const url = signedUrl ?? version.package_url;
 
     return {
       url,
