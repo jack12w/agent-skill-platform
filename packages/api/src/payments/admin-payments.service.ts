@@ -130,31 +130,43 @@ export class AdminPaymentsService implements OnModuleInit {
    *    由转账回调（transfer-notify）或定时查单收口，绝不提前核销。
    */
   async approveWithdrawal(id: string, adminId: string): Promise<Withdrawal> {
-    const claimed = await this.wdRepo
-      .createQueryBuilder()
-      .update(Withdrawal)
-      .set({ status: 'REVIEWING', reviewed_by: adminId, reviewed_at: new Date() })
-      .where(`id = :id AND status = 'PENDING'`, { id })
-      .execute();
-    if (!(claimed.affected ?? 0)) throw new BadRequestException('该提现单已被处理，请刷新查看最新状态');
+    // 原子抢占 PENDING→REVIEWING 并冻结余额：同一事务，要么都成要么都回滚，
+    // 消除「状态已翻 REVIEWING 但余额未冻结 / 冻结成功却状态未翻」的中间态。
+    type ClaimResult =
+      | { kind: 'skipped' }
+      | { kind: 'failed' }
+      | { kind: 'ok'; wd: Withdrawal };
 
-    const wd = await this.wdRepo.findOne({ where: { id } });
-    if (!wd) throw new BadRequestException('提现单不存在');
+    const result = await this.dataSource.transaction<ClaimResult>(async (manager) => {
+      const claimed = await manager
+        .createQueryBuilder()
+        .update(Withdrawal)
+        .set({ status: 'REVIEWING', reviewed_by: adminId, reviewed_at: new Date() })
+        .where(`id = :id AND status = 'PENDING'`, { id })
+        .execute();
+      if (!(claimed.affected ?? 0)) return { kind: 'skipped' };
 
-    // 冻结余额（防并发重复提现）。申请之后若发生退款，余额可能已不足，
-    // 此处必须捕获：否则提现单永久卡在 REVIEWING，且审批接口直接 500。
-    try {
-      await this.balance.freeze(wd.user_id, Number(wd.amount_cents));
-    } catch (e: any) {
-      // freeze 在扣减前即抛错（余额不足），该笔从未成功冻结。仅标记失败、**禁止解冻**，
-      // 否则会错误地释放同一用户其他单子已冻结的金额、把 frozen 扣成负数、凭空增加可用余额
-      // （资金安全 HIGH：用户可在退款穿底后借提现审批的误解冻薅走平台资金）。
-      await this.wdRepo.update(
-        { id: wd.id },
-        { status: 'FAILED', fail_reason: (e?.message || '余额不足，冻结失败').slice(0, 200) } as any,
-      );
-      return (await this.wdRepo.findOne({ where: { id } }))!;
-    }
+      const wd = await manager.findOne(Withdrawal, { where: { id } });
+      if (!wd) return { kind: 'skipped' };
+
+      try {
+        await this.balance.freeze(wd.user_id, Number(wd.amount_cents), manager);
+      } catch (e: any) {
+        // 冻结失败（余额不足）：freeze 的 UPDATE 因可用不足未改行，本事务内标记 FAILED 并提交；
+        // 不误解冻（从未冻结），与旧逻辑一致。
+        await manager.update(
+          Withdrawal,
+          { id: wd.id },
+          { status: 'FAILED', fail_reason: (e?.message || '余额不足，冻结失败').slice(0, 200) } as any,
+        );
+        return { kind: 'failed' };
+      }
+      return { kind: 'ok', wd };
+    });
+
+    if (result.kind === 'skipped') throw new BadRequestException('该提现单已被处理，请刷新查看最新状态');
+    if (result.kind === 'failed') return (await this.wdRepo.findOne({ where: { id } }))!;
+    const wd = result.wd;
 
     try {
       const r = await this.wechat.transferToBalance({

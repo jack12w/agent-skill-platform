@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan } from 'typeorm';
+import { Repository, MoreThan, EntityManager } from 'typeorm';
 import { CreatorBalance, BalanceTransaction, Withdrawal } from './payments.entity';
 import { SettingsService } from './settings.service';
 
@@ -38,9 +38,10 @@ export class BalanceService {
     private readonly settings: SettingsService,
   ) {}
 
-  /** 确保余额行存在（首次有收入前） */
-  private async ensure(user_id: string) {
-    await this.balRepo
+  /** 确保余额行存在（首次有收入前）。manager 提供时在同一事务内执行 */
+  private async ensure(user_id: string, manager?: EntityManager) {
+    const balRepo = manager?.getRepository(CreatorBalance) ?? this.balRepo;
+    await balRepo
       .createQueryBuilder()
       .insert()
       .values({ user_id, available_cents: 0, frozen_cents: 0, total_earned_cents: 0, total_withdrawn_cents: 0 })
@@ -62,15 +63,17 @@ export class BalanceService {
    *
    * 无 ref_id 的调用（如提现 withdraw 走 completeWithdraw）无法幂等，保留原有直接入账逻辑。
    */
-  async credit(user_id: string, amount_cents: number, biz_type: string, ref_id?: string, remark?: string) {
+  async credit(user_id: string, amount_cents: number, biz_type: string, ref_id?: string, remark?: string, manager?: EntityManager) {
     if (amount_cents <= 0) return;
-    await this.ensure(user_id);
+    const balRepo = manager?.getRepository(CreatorBalance) ?? this.balRepo;
+    const txRepo = manager?.getRepository(BalanceTransaction) ?? this.txRepo;
+    await this.ensure(user_id, manager);
 
     if (!ref_id) {
-      await this.balRepo.increment({ user_id }, 'available_cents', amount_cents);
-      await this.balRepo.increment({ user_id }, 'total_earned_cents', amount_cents);
-      const bal = await this.balRepo.findOne({ where: { user_id } });
-      await this.txRepo.insert({
+      await balRepo.increment({ user_id }, 'available_cents', amount_cents);
+      await balRepo.increment({ user_id }, 'total_earned_cents', amount_cents);
+      const bal = await balRepo.findOne({ where: { user_id } });
+      await txRepo.insert({
         user_id,
         direction: 'in',
         amount_cents,
@@ -82,7 +85,7 @@ export class BalanceService {
       return;
     }
 
-    const inserted = await this.txRepo.query(
+    const inserted = await txRepo.query(
       `INSERT INTO balance_transactions (id, user_id, direction, amount_cents, balance_after_cents, biz_type, ref_id, remark, created_at)
        VALUES (gen_random_uuid(), $1, 'in', $2, 0, $3, $4, $5, NOW())
        ON CONFLICT (user_id, ref_id, biz_type, direction) WHERE ref_id IS NOT NULL DO NOTHING
@@ -95,10 +98,10 @@ export class BalanceService {
     }
 
     // 仅当流水真正插入时才调整余额——并发双调用的另一路走到这里时 inserted 为空，跳过。
-    await this.balRepo.increment({ user_id }, 'available_cents', amount_cents);
-    await this.balRepo.increment({ user_id }, 'total_earned_cents', amount_cents);
-    const bal = await this.balRepo.findOne({ where: { user_id } });
-    await this.txRepo.update(
+    await balRepo.increment({ user_id }, 'available_cents', amount_cents);
+    await balRepo.increment({ user_id }, 'total_earned_cents', amount_cents);
+    const bal = await balRepo.findOne({ where: { user_id } });
+    await txRepo.update(
       { user_id, ref_id, biz_type, direction: 'in' } as any,
       { balance_after_cents: bal?.available_cents ?? amount_cents },
     );
@@ -113,8 +116,9 @@ export class BalanceService {
    * 注：提现额度（结算冻结期 + 待审占用）的更上层校验在 createWithdrawal/getWithdrawableInfo，
    * 此处仅保证「不会把 available 扣成负数」。
    */
-  async freeze(user_id: string, amount_cents: number) {
-    const rows = await this.balRepo.query(
+  async freeze(user_id: string, amount_cents: number, manager?: EntityManager) {
+    const balRepo = manager?.getRepository(CreatorBalance) ?? this.balRepo;
+    const rows = await balRepo.query(
       `UPDATE creator_balances SET available_cents = available_cents - $1, frozen_cents = frozen_cents + $1
        WHERE user_id = $2 AND available_cents >= $1
        RETURNING user_id`,
@@ -138,14 +142,16 @@ export class BalanceService {
    * 注意调用方必须把 ref_id 传**退款单 id**（而非订单 id）——同一订单的多次部分退款
    * 才能各自拿到独立幂等键，否则第二次起的扣回会被唯一索引吞掉 → 创作者少扣（HIGH-2）。
    */
-  async debitForRefund(user_id: string, amount_cents: number, ref_id?: string) {
-    await this.ensure(user_id);
+  async debitForRefund(user_id: string, amount_cents: number, ref_id?: string, manager?: EntityManager) {
+    const balRepo = manager?.getRepository(CreatorBalance) ?? this.balRepo;
+    const txRepo = manager?.getRepository(BalanceTransaction) ?? this.txRepo;
+    await this.ensure(user_id, manager);
 
     if (!ref_id) {
-      await this.balRepo.increment({ user_id }, 'available_cents', -amount_cents);
-      await this.balRepo.increment({ user_id }, 'total_earned_cents', -amount_cents);
-      const bal = await this.balRepo.findOne({ where: { user_id } });
-      await this.txRepo.insert({
+      await balRepo.increment({ user_id }, 'available_cents', -amount_cents);
+      await balRepo.increment({ user_id }, 'total_earned_cents', -amount_cents);
+      const bal = await balRepo.findOne({ where: { user_id } });
+      await txRepo.insert({
         user_id,
         direction: 'out',
         amount_cents,
@@ -156,7 +162,7 @@ export class BalanceService {
       return;
     }
 
-    const inserted = await this.txRepo.query(
+    const inserted = await txRepo.query(
       `INSERT INTO balance_transactions (id, user_id, direction, amount_cents, balance_after_cents, biz_type, ref_id, created_at)
        VALUES (gen_random_uuid(), $1, 'out', $2, 0, 'refund_deduct', $3, NOW())
        ON CONFLICT (user_id, ref_id, biz_type, direction) WHERE ref_id IS NOT NULL DO NOTHING
@@ -168,10 +174,10 @@ export class BalanceService {
       return;
     }
 
-    await this.balRepo.increment({ user_id }, 'available_cents', -amount_cents);
-    await this.balRepo.increment({ user_id }, 'total_earned_cents', -amount_cents);
-    const bal = await this.balRepo.findOne({ where: { user_id } });
-    await this.txRepo.update(
+    await balRepo.increment({ user_id }, 'available_cents', -amount_cents);
+    await balRepo.increment({ user_id }, 'total_earned_cents', -amount_cents);
+    const bal = await balRepo.findOne({ where: { user_id } });
+    await txRepo.update(
       { user_id, ref_id, biz_type: 'refund_deduct', direction: 'out' } as any,
       { balance_after_cents: bal?.available_cents ?? -amount_cents },
     );

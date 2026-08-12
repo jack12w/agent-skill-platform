@@ -236,57 +236,58 @@ export class RefundService implements OnModuleInit {
     const paid = Number(order.paid_cents || 0) || 1;
     const ratio = Number(refund.amount_cents) / paid;
 
-    // 1. 回冲创作者余额（按比例扣减当初入账的分成）。
-    //    ref_id 必须用「退款单 id」而非订单 id：同一订单多次（部分）退款时，
-    //    每笔退款才能拿到独立幂等键，否则后续退款的扣回会被唯一索引吞掉 → 创作者少扣（HIGH-2）。
-    for (const it of items) {
-      const income = Number(it.seller_income_cents || 0);
-      if (it.seller_user_id && income > 0) {
-        const back = Math.round(income * ratio);
-        if (back > 0) {
-          await this.balance.debitForRefund(it.seller_user_id, back, refund.id);
-          this.logger.log(`退款冲正：创作者 ${it.seller_user_id} 扣回 ${back} 分（退款单 ${refund.out_refund_no}）`);
-        }
-      }
-    }
-
-    // refunded_cents 由聚合计算（幂等），而非累加，避免重发导致重复计数
-    const successRefunds = await this.refundRepo.find({ where: { order_id: order.id, status: 'SUCCESS' } });
-    const totalRefunded =
-      successRefunds.reduce((s, r) => s + Number(r.amount_cents || 0), 0) + Number(refund.amount_cents);
-    const fullyRefunded = totalRefunded >= paid;
-
-    // 2. 全额退款才撤销已发放的权益 / 订阅；部分退款保留（视为折价补偿）
-    if (fullyRefunded) {
-      if (order.type === 'skill') {
-        for (const it of items) {
-          if (it.subject_id) {
-            await this.entRepo.delete({ user_id: order.user_id, skill_id: it.subject_id, order_id: order.id });
+    // 冲正多步写（扣余额 + 撤权益 + 撤订阅 + 回写订单 + 标 SUCCESS）包进同一事务，
+    // 任一步失败整体回滚，消除「余额已扣但权益未撤 / SUCCESS 未标」的中间态。
+    await this.orderRepo.manager.transaction(async (manager) => {
+      // 1. 回冲创作者余额（按比例扣减当初入账的分成），并入同一事务
+      for (const it of items) {
+        const income = Number(it.seller_income_cents || 0);
+        if (it.seller_user_id && income > 0) {
+          const back = Math.round(income * ratio);
+          if (back > 0) {
+            await this.balance.debitForRefund(it.seller_user_id, back, refund.id, manager);
+            this.logger.log(`退款冲正：创作者 ${it.seller_user_id} 扣回 ${back} 分（退款单 ${refund.out_refund_no}）`);
           }
         }
-      } else if (order.type === 'creator_membership') {
-        await this.csRepo
-          .createQueryBuilder()
-          .update(CreatorSubscription)
-          .set({ status: 'refunded', expires_at: new Date() })
-          .where('order_id = :oid', { oid: order.id })
-          .execute();
       }
-    }
 
-    // 3. 回写订单（幂等）
-    await this.orderRepo.update(
-      { id: order.id },
-      { refunded_cents: totalRefunded, status: fullyRefunded ? 'REFUNDED' : 'PARTIAL_REFUNDED' },
-    );
+      // 2. refunded_cents 由聚合计算（幂等）；全额退款才撤销权益/订阅
+      const successRefunds = await manager.find(Refund, { where: { order_id: order.id, status: 'SUCCESS' } });
+      const totalRefunded =
+        successRefunds.reduce((s, r) => s + Number(r.amount_cents || 0), 0) + Number(refund.amount_cents);
+      const fullyRefunded = totalRefunded >= paid;
 
-    // 4. 最后原子标记 SUCCESS（仅结果标记；步骤幂等已防重复冲正）
-    await this.refundRepo
-      .createQueryBuilder()
-      .update(Refund)
-      .set({ status: 'SUCCESS', refunded_at: new Date() })
-      .where('out_refund_no = :no AND status <> :s', { no: outRefundNo, s: 'SUCCESS' })
-      .execute();
+      if (fullyRefunded) {
+        if (order.type === 'skill') {
+          for (const it of items) {
+            if (it.subject_id) {
+              await manager.delete(Entitlement, { user_id: order.user_id, skill_id: it.subject_id, order_id: order.id });
+            }
+          }
+        } else if (order.type === 'creator_membership') {
+          await manager
+            .createQueryBuilder()
+            .update(CreatorSubscription)
+            .set({ status: 'refunded', expires_at: new Date() })
+            .where('order_id = :oid', { oid: order.id })
+            .execute();
+        }
+      }
+
+      // 3. 回写订单（幂等）
+      await manager.update(
+        Order,
+        { id: order.id },
+        { refunded_cents: totalRefunded, status: fullyRefunded ? 'REFUNDED' : 'PARTIAL_REFUNDED' },
+      );
+
+      // 4. 最后原子标记 SUCCESS（仅结果标记；步骤幂等已防重复冲正）
+      await manager.update(
+        Refund,
+        { out_refund_no: outRefundNo },
+        { status: 'SUCCESS', refunded_at: new Date() },
+      );
+    });
   }
 
   /**
