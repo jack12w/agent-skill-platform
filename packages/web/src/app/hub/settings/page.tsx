@@ -34,7 +34,7 @@ function Sparkline({ points, color = '#2563eb', height = 96, unit = '' }: {
 }) {
   const [hover, setHover] = useState<number | null>(null);
 
-  if (!points || points.length < 2) {
+  if (!points || points.length < 1) {
     return <span className="text-xs text-neutral-400">—</span>;
   }
 
@@ -48,7 +48,9 @@ function Sparkline({ points, color = '#2563eb', height = 96, unit = '' }: {
   const plotH = h - padT - padB;
 
   const max = Math.max(...points.map((p) => p.value), 1);
-  const x = (i: number) => padL + (i / (points.length - 1)) * plotW;
+  // 单点时无法按比例映射 x（分母为 0），统一画在左边缘（代表当日 00:00）
+  const x = (i: number) =>
+    points.length <= 1 ? padL : padL + (i / (points.length - 1)) * plotW;
   const y = (v: number) => padT + plotH - (v / max) * plotH;
   const linePts = points.map((p, i) => `${x(i)},${y(p.value)}`).join(' ');
   const areaPts = `${padL},${padT + plotH} ${linePts} ${w - padR},${padT + plotH}`;
@@ -86,6 +88,10 @@ function Sparkline({ points, color = '#2563eb', height = 96, unit = '' }: {
         {/* 面积 + 折线 */}
         <polygon points={areaPts} fill={color} opacity={0.08} />
         <polyline points={linePts} fill="none" stroke={color} strokeWidth={1.5} />
+        {/* 单点（当日刚开始，仅 1 个槽）时画一个圆点，避免空白看起来像出错 */}
+        {points.length === 1 && (
+          <circle cx={x(0)} cy={y(points[0].value)} r={3} fill={color} />
+        )}
 
         {/* hover 指示线 + 圆点 */}
         {hover != null && (
@@ -252,20 +258,30 @@ export default function HubSettingsPage() {
               <div className="px-5 py-4 text-xs text-neutral-400">{t('admin.metricsNoRedis')}</div>
             )}
 
-            {todayReqPoints.length >= 2 ? (
+            {todayReqPoints.length >= 1 ? (
               <div className="px-5 py-4">
                 <div className="text-sm text-neutral-600 mb-2">
                   {t('admin.metricsTodayReq')}
                   {metrics.requests.todayDate ? `（${metrics.requests.todayDate}）` : ''}
+                  {todayReqPoints.length < 2 && (
+                    <span className="ml-2 text-xs text-neutral-400">（数据收集中）</span>
+                  )}
                 </div>
                 <Sparkline points={todayReqPoints} color="#7c3aed" />
               </div>
-            ) : null}
+            ) : (
+              <div className="px-5 py-4 text-xs text-neutral-400">今日暂无请求数据</div>
+            )}
 
-            {todayConcPoints.length >= 2 ? (
+            {todayConcPoints.length >= 1 ? (
               <div className="px-5 py-4">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-sm text-neutral-600">{t('admin.metricsTodayConc')}</div>
+                  <div className="text-sm text-neutral-600">
+                    {t('admin.metricsTodayConc')}
+                    {todayConcPoints.length < 2 && (
+                      <span className="ml-2 text-xs text-neutral-400">（数据收集中）</span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-4 text-xs">
                     <span className="text-neutral-500">
                       {t('admin.metricsConcNow')}：
@@ -279,7 +295,9 @@ export default function HubSettingsPage() {
                 </div>
                 <Sparkline points={todayConcPoints} color="#ea580c" />
               </div>
-            ) : null}
+            ) : (
+              <div className="px-5 py-4 text-xs text-neutral-400">今日暂无并发数据</div>
+            )}
           </div>
         </>
       )}
