@@ -20,6 +20,10 @@ import { BalanceService } from './balance.service';
 export class AdminPaymentsService implements OnModuleInit {
   private readonly logger = new Logger(AdminPaymentsService.name);
 
+  // 提现收口安全闸：累计 404 次数（仅 REVIEWING，防瞬时误判）；僵尸单告警去重（进程级，重启后重报一次可接受）
+  private readonly notFoundCounts = new Map<string, number>();
+  private readonly zombieAlerted = new Set<string>();
+
   constructor(
     @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
     @InjectRepository(OrderItem) private readonly itemRepo: Repository<OrderItem>,
@@ -196,11 +200,13 @@ export class AdminPaymentsService implements OnModuleInit {
           await this.applyTransferState(wd, q);
         } catch (qe: any) {
           if (qe instanceof WechatApiError && qe.wechatStatus === 404) {
-            // 微信确认无此单 = 未受理 → 当场失败收口并解冻，管理员立即可见
-            await this.failWithdrawal(wd, '打款未受理（微信无此单），已退回余额');
+            // 刚发起即查单返回 404：微信要求受理≥1分钟才可查单，瞬时"不存在"不能当作未受理。
+            // 置 PROCESSING 交给定时任务在 30min 窗口+多次确认后决策，避免误解冻导致重复打款。
+            await this.wdRepo.update({ id: wd.id }, { status: 'PROCESSING' } as any);
+            this.logger.warn(`提现打款结果不确定且刚查单404，置 PROCESSING 待定时任务核实: ${wd.out_bill_no}`);
           } else {
             // 查单也不确定：置 PROCESSING（不解冻！），交给定时任务继续核实
-            await this.wdRepo.update({ id: wd.id }, { status: 'PROCESSING' });
+            await this.wdRepo.update({ id: wd.id }, { status: 'PROCESSING' } as any);
             this.logger.warn(`提现打款结果不确定且查单失败，置 PROCESSING 待核实: ${wd.out_bill_no}`);
           }
         }
@@ -273,26 +279,65 @@ export class AdminPaymentsService implements OnModuleInit {
     }
   }
 
-  /** 定时兜底：同步 REVIEWING/PROCESSING 超过 60 秒的提现单 */
+  /**
+   * 定时兜底：同步 REVIEWING/PROCESSING 的提现单（终态主要靠回调收口，此查单仅兜底）。
+   *
+   * 资金安全模型（对齐微信/支付宝/Stripe 做法）：
+   *  - 受理成功 ≠ 打款成功；微信明确要求受理≥1分钟才可查单，刚发起即查可能返回"不存在"。
+   *  - 404（查无此单）视为"未确认/未知"，绝不等同于"打款失败"。
+   *  - 仅微信明确返回 FAIL/CANCELLED（applyTransferState 处理）才安全解冻。
+   *  - 404 一律保持观察：累计次数，且单龄≥30min 且连续≥2次才判定为"请求从未受理"。
+   *  - REVIEWING 卡住 = 打款请求从未真正发出（如 freeze 后进程崩溃），微信侧永远不会有此单，
+   *    达阈值后安全自动解冻退款；PROCESSING 卡住 = 已受理待打款，404 可能为瞬时，绝不自动解冻，转人工。
+   */
   private async syncProcessingWithdrawals() {
+    const now = Date.now();
+    const reviewingCutoff = new Date(now - 5 * 60_000); // REVIEWING 冷却 5min（避免刚发起即误查 404）
+    const processingCutoff = new Date(now - 2 * 60_000); // PROCESSING 较早轮询，捕捉漏掉的回调终态
     const stuck = await this.wdRepo.find({
       where: [
-        { status: 'PROCESSING' },
-        { status: 'REVIEWING', reviewed_at: LessThan(new Date(Date.now() - 60_000)) },
+        { status: 'PROCESSING', reviewed_at: LessThan(processingCutoff) },
+        { status: 'REVIEWING', reviewed_at: LessThan(reviewingCutoff) },
       ],
       take: 20,
     });
     for (const wd of stuck) {
+      const ageMin = (now - new Date(wd.reviewed_at!).getTime()) / 60_000;
+
+      // 僵尸单告警：超 24h 仍未收口（如 PROCESSING 长期查单异常），需人工核查资金是否打出。
+      // 不解冻、不改态，交由运营在微信商户平台核对后手动处理。
+      if (ageMin >= 24 * 60 && !this.zombieAlerted.has(wd.id)) {
+        this.zombieAlerted.add(wd.id);
+        this.logger.error(`提现单卡在 ${wd.status} 超24h 未收口，需人工核查资金是否打出: ${wd.out_bill_no}`);
+      }
+
       try {
         const q = await this.wechat.queryTransfer(wd.out_bill_no);
+        this.notFoundCounts.delete(wd.id); // 拿到真实响应 → 复位 404 计数
         await this.applyTransferState(wd, q);
       } catch (e: any) {
-        // 404 = 微信侧无此转账单 → 打款请求从未受理（如 freeze 后进程崩溃、请求未发出）。
-        // 必须按失败收口并解冻余额，否则单子永久卡 REVIEWING、用户余额永久冻结。
         if (e instanceof WechatApiError && e.wechatStatus === 404) {
-          this.logger.warn(`微信无此转账单，按打款未受理收口并解冻: ${wd.out_bill_no}`);
-          await this.failWithdrawal(wd, '打款未受理（微信无此单），已自动退回余额');
+          if (wd.status === 'REVIEWING') {
+            // REVIEWING = 打款请求从未发出（微信侧永远不会有此单）。
+            // 30min 窗口 + 多次确认排除"刚发起查单返回不存在"的瞬时误判 → 安全自动解冻退款。
+            const cnt = (this.notFoundCounts.get(wd.id) || 0) + 1;
+            this.notFoundCounts.set(wd.id, cnt);
+            if (ageMin >= 30 && cnt >= 2) {
+              this.logger.error(
+                `REVIEWING 提现单长时间无微信转账单(${cnt}次404,${ageMin.toFixed(0)}min)，按未受理自动解冻: ${wd.out_bill_no}`,
+              );
+              await this.failWithdrawal(wd, '打款未受理（微信长时间无此单），已自动退回余额');
+              this.notFoundCounts.delete(wd.id);
+            } else {
+              this.logger.warn(`微信无此转账单(${cnt}次)，暂保持观察(${ageMin.toFixed(0)}min): ${wd.out_bill_no}`);
+            }
+          } else {
+            // PROCESSING = 已受理待打款，404 极可能为瞬时/异常；绝不解冻，保持观察待人工/回调。
+            this.logger.warn(`微信无此转账单(PROCESSING,${ageMin.toFixed(0)}min)，保持观察待人工核查: ${wd.out_bill_no}`);
+          }
         } else {
+          // 网络/超时/5xx 等不确定错误：复位计数，仅告警，绝不解冻
+          this.notFoundCounts.delete(wd.id);
           this.logger.warn(`同步提现状态失败 ${wd.out_bill_no}: ${e?.message}`);
         }
       }
