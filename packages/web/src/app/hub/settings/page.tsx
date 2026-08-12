@@ -75,25 +75,13 @@ function Sparkline({ points, color = '#2563eb', height = 96, unit = '' }: {
         onMouseMove={onMove}
         onMouseLeave={() => setHover(null)}
       >
-        {/* 横向网格 + Y 轴刻度 */}
+        {/* 横向网格线（仅线条，文字标签改由 HTML 渲染，避免被 SVG 拉伸放大） */}
         {gridVals.map((gv, i) => {
           const gy = y(gv);
           return (
-            <g key={`g${i}`}>
-              <line x1={padL} y1={gy} x2={w - padR} y2={gy} stroke="#eee" strokeWidth={1} />
-              <text x={padL - 5} y={gy + 3} textAnchor="end" fontSize="9" fill="#9ca3af">
-                {gv}
-              </text>
-            </g>
+            <line key={`g${i}`} x1={padL} y1={gy} x2={w - padR} y2={gy} stroke="#eee" strokeWidth={1} />
           );
         })}
-
-        {/* X 轴标签（首 / 中 / 尾） */}
-        {xLabelIdx.map((i) => (
-          <text key={`x${i}`} x={x(i)} y={h - 4} textAnchor="middle" fontSize="9" fill="#9ca3af">
-            {points[i]?.label ?? ''}
-          </text>
-        ))}
 
         {/* 面积 + 折线 */}
         <polygon points={areaPts} fill={color} opacity={0.08} />
@@ -108,12 +96,37 @@ function Sparkline({ points, color = '#2563eb', height = 96, unit = '' }: {
         )}
       </svg>
 
+      {/* Y 轴刻度（HTML，固定 12px，不受 SVG 横向拉伸影响） */}
+      {gridVals.map((gv, i) => {
+        const gy = y(gv);
+        return (
+          <span
+            key={`yl${i}`}
+            className="absolute left-0 w-[33px] text-right text-xs leading-none text-neutral-400"
+            style={{ top: `${(gy / h) * 100}%`, transform: 'translateY(-50%)' }}
+          >
+            {gv}
+          </span>
+        );
+      })}
+
+      {/* X 轴标签（HTML，固定 12px） */}
+      {xLabelIdx.map((i) => (
+        <span
+          key={`xl${i}`}
+          className="absolute bottom-0 -translate-x-1/2 text-xs leading-none text-neutral-400"
+          style={{ left: `${(x(i) / w) * 100}%` }}
+        >
+          {points[i]?.label ?? ''}
+        </span>
+      ))}
+
       {hover != null && (
         <div
-          className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md bg-neutral-900 px-2 py-1 text-[11px] leading-tight text-white shadow"
+          className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md bg-neutral-900 px-2 py-1 text-xs leading-tight text-white shadow"
           style={{ left: `${(x(hover) / w) * 100}%`, top: `${(y(points[hover].value) / h) * 100}%` }}
         >
-          <div className="opacity-80">{points[hover].label ?? points[hover].ts ? new Date(points[hover].ts!).toLocaleTimeString() : ''}</div>
+          <div className="opacity-80">{points[hover].label ?? (points[hover].ts ? new Date(points[hover].ts!).toLocaleTimeString() : '')}</div>
           <div className="font-semibold">
             {points[hover].value}
             {unit}

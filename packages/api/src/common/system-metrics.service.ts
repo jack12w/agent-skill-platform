@@ -4,11 +4,23 @@ import { MailQueueService } from './mail-queue.service';
 import Redis from 'ioredis';
 import os from 'os';
 
-/** 本地日期 YYYY-MM-DD（用于每日聚合 key） */
-function ymd(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+/** 东八区（中国）偏移毫秒 */
+const CN_OFFSET_MS = 8 * 3600 * 1000;
+
+/** 把任意时刻按东八区（北京时间）解释：返回的 Date 其 getHours()/getDate() 等为北京时间。
+ *  无论容器时区是 UTC 还是 Asia/Shanghai，指标统计都统一按中国时间，
+ *  避免「今天」和 5 分钟槽位因时区错位（典型：容器 UTC 导致比北京慢 8h，曲线只画到下午 3 点）。 */
+function cnNow(base: Date = new Date()): Date {
+  // local 时区下 getTimezoneOffset() 为「本地→UTC 需加的分钟数」；转东八区 = 先回 UTC 再 +8h。
+  return new Date(base.getTime() + base.getTimezoneOffset() * 60000 + CN_OFFSET_MS);
+}
+
+/** 本地（中国）日期 YYYY-MM-DD（用于每日聚合 key） */
+function ymd(d: Date = new Date()): string {
+  const c = cnNow(d);
+  const y = c.getFullYear();
+  const m = String(c.getMonth() + 1).padStart(2, '0');
+  const day = String(c.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
 
@@ -213,9 +225,9 @@ export class SystemMetricsService implements OnModuleInit {
     }
   }
 
-  /** 当天 00:00 起的第几个 5 分钟槽（0..287），越界则夹紧 */
+  /** 当天 00:00 起的第几个 5 分钟槽（0..287），越界则夹紧（按东八区计算） */
   private slotIndex(ts = Date.now()): number {
-    const d = new Date(ts);
+    const d = cnNow(new Date(ts));
     const secOfDay = d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds();
     return Math.max(0, Math.min(TODAY_SLOTS - 1, Math.floor(secOfDay / 300)));
   }
