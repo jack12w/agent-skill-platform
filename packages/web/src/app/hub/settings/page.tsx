@@ -177,11 +177,21 @@ export default function HubSettingsPage() {
   const dailyPoints = metrics?.requests?.dailyHistory
     ? metrics.requests.dailyHistory.map((d: any) => ({ value: d.count, label: d.date.slice(5) }))
     : [];
+  // 今日图横轴：用后端给的当天 00:00 UTC 毫秒 + 槽偏移，按用户本地时区格式化（存储 UTC / 展示转本地）
+  const todayStartTs = metrics?.requests?.todayStartTs ?? 0;
+  const slotLabelAt = (i: number): string =>
+    todayStartTs
+      ? new Date(todayStartTs + i * 5 * 60 * 1000).toLocaleTimeString('zh-CN', {
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : slotLabel(i);
+
   const todayReqPoints = metrics?.requests?.todayRequests
-    ? metrics.requests.todayRequests.map((v: number, i: number) => ({ value: v, label: slotLabel(i) }))
+    ? metrics.requests.todayRequests.map((v: number, i: number) => ({ value: v, label: slotLabelAt(i) }))
     : [];
   const todayConcPoints = metrics?.requests?.todayConcurrency
-    ? metrics.requests.todayConcurrency.map((v: number, i: number) => ({ value: v, label: slotLabel(i) }))
+    ? metrics.requests.todayConcurrency.map((v: number, i: number) => ({ value: v, label: slotLabelAt(i) }))
     : [];
 
   const metricRows = metrics

@@ -308,6 +308,12 @@ export class SystemMetricsService implements OnModuleInit {
     const todayRequests = this.todayReq.slice(0, slotNow + 1);
     const todayConcurrency = this.todayConc.slice(0, slotNow + 1);
 
+    // 当天 00:00（按东八区本地天）对应的 UTC 毫秒：供前端按用户时区格式化横轴标签。
+    // 桶边界仍按本地天计算（否则「今日」只覆盖半个北京天）；展示时由前端将此时刻转本地时区。
+    const day0 = cnNow(new Date());
+    day0.setHours(0, 0, 0, 0);
+    const todayStartTs = day0.getTime();
+
     return {
       timestamp: new Date().toISOString(),
       process: {
@@ -331,6 +337,7 @@ export class SystemMetricsService implements OnModuleInit {
         inFlight: this.inFlight,
         peakInFlightToday: this.peakInFlight,
         todayDate: this.todayDate,
+        todayStartTs,
         todayRequests,
         todayConcurrency,
       },
