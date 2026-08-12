@@ -728,8 +728,20 @@ export class SkillsService {
       throw new NotFoundException('No published versions available for this skill yet.');
     }
 
+    // 下载文件名：技能名 + 版本号（直链下载，避免只剩版本号）。
+    // 通过 OSS response-content-disposition 响应头覆盖，跨域也生效（不是 anchor 的 download 属性）。
+    const skillName = skill.name || 'skill';
+    const asciiName = skillName
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '') || 'skill';
+    const rawName = `${skillName}-v${version.version}.zip`;
+    const dispValue = `attachment; filename="${asciiName}-v${version.version}.zip"; filename*=UTF-8''${rawName}`;
+    const sep = version.package_url.includes('?') ? '&' : '?';
+    const url = `${version.package_url}${sep}response-content-disposition=${encodeURIComponent(dispValue)}`;
+
     return {
-      url: version.package_url,
+      url,
       version: version.version,
       version_id: version.id,
       size: version.size,
