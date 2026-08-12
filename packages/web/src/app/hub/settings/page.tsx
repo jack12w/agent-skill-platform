@@ -241,25 +241,28 @@ export default function HubSettingsPage() {
                 <span className="text-sm font-medium text-neutral-900">{String(r.value)}</span>
               </div>
             ))}
+          </div>
 
+          {/* 4 个折线图：2x2 网格（移动端 1 列），让宽图更协调 */}
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
             {realtimePoints.length >= 2 ? (
-              <div className="px-5 py-4">
+              <div className="bg-white border rounded-xl px-5 py-4">
                 <div className="text-sm text-neutral-600 mb-2">{t('admin.metricsRealtime')}</div>
                 <Sparkline points={realtimePoints} />
               </div>
             ) : null}
 
             {dailyPoints.length >= 2 ? (
-              <div className="px-5 py-4">
+              <div className="bg-white border rounded-xl px-5 py-4">
                 <div className="text-sm text-neutral-600 mb-2">{t('admin.metrics7d')}</div>
                 <Sparkline points={dailyPoints} color="#16a34a" />
               </div>
             ) : (
-              <div className="px-5 py-4 text-xs text-neutral-400">{t('admin.metricsNoRedis')}</div>
+              <div className="bg-white border rounded-xl px-5 py-4 text-xs text-neutral-400">{t('admin.metricsNoRedis')}</div>
             )}
 
             {todayReqPoints.length >= 1 ? (
-              <div className="px-5 py-4">
+              <div className="bg-white border rounded-xl px-5 py-4">
                 <div className="text-sm text-neutral-600 mb-2">
                   {t('admin.metricsTodayReq')}
                   {metrics.requests.todayDate ? `（${metrics.requests.todayDate}）` : ''}
@@ -270,11 +273,11 @@ export default function HubSettingsPage() {
                 <Sparkline points={todayReqPoints} color="#7c3aed" />
               </div>
             ) : (
-              <div className="px-5 py-4 text-xs text-neutral-400">今日暂无请求数据</div>
+              <div className="bg-white border rounded-xl px-5 py-4 text-xs text-neutral-400">今日暂无请求数据</div>
             )}
 
             {todayConcPoints.length >= 1 ? (
-              <div className="px-5 py-4">
+              <div className="bg-white border rounded-xl px-5 py-4">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-sm text-neutral-600">
                     {t('admin.metricsTodayConc')}
@@ -296,7 +299,7 @@ export default function HubSettingsPage() {
                 <Sparkline points={todayConcPoints} color="#ea580c" />
               </div>
             ) : (
-              <div className="px-5 py-4 text-xs text-neutral-400">今日暂无并发数据</div>
+              <div className="bg-white border rounded-xl px-5 py-4 text-xs text-neutral-400">今日暂无并发数据</div>
             )}
           </div>
         </>

@@ -731,13 +731,15 @@ export class SkillsService {
     // 下载文件名：技能名 + 版本号（避免只剩版本号）。
     // OSS 匿名公开读请求禁止用 response-* 覆盖响应头，必须以「签名 URL」承载
     // Content-Disposition（签名请求视为已认证，覆盖才生效）。未配置 OSS 时回退原始直链。
+    // RFC 5987 强制 filename* 值做百分号编码；未编码的原始中文会被浏览器拒绝、回落 filename (ASCII fallback)。
     const skillName = skill.name || 'skill';
     const asciiName = skillName
       .replace(/[^a-zA-Z0-9_-]/g, '_')
       .replace(/_+/g, '_')
       .replace(/^_|_$/g, '') || 'skill';
     const rawName = `${skillName}-v${version.version}.zip`;
-    const dispValue = `attachment; filename="${asciiName}-v${version.version}.zip"; filename*=UTF-8''${rawName}`;
+    const encodedName = encodeURIComponent(rawName);
+    const dispValue = `attachment; filename="${asciiName}-v${version.version}.zip"; filename*=UTF-8''${encodedName}`;
     const objectKey = `skills/${skill.id}/${version.version}.zip`;
     const signedUrl = await this.ossService.signDownloadWithDisposition(objectKey, dispValue);
     const url = signedUrl ?? version.package_url;
