@@ -32,6 +32,9 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
   const currentUserId = (() => {
     try { const u = JSON.parse(localStorage.getItem('user') || 'null'); return u?.id || null; } catch { return null; }
   })();
+  // 加入申请状态（公开团队、非成员时显示「申请加入/撤销」）
+  const [hasPendingRequest, setHasPendingRequest] = useState(false);
+  const [joinBusy, setJoinBusy] = useState(false);
 
   // ── 卡片点赞 / 下载（主页直通 OSS，不走详情页加载链）──
   const [likingId, setLikingId] = useState<string | null>(null);
@@ -63,6 +66,7 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
         imgUrl: data.cover_url || undefined,
       });
       setIsOwner(data.is_owner);
+      setHasPendingRequest(!!data.has_pending_request);
 
       // 创作者是否设置了付费会员套餐（公开接口，未登录也可读）
       let planHas = false;
@@ -185,6 +189,35 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
   const handleSubscribeClick = () => {
     if (hasPlan) setMemberModalOpen(true);
     else toggleFollow();
+  };
+
+  // 申请加入公开团队
+  const requestJoin = async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) { alert(t('detail.loginFirst')); openLoginInNewTab(); return; }
+    setJoinBusy(true);
+    try {
+      const res = await fetch(`/api/teams/${params.id}/join-requests`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) setHasPendingRequest(true);
+      else { const b = await res.json().catch(() => ({})); alert(t('team.saveFailed') + ': ' + (b.message || res.status)); }
+    } finally { setJoinBusy(false); }
+  };
+
+  // 撤销自己的加入申请
+  const cancelJoin = async () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return;
+    setJoinBusy(true);
+    try {
+      const res = await fetch(`/api/teams/${params.id}/join-requests`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) setHasPendingRequest(false);
+    } finally { setJoinBusy(false); }
   };
 
   // 卡片点赞：调共享 likeSkill；本地乐观 +1（字段在 s.stats 下）
@@ -341,7 +374,18 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
                     订阅
                   </>
                 )}
-              </button>
+                </button>
+            )}
+            {!team.my_role && team.is_public && (
+              hasPendingRequest ? (
+                <button onClick={cancelJoin} disabled={joinBusy} className="px-4 py-2 border border-neutral-300 rounded-lg text-sm font-medium text-neutral-700 hover:bg-neutral-100 transition">
+                  {t('team.cancelApply')}
+                </button>
+              ) : (
+                <button onClick={requestJoin} disabled={joinBusy} className="px-4 py-2 border border-neutral-300 rounded-lg text-sm font-medium text-neutral-700 hover:bg-neutral-100 transition">
+                  {t('team.applyToJoin')}
+                </button>
+              )
             )}
             {isOwner && (
               <Link

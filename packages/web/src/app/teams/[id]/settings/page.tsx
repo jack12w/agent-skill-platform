@@ -34,6 +34,9 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'maintainer' | 'viewer'>('viewer');
   const [memberLoading, setMemberLoading] = useState(false);
+  // ── 加入申请（公开申请 + owner 审批）──
+  const [joinRequests, setJoinRequests] = useState<any[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(false);
 
   const load = async () => {
     const token = localStorage.getItem('token'); if (!token) return router.push('/auth');
@@ -41,6 +44,15 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
       const res = await fetch(`/api/teams/${params.id}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.message || `HTTP ${res.status}`); }
       const tData = await res.json(); setTeam(tData); setForm({ name: tData.name ?? '', description: tData.description ?? '' }); setIsPublic(tData.is_public !== false);
+      // 加入申请（仅 owner 拉取待审列表）
+      if (tData.is_owner) {
+        setRequestsLoading(true);
+        fetch(`/api/teams/${params.id}/join-requests`, { headers: { Authorization: `Bearer ${token}` } })
+          .then((r) => (r.ok ? r.json() : []))
+          .then((list) => setJoinRequests(Array.isArray(list) ? list : []))
+          .catch(() => setJoinRequests([]))
+          .finally(() => setRequestsLoading(false));
+      }
       // 团队会员定价
       setPlanLoading(true);
       fetch(`/api/pay/membership/plan?targetType=team&targetId=${encodeURIComponent(params.id)}`, {
@@ -220,6 +232,24 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
     finally { setMemberLoading(false); }
   };
 
+  // 审批加入申请：approve 加入成员；reject 仅标记
+  const reviewRequest = async (userId: string, action: 'approve' | 'reject', role: 'maintainer' | 'viewer' = 'viewer') => {
+    const token = localStorage.getItem('token'); if (!token) return;
+    setRequestsLoading(true);
+    try {
+      const res = await fetch(`/api/teams/${params.id}/join-requests/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action, role }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || 'Failed');
+      setJoinRequests((list) => list.filter((r) => r.user_id !== userId));
+      if (action === 'approve') await load(); // 刷新成员列表
+    } catch (err: any) { alert(err.message || 'Failed'); }
+    finally { setRequestsLoading(false); }
+  };
+
   if (loading) return <div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center text-neutral-500">{t('skills.loading')}</div>;
   if (error) return (<div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center"><h1 className="text-2xl font-bold mb-2">{t('team.cannotLoad')}</h1><p className="text-neutral-500 mb-6">{error}</p><Link href={`/teams/${params.id}`} className="text-brand-600 underline">{t('team.backToTeam')}</Link></div>);
   if (!team) return null;
@@ -397,6 +427,48 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
           })}
         </div>
       </div>
+
+      {/* 加入申请（owner 审批） */}
+      {team.is_owner && (
+        <div className="mb-10">
+          <h2 className="text-xl font-bold mb-4">{t('team.joinRequests')} ({joinRequests.length})</h2>
+          {requestsLoading ? (
+            <p className="text-sm text-neutral-400">加载中…</p>
+          ) : joinRequests.length === 0 ? (
+            <p className="text-sm text-neutral-400">{t('team.noJoinRequests')}</p>
+          ) : (
+            <div className="space-y-2">
+              {joinRequests.map((r: any) => (
+                <div key={r.user_id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="min-w-0">
+                    <div className="font-medium">{r.user?.name || r.user?.email || r.user_id.slice(0, 8)}</div>
+                    <div className="text-xs text-neutral-500 truncate">{r.user?.email}</div>
+                    {r.message && <div className="text-xs text-neutral-500 mt-1">“{r.message}”</div>}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <select
+                      defaultValue="viewer"
+                      disabled={requestsLoading}
+                      onChange={(e) => reviewRequest(r.user_id, 'approve', e.target.value as 'maintainer' | 'viewer')}
+                      className="text-xs px-2 py-1 border rounded bg-white"
+                    >
+                      <option value="maintainer">{t('team.roleMaintainer')}</option>
+                      <option value="viewer">{t('team.roleViewer')}</option>
+                    </select>
+                    <button onClick={() => reviewRequest(r.user_id, 'approve')} disabled={requestsLoading} className="text-xs px-3 py-1.5 bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-50">
+                      {t('team.approve')}
+                    </button>
+                    <button onClick={() => reviewRequest(r.user_id, 'reject')} disabled={requestsLoading} className="text-xs px-3 py-1.5 border border-neutral-300 rounded hover:bg-neutral-100">
+                      {t('team.reject')}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div><h2 className="text-xl font-bold mb-4">{t('team.teamSkills')} ({skills.length})</h2>
         {skills.length === 0 ? (<div className="p-6 border border-dashed rounded-xl text-center text-neutral-500 text-sm">{t('team.noSkills')}<br /><span className="text-xs">{t('team.noSkillsHint')}</span></div>) : (
           <div className="space-y-3">{skills.map((s: any) => (<Link key={s.id} href={`/skills/${s.slug || s.id}`} className="block p-4 border rounded-xl hover:border-neutral-400 hover:bg-neutral-100 transition"><div className="flex items-center justify-between"><div><h3 className="font-bold">{s.name}</h3>{s.short_summary && <p className="text-sm text-neutral-500 mt-1">{s.short_summary}</p>}</div><div className="flex items-center gap-3 text-xs shrink-0 ml-4"><span className="flex items-center gap-1" title={t('detail.likes')}><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="#F43F5E"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg><span className="text-neutral-600">{s.stats?.likes_total ?? 0}</span></span><span className="flex items-center gap-1" title={t('detail.downloads')}><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="#5C85FF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span className="text-neutral-600">{s.stats?.downloads_total ?? 0}</span></span></div></div></Link>))}</div>

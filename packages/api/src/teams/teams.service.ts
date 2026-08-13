@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Team } from './team.entity';
 import { TeamMember } from './team-member.entity';
+import { TeamJoinRequest } from './team-join-request.entity';
 import { Skill } from '../skills/skill.entity';
 import { User } from '../auth/user.entity';
 import { SkillsService } from '../skills/skills.service';
@@ -19,6 +20,8 @@ export class TeamsService {
     private skillRepository: Repository<Skill>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(TeamJoinRequest)
+    private joinRequestRepository: Repository<TeamJoinRequest>,
     private skillsService: SkillsService,
   ) {}
 
@@ -93,6 +96,97 @@ export class TeamsService {
     return { ok: true };
   }
 
+  // ── 公开加入申请（与「按邮箱邀请」并列的第二种加成员方式）──
+
+  /** 当前用户申请加入公开团队（owner 无需申请、已成员忽略、重复 pending 报错） */
+  async requestToJoin(teamId: string, userId: string, message?: string) {
+    const team = await this.teamRepository.findOne({ where: { id: teamId } });
+    if (!team) throw new NotFoundException('Team not found');
+    if (!team.is_public) {
+      throw new BadRequestException('私有团队不接受公开申请，请联系团队 owner 邀请');
+    }
+    if (team.owner_user_id === userId) return { ok: true, already: true };
+    if (await this.memberRepository.findOne({ where: { team_id: teamId, user_id: userId } })) {
+      return { ok: true, already: true };
+    }
+    const existing = await this.joinRequestRepository.findOne({ where: { team_id: teamId, user_id: userId } });
+    if (existing && existing.status === 'pending') {
+      throw new BadRequestException('您已提交加入申请，等待 owner 审批');
+    }
+    // 历史 approved/rejected 记录允许重新申请（覆盖更新）
+    const req = this.joinRequestRepository.create({
+      team_id: teamId,
+      user_id: userId,
+      role: MemberRole.VIEWER,
+      status: 'pending',
+      message: (message || '').trim() || null,
+    });
+    await this.joinRequestRepository.save(req);
+    return { ok: true, request: req };
+  }
+
+  /** owner 查看待审申请列表 */
+  async listJoinRequests(teamId: string, operatorId: string) {
+    await this.assertOwner(teamId, operatorId);
+    const list = await this.joinRequestRepository.find({
+      where: { team_id: teamId, status: 'pending' },
+      relations: ['user'],
+      order: { created_at: 'ASC' },
+    });
+    return list.map((r) => ({
+      team_id: r.team_id,
+      user_id: r.user_id,
+      role: r.role,
+      status: r.status,
+      message: r.message,
+      created_at: r.created_at,
+      user: { id: r.user.id, name: r.user.name, email: r.user.email, avatar_url: r.user.avatar_url },
+    }));
+  }
+
+  /** owner 审批：approve 加入成员；reject 仅标记 */
+  async reviewJoinRequest(
+    teamId: string,
+    userId: string,
+    action: 'approve' | 'reject',
+    role: MemberRole,
+    operatorId: string,
+  ) {
+    await this.assertOwner(teamId, operatorId);
+    if (role === MemberRole.OWNER) throw new BadRequestException('Cannot assign owner role');
+    const req = await this.joinRequestRepository.findOne({
+      where: { team_id: teamId, user_id: userId, status: 'pending' },
+    });
+    if (!req) throw new NotFoundException('Pending request not found');
+
+    if (action === 'reject') {
+      req.status = 'rejected';
+      await this.joinRequestRepository.save(req);
+      return { ok: true, status: 'rejected' };
+    }
+
+    // approve：加入成员（若已存在成员不重复插入）
+    if (!(await this.memberRepository.findOne({ where: { team_id: teamId, user_id: userId } }))) {
+      await this.memberRepository.save(
+        this.memberRepository.create({ team_id: teamId, user_id: userId, role }),
+      );
+    }
+    req.status = 'approved';
+    req.role = role;
+    await this.joinRequestRepository.save(req);
+    return { ok: true, status: 'approved' };
+  }
+
+  /** 申请人撤销自己的 pending 申请 */
+  async cancelJoinRequest(teamId: string, userId: string) {
+    const req = await this.joinRequestRepository.findOne({
+      where: { team_id: teamId, user_id: userId, status: 'pending' },
+    });
+    if (!req) throw new NotFoundException('No pending request');
+    await this.joinRequestRepository.remove(req);
+    return { ok: true };
+  }
+
   async getMyTeams(userId: string) {
     return this.memberRepository.find({
       where: { user_id: userId },
@@ -161,12 +255,22 @@ export class TeamsService {
       await this.skillsService.attachUpdateInfo(skillItems, userId);
     }
 
+    // 当前登录用户对该团队的待审加入申请（用于详情页「已申请/撤销」状态）
+    const hasPendingRequest = userId
+      ? myMembership
+        ? false
+        : !!(await this.joinRequestRepository.findOne({
+            where: { team_id: teamId, user_id: userId, status: 'pending' },
+          }))
+      : null;
+
     return {
       ...team,
       members: safeMembers,
       skills: skillItems,
       is_owner: !!userId && team.owner_user_id === userId,
       my_role: myMembership?.role ?? null,
+      has_pending_request: hasPendingRequest,
     };
   }
 

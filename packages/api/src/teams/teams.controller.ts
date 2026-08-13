@@ -59,6 +59,38 @@ export class TeamsController {
     return this.teamsService.removeMember(id, userId, req.user.sub);
   }
 
+  // ── 公开加入申请（与「按邮箱邀请」并列的第二种加成员方式）──
+  @UseGuards(AuthGuard)
+  @Post(':id/join-requests')
+  requestJoin(@Param('id') id: string, @Body() body: any, @Request() req: any) {
+    return this.teamsService.requestToJoin(id, req.user.sub, body?.message);
+  }
+
+  @UseGuards(AuthGuard)
+  @Get(':id/join-requests')
+  listJoinRequests(@Param('id') id: string, @Request() req: any) {
+    return this.teamsService.listJoinRequests(id, req.user.sub);
+  }
+
+  @UseGuards(AuthGuard)
+  @Patch(':id/join-requests/:userId')
+  reviewJoin(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Body() body: any,
+    @Request() req: any,
+  ) {
+    const action = body?.action === 'approve' ? 'approve' : 'reject';
+    const role = this.parseRole(body?.role);
+    return this.teamsService.reviewJoinRequest(id, userId, action, role, req.user.sub);
+  }
+
+  @UseGuards(AuthGuard)
+  @Delete(':id/join-requests')
+  cancelJoin(@Param('id') id: string, @Request() req: any) {
+    return this.teamsService.cancelJoinRequest(id, req.user.sub);
+  }
+
   // 仅允许 maintainer / viewer；owner 不可通过接口指定
   private parseRole(raw: string | undefined, required = false): MemberRole {
     if (!raw) {
@@ -67,7 +99,7 @@ export class TeamsController {
     }
     const r = String(raw).toLowerCase();
     if (r !== MemberRole.MAINTAINER && r !== MemberRole.VIEWER) {
-      throw new BadRequestException('Invalid role, only maintainer or viewer allowed');
+      throw new BadRequestException('Invalid role, only maintainer or member allowed');
     }
     return r as MemberRole;
   }
