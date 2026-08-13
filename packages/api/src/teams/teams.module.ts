@@ -5,12 +5,13 @@ import { TeamsController } from './teams.controller';
 import { Team } from './team.entity';
 import { TeamMember } from './team-member.entity';
 import { Skill } from '../skills/skill.entity';
+import { User } from '../auth/user.entity';
 import { OptionalAuthGuard } from '../auth/optional-auth.guard';
 import { SkillsModule } from '../skills/skills.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Team, TeamMember, Skill]),
+    TypeOrmModule.forFeature([Team, TeamMember, Skill, User]),
     SkillsModule,
   ],
   providers: [TeamsService, OptionalAuthGuard],

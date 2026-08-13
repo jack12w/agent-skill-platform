@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Team } from './team.entity';
 import { TeamMember } from './team-member.entity';
 import { Skill } from '../skills/skill.entity';
+import { User } from '../auth/user.entity';
 import { SkillsService } from '../skills/skills.service';
 import { MemberRole, SkillStatus } from '@platform/shared';
 
@@ -16,6 +17,8 @@ export class TeamsService {
     private memberRepository: Repository<TeamMember>,
     @InjectRepository(Skill)
     private skillRepository: Repository<Skill>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
     private skillsService: SkillsService,
   ) {}
 
@@ -43,6 +46,51 @@ export class TeamsService {
   async addMember(teamId: string, userId: string, role: MemberRole) {
     const member = this.memberRepository.create({ team_id: teamId, user_id: userId, role });
     return this.memberRepository.save(member);
+  }
+
+  // 仅团队 owner 可管理成员；复用此断言避免各方法重复判断
+  private async assertOwner(teamId: string, operatorId: string) {
+    const team = await this.teamRepository.findOne({ where: { id: teamId } });
+    if (!team) throw new NotFoundException('Team not found');
+    if (team.owner_user_id !== operatorId) {
+      throw new ForbiddenException('Only the team owner can manage members');
+    }
+    return team;
+  }
+
+  // 按邮箱直接添加成员：查到已注册用户后直接加入并指定角色（无需对方确认）
+  async addMemberByEmail(teamId: string, email: string, role: MemberRole, operatorId: string) {
+    await this.assertOwner(teamId, operatorId);
+    const normalized = (email || '').trim().toLowerCase();
+    if (!normalized) throw new BadRequestException('Email is required');
+    if (role === MemberRole.OWNER) throw new BadRequestException('Cannot add an owner via invite');
+
+    const user = await this.userRepository.findOne({ where: { email: normalized } });
+    if (!user) throw new BadRequestException('该邮箱对应的用户不存在');
+
+    const existing = await this.memberRepository.findOne({ where: { team_id: teamId, user_id: user.id } });
+    if (existing) throw new BadRequestException('该用户已是团队成员');
+
+    const member = this.memberRepository.create({ team_id: teamId, user_id: user.id, role });
+    return this.memberRepository.save(member);
+  }
+
+  async updateMemberRole(teamId: string, userId: string, role: MemberRole, operatorId: string) {
+    await this.assertOwner(teamId, operatorId);
+    if (role === MemberRole.OWNER) throw new BadRequestException('Cannot assign owner role');
+    const member = await this.memberRepository.findOne({ where: { team_id: teamId, user_id: userId } });
+    if (!member) throw new NotFoundException('Member not found');
+    member.role = role;
+    return this.memberRepository.save(member);
+  }
+
+  async removeMember(teamId: string, userId: string, operatorId: string) {
+    await this.assertOwner(teamId, operatorId);
+    const team = await this.teamRepository.findOne({ where: { id: teamId } });
+    if (team!.owner_user_id === userId) throw new BadRequestException('Cannot remove the team owner');
+    const result = await this.memberRepository.delete({ team_id: teamId, user_id: userId });
+    if (result.affected === 0) throw new NotFoundException('Member not found');
+    return { ok: true };
   }
 
   async getMyTeams(userId: string) {

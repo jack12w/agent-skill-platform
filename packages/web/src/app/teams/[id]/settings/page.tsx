@@ -30,6 +30,10 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
   const [teamPlan, setTeamPlan] = useState<{ monthly: string; quarterly: string; yearly: string }>({ monthly: '', quarterly: '', yearly: '' });
   const [planLoading, setPlanLoading] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
+  // ── 成员管理（按邮箱邀请 / 改角色 / 移除）──
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'maintainer' | 'viewer'>('viewer');
+  const [memberLoading, setMemberLoading] = useState(false);
 
   const load = async () => {
     const token = localStorage.getItem('token'); if (!token) return router.push('/auth');
@@ -160,6 +164,62 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
     finally { setSavingTags(false); }
   };
 
+  const roleLabel = (role: string) =>
+    role === 'owner' ? t('team.roleOwner') : role === 'maintainer' ? t('team.roleMaintainer') : t('team.roleViewer');
+
+  // 按邮箱邀请成员（后端查到已注册用户后直接加入，无需对方确认）
+  const handleAddMember = async () => {
+    const token = localStorage.getItem('token'); if (!token) return;
+    const email = inviteEmail.trim();
+    if (!email) { alert(t('team.emailNotFound')); return; }
+    setMemberLoading(true);
+    try {
+      const res = await fetch(`/api/teams/${params.id}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email, role: inviteRole }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || t('team.emailNotFound'));
+      setInviteEmail('');
+      alert(t('team.memberAdded'));
+      await load();
+    } catch (err: any) { alert(err.message || t('team.emailNotFound')); }
+    finally { setMemberLoading(false); }
+  };
+
+  const handleChangeRole = async (userId: string, role: string) => {
+    const token = localStorage.getItem('token'); if (!token) return;
+    setMemberLoading(true);
+    try {
+      const res = await fetch(`/api/teams/${params.id}/members/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ role }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || t('team.invalidRole'));
+      await load();
+    } catch (err: any) { alert(err.message || t('team.invalidRole')); }
+    finally { setMemberLoading(false); }
+  };
+
+  const handleRemoveMember = async (userId: string) => {
+    if (!confirm(t('team.removeMember') + '?')) return;
+    const token = localStorage.getItem('token'); if (!token) return;
+    setMemberLoading(true);
+    try {
+      const res = await fetch(`/api/teams/${params.id}/members/${userId}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || t('team.cannotRemoveOwner'));
+      alert(t('team.memberRemoved'));
+      await load();
+    } catch (err: any) { alert(err.message || t('team.cannotRemoveOwner')); }
+    finally { setMemberLoading(false); }
+  };
+
   if (loading) return <div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center text-neutral-500">{t('skills.loading')}</div>;
   if (error) return (<div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center"><h1 className="text-2xl font-bold mb-2">{t('team.cannotLoad')}</h1><p className="text-neutral-500 mb-6">{error}</p><Link href={`/teams/${params.id}`} className="text-brand-600 underline">{t('team.backToTeam')}</Link></div>);
   if (!team) return null;
@@ -283,8 +343,59 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
           )}
         </div>
       )}
-      <div className="mb-10"><h2 className="text-xl font-bold mb-4">{t('team.members')} ({members.length})</h2>
-        <div className="space-y-2">{members.map((m: any) => (<div key={m.id} className="flex items-center justify-between p-3 border rounded-lg"><div><div className="font-medium">{m.user?.name || m.user?.email || m.user_id.slice(0, 8)}</div><div className="text-xs text-neutral-500">{m.user?.email}</div></div><span className="text-xs px-2 py-1 bg-neutral-100 rounded capitalize">{m.role}</span></div>))}</div>
+      <div className="mb-10">
+        <h2 className="text-xl font-bold mb-4">{t('team.members')} ({members.length})</h2>
+        {team.is_owner && (
+          <div className="mb-4 p-4 border rounded-xl bg-neutral-50 flex flex-col sm:flex-row gap-3 sm:items-end">
+            <div className="flex-1">
+              <label className="block text-xs font-medium text-neutral-600 mb-1">{t('team.inviteTitle')}</label>
+              <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder={t('team.inviteEmailPlaceholder')} className="w-full px-3 py-2 border rounded-lg text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-neutral-600 mb-1">{t('team.inviteRoleLabel')}</label>
+              <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as 'maintainer' | 'viewer')} className="px-3 py-2 border rounded-lg text-sm bg-white">
+                <option value="maintainer">{t('team.roleMaintainer')}</option>
+                <option value="viewer">{t('team.roleViewer')}</option>
+              </select>
+            </div>
+            <button onClick={handleAddMember} disabled={memberLoading || !inviteEmail.trim()} className="px-4 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 disabled:opacity-50">
+              {memberLoading ? t('team.saving') : t('team.addMember')}
+            </button>
+          </div>
+        )}
+        <div className="space-y-2">
+          {members.map((m: any) => {
+            const isOwner = m.role === 'owner';
+            return (
+              <div key={m.id} className="flex items-center justify-between p-3 border rounded-lg">
+                <div>
+                  <div className="font-medium">{m.user?.name || m.user?.email || m.user_id.slice(0, 8)}</div>
+                  <div className="text-xs text-neutral-500">{m.user?.email}</div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {team.is_owner && !isOwner ? (
+                    <select
+                      value={m.role}
+                      disabled={memberLoading}
+                      onChange={(e) => handleChangeRole(m.user_id, e.target.value)}
+                      className="text-xs px-2 py-1 border rounded bg-white"
+                    >
+                      <option value="maintainer">{t('team.roleMaintainer')}</option>
+                      <option value="viewer">{t('team.roleViewer')}</option>
+                    </select>
+                  ) : (
+                    <span className="text-xs px-2 py-1 bg-neutral-100 rounded">{roleLabel(m.role)}</span>
+                  )}
+                  {team.is_owner && !isOwner && (
+                    <button onClick={() => handleRemoveMember(m.user_id)} disabled={memberLoading} className="text-xs text-danger-500 hover:underline">
+                      {memberLoading ? t('team.removingMember') : t('team.removeMember')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
       <div><h2 className="text-xl font-bold mb-4">{t('team.teamSkills')} ({skills.length})</h2>
         {skills.length === 0 ? (<div className="p-6 border border-dashed rounded-xl text-center text-neutral-500 text-sm">{t('team.noSkills')}<br /><span className="text-xs">{t('team.noSkillsHint')}</span></div>) : (
