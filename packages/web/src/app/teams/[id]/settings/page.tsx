@@ -44,8 +44,8 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
       const res = await fetch(`/api/teams/${params.id}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.message || `HTTP ${res.status}`); }
       const tData = await res.json(); setTeam(tData); setForm({ name: tData.name ?? '', description: tData.description ?? '' }); setIsPublic(tData.is_public !== false);
-      // 加入申请（仅 owner 拉取待审列表）
-      if (tData.is_owner) {
+      // 加入申请（owner 或维护者可拉取待审列表）
+      if (tData.is_owner || tData.is_manager) {
         setRequestsLoading(true);
         fetch(`/api/teams/${params.id}/join-requests`, { headers: { Authorization: `Bearer ${token}` } })
           .then((r) => (r.ok ? r.json() : []))
@@ -256,6 +256,8 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
 
   const skills = team.skills ?? [];
   const members = team.members ?? [];
+  // owner 或维护者均可管理成员（添加 / 移除 / 审批申请）；改角色等仍限 owner
+  const canManage = team.is_owner || team.is_manager;
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
@@ -375,7 +377,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
       )}
       <div className="mb-10">
         <h2 className="text-xl font-bold mb-4">{t('team.members')} ({members.length})</h2>
-        {team.is_owner && (
+        {canManage && (
           <div className="mb-4 p-4 border rounded-xl bg-neutral-50 flex flex-col sm:flex-row gap-3 sm:items-end">
             <div className="flex-1">
               <label className="block text-xs font-medium text-neutral-600 mb-1">{t('team.inviteTitle')}</label>
@@ -416,7 +418,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
                   ) : (
                     <span className="text-xs px-2 py-1 bg-neutral-100 rounded">{roleLabel(m.role)}</span>
                   )}
-                  {team.is_owner && !isOwner && (
+                  {canManage && !isOwner && (
                     <button onClick={() => handleRemoveMember(m.user_id)} disabled={memberLoading} className="text-xs text-danger-500 hover:underline">
                       {memberLoading ? t('team.removingMember') : t('team.removeMember')}
                     </button>
@@ -428,8 +430,8 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {/* 加入申请（owner 审批） */}
-      {team.is_owner && (
+      {/* 加入申请（owner 或维护者审批） */}
+      {canManage && (
         <div className="mb-10">
           <h2 className="text-xl font-bold mb-4">{t('team.joinRequests')} ({joinRequests.length})</h2>
           {requestsLoading ? (
