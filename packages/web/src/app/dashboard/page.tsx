@@ -5,15 +5,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import useTranslation from '../../hooks/useTranslation';
 import { fetchTagGroups } from '../../lib/tag-groups';
+import { clearAuthCookies } from '../components/AuthProvider';
 
 function getCookie(name: string): string | undefined {
   const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
   return m ? m[1] : undefined;
 }
-function eraseCookie(name: string) {
-  document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
-}
-
 export default function Dashboard() {
   const router = useRouter();
   const { t } = useTranslation();
@@ -85,8 +82,7 @@ export default function Dashboard() {
           // getMe 失败（如 token 已失效），清掉脏状态
           localStorage.removeItem('token');
           localStorage.removeItem('user');
-          eraseCookie('token');
-          eraseCookie('user');
+          clearAuthCookies();
         }
       })
       .catch(() => {})

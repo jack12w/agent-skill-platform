@@ -126,6 +126,7 @@ export default function AuthPage() {
       if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);
       localStorage.setItem('token', data.access_token);
       localStorage.setItem('user', JSON.stringify(data.user));
+      setAuthCookie(data.access_token, JSON.stringify(data.user));
       router.push(redirect || '/dashboard');
     } catch (err: any) {
       alert((tab === 'login' ? t('auth.loginFailed') : t('auth.registerFailed')) + ': ' + (err.message || String(err)));
@@ -174,6 +175,7 @@ export default function AuthPage() {
       if (!res.ok) throw new Error(data.message);
       localStorage.setItem('token', data.access_token);
       localStorage.setItem('user', JSON.stringify(data.user));
+      setAuthCookie(data.access_token, JSON.stringify(data.user));
       router.push(redirect || '/dashboard');
     } catch { alert('模拟登录失败'); }
   };
