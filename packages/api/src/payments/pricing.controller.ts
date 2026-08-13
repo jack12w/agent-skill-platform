@@ -19,7 +19,7 @@ import { TeamMember } from '../teams/team-member.entity';
 import { SettingsService } from './settings.service';
 import { AuthGuard } from '../auth/auth.guard';
 
-const ALLOWED_MODES = ['free', 'paid', 'member_only', 'both'] as const;
+const ALLOWED_MODES = ['free', 'paid'] as const;
 type PricingMode = (typeof ALLOWED_MODES)[number];
 
 /**
@@ -121,7 +121,11 @@ export class PricingController {
       throw new ForbiddenException('Only the skill owner, a team member, or an admin can set its pricing');
     }
 
-    const mode = body?.pricing_mode as PricingMode;
+    const rawMode = body?.pricing_mode as string;
+    // 兼容旧客户端：member_only / both 已废弃，统一归并为 paid。
+    // 「会员可免费下载」不再作为独立定价类型，而是由 owner 是否配置会员套餐自动派生。
+    const mode: PricingMode =
+      rawMode === 'member_only' || rawMode === 'both' ? 'paid' : (rawMode as PricingMode);
     if (!ALLOWED_MODES.includes(mode)) {
       throw new BadRequestException(
         `Invalid pricing_mode. Must be one of: ${ALLOWED_MODES.join(', ')}`,
@@ -130,51 +134,35 @@ export class PricingController {
 
     const priceCents = Math.max(0, Math.round(Number(body?.price_cents) || 0));
     const commercialCents = Math.max(0, Math.round(Number(body?.commercial_price_cents) || 0));
-    // 会员专属 / 付费+会员：会员必然包含；付费模式由创作者勾选决定
-    const memberIncluded =
-      mode === 'member_only' || mode === 'both' ? true : Boolean(body?.member_included);
 
     /*
-     * 单卖价下限校验。
-     * 之前只做 Math.max(0, …) 不校验下限，允许存下 pricing_mode='paid' 且 price_cents=0：
-     * 付费墙会照常拦截下载（402），但下单时金额为 0 会被微信直接拒绝（最低 1 分），
-     * 技能就此陷入「下载不了也买不了」的死锁。member_only 不走单卖，价格恒为 0。
+     * 会员可免费下载（member_included）自动派生：
+     * 付费技能若所属创作者/团队已配置会员套餐 → true（订阅者可免费下）；否则 false（纯单购）。
+     * 不再由前端勾选，避免与套餐实际状态脱节；同时由套餐变更接口同步刷新（见 PaymentsController）。
      */
-    const MIN_SELL_CENTS = 100; // ¥1，低于此额抽成取整为 0 且不具商业意义
-    const sellable = mode === 'paid' || mode === 'both';
+    const targetType = skill.owner_team_id ? 'team' : 'user';
+    const targetId = skill.owner_team_id || skill.owner_user_id;
+    const hasPlan = targetId
+      ? !!(await this.planRepo.findOne({ where: { target_type: targetType, target_id: targetId } }))
+      : false;
+    const memberIncluded = mode === 'paid' ? hasPlan : false;
+
+    /*
+     * 单卖价下限校验：paid 模式下 price_cents 不能低于 ¥1，
+     * 否则付费墙拦截下载但下单金额为 0 会被微信拒绝（最低 1 分），技能陷入死锁。
+     */
+    const MIN_SELL_CENTS = 100; // ¥1
+    const sellable = mode === 'paid';
     if (sellable && priceCents < MIN_SELL_CENTS) {
-      throw new BadRequestException(
-        `单独售卖价不能低于 ${MIN_SELL_CENTS / 100} 元。若不想单独售卖，请选择「仅会员可下载」模式。`,
-      );
+      throw new BadRequestException(`单独售卖价不能低于 ${MIN_SELL_CENTS / 100} 元。`);
     }
     if (sellable && commercialCents > 0 && commercialCents < MIN_SELL_CENTS) {
       throw new BadRequestException(`商用授权价不能低于 ${MIN_SELL_CENTS / 100} 元`);
     }
 
-    /*
-     * 会员依赖模式防呆：member_only / both 依赖创作者会员套餐，
-     * 若未设置套餐则用户无法订阅 → 技能变死路（无人可下载）。
-     * 此处强制校验，引导创作者先去交易设置配置会员价。
-     */
-    if (mode === 'member_only' || mode === 'both') {
-      const targetType = skill.owner_team_id ? 'team' : 'user';
-      const targetId = skill.owner_team_id || skill.owner_user_id;
-      if (targetId) {
-        const plan = await this.planRepo.findOne({
-          where: { target_type: targetType, target_id: targetId },
-        });
-        if (!plan) {
-          throw new BadRequestException(
-            '尚未设置会员套餐，无法使用「会员专属」或「付费+会员免费」模式。请先在交易设置中配置会员定价。',
-          );
-        }
-      }
-    }
-
     const pricing = this.pricingRepo.create({
       skill_id: skillId,
       pricing_mode: mode,
-      // member_only 不单卖，价格一律归零，避免残留旧价被误当作可购买
       price_cents: sellable ? priceCents : 0,
       member_included: memberIncluded,
       commercial_price_cents: sellable ? commercialCents : 0,

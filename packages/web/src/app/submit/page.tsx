@@ -255,7 +255,6 @@ export default function SubmitSkill() {
             body: JSON.stringify({
               pricing_mode: pricing.pricing_mode,
               price_cents: Math.max(0, Math.round((Number(pricing.price_cents) || 0) * 100)),
-              member_included: pricing.member_included,
               commercial_price_cents: Math.max(0, Math.round((Number(pricing.commercial_price_cents) || 0) * 100)),
             }),
           });
@@ -421,49 +420,32 @@ export default function SubmitSkill() {
 
           {/* 收费模式 */}
           <div className="grid grid-cols-2 gap-2 mb-4">
-            {([
-              { key: 'free', label: t('edit.modeFree'), desc: t('edit.modeFreeDesc') },
-              { key: 'paid', label: t('edit.modePaid'), desc: t('edit.modePaidDesc') },
-              { key: 'member_only', label: t('edit.modeMember'), desc: t('edit.modeMemberDesc') },
-              { key: 'both', label: t('edit.modeBoth'), desc: t('edit.modeBothDesc') },
-            ] as const).map((m) => {
-              const needsPlan = m.key === 'member_only' || m.key === 'both';
-              const blocked = needsPlan && !hasMembershipPlan;
-              return (
-                <button
-                  key={m.key}
-                  type="button"
-                  disabled={blocked}
-                  onClick={() => {
-                    if (blocked) return;
-                    setPricing((p) => ({ ...p, pricing_mode: m.key, member_included: m.key === 'member_only' || m.key === 'both' ? true : p.member_included }));
-                  }}
-                  className={`text-left px-3 py-2.5 rounded-lg border transition-all ${
-                    blocked
-                      ? 'border-neutral-200 bg-neutral-50 opacity-60 cursor-not-allowed'
-                      : pricing.pricing_mode === m.key
-                      ? 'border-brand-600 bg-brand-50'
-                      : 'border-neutral-200 hover:bg-neutral-50'
-                  }`}
-                >
-                  <div className="text-sm font-medium">
-                    {m.label}
-                    {blocked && <span className="ml-1 text-[10px] text-amber-600">需先设套餐</span>}
-                  </div>
-                  <div className="text-[11px] text-neutral-500 mt-0.5 leading-snug">{m.desc}</div>
-                </button>
-              );
-            })}
+          {([
+            { key: 'free', label: t('edit.modeFree'), desc: t('edit.modeFreeDesc') },
+            { key: 'paid', label: t('edit.modePaid'), desc: t('edit.modePaidDesc') },
+          ] as const).map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              onClick={() => setPricing((p) => ({ ...p, pricing_mode: m.key }))}
+              className={`text-left px-3 py-2.5 rounded-lg border transition-all ${
+                pricing.pricing_mode === m.key
+                  ? 'border-brand-600 bg-brand-50'
+                  : 'border-neutral-200 hover:bg-neutral-50'
+              }`}
+            >
+              <div className="text-sm font-medium">{m.label}</div>
+              <div className="text-[11px] text-neutral-500 mt-0.5 leading-snug">{m.desc}</div>
+            </button>
+          ))}
           </div>
-          {!hasMembershipPlan && (
-            <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mb-4">
-              {t('edit.noPlanWarningPrefix')}
-              <Link href="/account/membership" className="underline font-medium text-amber-700 hover:text-amber-800">「{t('edit.noPlanWarningLink')}」</Link>
-              {t('edit.noPlanWarningSuffix')}
+          {pricing.pricing_mode === 'paid' && (
+            <p className="text-xs text-neutral-500 bg-neutral-50 rounded-lg px-3 py-2 mb-4">
+              {hasMembershipPlan ? t('edit.paidWithPlanHint') : t('edit.paidNoPlanHint')}
             </p>
           )}
 
-          {pricing.pricing_mode === 'paid' || pricing.pricing_mode === 'both' ? (
+          {pricing.pricing_mode === 'paid' ? (
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-neutral-700 mb-1">{t('edit.priceLabel')}</label>
@@ -490,19 +472,7 @@ export default function SubmitSkill() {
                 />
                 <span className="block text-xs text-neutral-500 mt-1">{t('edit.commercialHint')}</span>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={pricing.pricing_mode === 'both' ? true : pricing.member_included}
-                  disabled={pricing.pricing_mode === 'both'}
-                  onChange={(e) => setPricing((p) => ({ ...p, member_included: e.target.checked }))}
-                  className="w-4 h-4"
-                />
-                <span className="text-sm text-neutral-700">{t('edit.memberIncluded')}</span>
-              </label>
             </div>
-          ) : pricing.pricing_mode === 'member_only' ? (
-            <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">{t('edit.modeMemberNote')}</p>
           ) : (
             <p className="text-xs text-neutral-500">{t('edit.modeFreeNote')}</p>
           )}

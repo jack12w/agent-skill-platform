@@ -137,6 +137,8 @@ const zh = {
     memberIncluded: '会员可免费下载（勾选后会员无需单购）',
     modeMemberNote: '会员专属：仅订阅你的会员可免费下载该技能，订阅费直接计入你的余额（平台抽取约定比例佣金）。',
     modeFreeNote: '免费：任何人都能下载使用，无收益分成。',
+    paidWithPlanHint: '付费技能：你已配置会员套餐，订阅你的会员可免费下载本技能。',
+    paidNoPlanHint: '付费技能：你尚未配置会员套餐，用户需单次购买后下载（如需「会员免费下载」，请先到交易设置开启会员套餐）。',
     noPlanWarningPrefix: '你尚未设置会员套餐，「会员专属」和「付费+会员免费」模式暂不可用。请点击',
     noPlanWarningLink: '订阅套餐',
     noPlanWarningSuffix: '配置你的会员价格。',

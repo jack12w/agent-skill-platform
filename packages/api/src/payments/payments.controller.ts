@@ -22,9 +22,10 @@ import { OrdersService } from './orders.service';
 import { MembershipService } from './membership.service';
 import { SettingsService } from './settings.service';
 import { BalanceService } from './balance.service';
-import { CreatorBalance, BalanceTransaction, Withdrawal, CreatorMembershipPlan, CreatorSubscription } from './payments.entity';
+import { CreatorBalance, BalanceTransaction, Withdrawal, CreatorMembershipPlan, CreatorSubscription, SkillPricing } from './payments.entity';
 import { User } from '../auth/user.entity';
 import { Team } from '../teams/team.entity';
+import { Skill } from '../skills/skill.entity';
 
 @Controller('pay')
 @UseGuards(AuthGuard)
@@ -42,10 +43,32 @@ export class PaymentsController {
     @InjectRepository(Team) private readonly teamRepo: Repository<Team>,
     @InjectRepository(CreatorMembershipPlan) private readonly planRepo: Repository<CreatorMembershipPlan>,
     @InjectRepository(CreatorSubscription) private readonly csRepo: Repository<CreatorSubscription>,
+    @InjectRepository(SkillPricing) private readonly skillPricingRepo: Repository<SkillPricing>,
+    @InjectRepository(Skill) private readonly skillRepo: Repository<Skill>,
   ) {}
 
   private uid(req: Request): string {
     return (req as any).user?.sub;
+  }
+
+  /**
+   * 同步某创作者/团队名下所有「付费」技能的 member_included 标志。
+   * 该 owner 配置了会员套餐 → memberIncluded=true（订阅者免费下）；
+   * 套餐删除（若未来提供删除端点）→ 传 false 即可收回。
+   * 与 PricingController.updatePricing 的自动派生互补，覆盖「先定价、后开套餐」的时序。
+   */
+  private async syncOwnerMemberIncluded(targetType: string, targetId: string, memberIncluded: boolean) {
+    const where = targetType === 'team' ? { owner_team_id: targetId } : { owner_user_id: targetId };
+    const skills = await this.skillRepo.find({ where, select: ['id'] });
+    if (skills.length === 0) return;
+    const ids = skills.map((s) => s.id);
+    await this.skillPricingRepo
+      .createQueryBuilder()
+      .update(SkillPricing)
+      .set({ member_included: memberIncluded })
+      .where('skill_id IN (:...ids)', { ids })
+      .andWhere('pricing_mode = :mode', { mode: 'paid' })
+      .execute();
   }
 
   /** 创建订单并发起支付 */
@@ -166,6 +189,8 @@ export class PaymentsController {
     row.yearly_cents = y;
     row.currency = 'CNY';
     const saved = await this.planRepo.save(row);
+    // 套餐存在 → 该创作者/团队名下所有付费技能的「会员可免费下载」置 true（订阅者可免费下）
+    await this.syncOwnerMemberIncluded(targetType, targetId, true);
     return {
       targetType,
       targetId,

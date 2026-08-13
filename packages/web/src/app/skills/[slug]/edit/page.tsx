@@ -64,8 +64,11 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
           if (pResp.ok) {
             const pj = await pResp.json();
             if (pj.pricing) {
+              // 兼容旧数据：member_only / both 已废弃，统一归并为 paid
+              const rawMode = pj.pricing.pricing_mode || 'free';
+              const mode = ['member_only', 'both'].includes(rawMode) ? 'paid' : rawMode;
               setPricing({
-                pricing_mode: pj.pricing.pricing_mode || 'free',
+                pricing_mode: mode,
                 price_cents: Math.round((Number(pj.pricing.price_cents) || 0) / 100),
                 member_included: Boolean(pj.pricing.member_included),
                 commercial_price_cents: Math.round((Number(pj.pricing.commercial_price_cents) || 0) / 100),
@@ -73,7 +76,7 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
             }
           }
         } catch {}
-        // 查创作者是否有会员套餐（决定 member_only / both 模式是否可用）
+        // 查创作者是否有会员套餐（决定付费技能的「会员可免费下载」提示文案）
         try {
           const tType = s.owner_team_id ? 'team' : 'user';
           const tId = s.owner_team_id || s.owner_user_id;
@@ -115,7 +118,6 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
           body: JSON.stringify({
             pricing_mode: pricing.pricing_mode,
             price_cents: Math.max(0, Math.round((Number(pricing.price_cents) || 0) * 100)),
-            member_included: pricing.member_included,
             commercial_price_cents: Math.max(0, Math.round((Number(pricing.commercial_price_cents) || 0) * 100)),
           }),
         });
@@ -199,46 +201,29 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
           {([
             { key: 'free', label: t('edit.modeFree'), desc: t('edit.modeFreeDesc') },
             { key: 'paid', label: t('edit.modePaid'), desc: t('edit.modePaidDesc') },
-            { key: 'member_only', label: t('edit.modeMember'), desc: t('edit.modeMemberDesc') },
-            { key: 'both', label: t('edit.modeBoth'), desc: t('edit.modeBothDesc') },
-          ] as const).map((m) => {
-            const needsPlan = m.key === 'member_only' || m.key === 'both';
-            const blocked = needsPlan && !hasMembershipPlan;
-            return (
-              <button
-                key={m.key}
-                type="button"
-                disabled={blocked}
-                onClick={() => {
-                  if (blocked) return;
-                  setPricing((p) => ({ ...p, pricing_mode: m.key, member_included: m.key === 'member_only' || m.key === 'both' ? true : p.member_included }));
-                }}
-                className={`text-left px-3 py-2.5 rounded-lg border transition-all ${
-                  blocked
-                    ? 'border-neutral-200 bg-neutral-50 opacity-60 cursor-not-allowed'
-                    : pricing.pricing_mode === m.key
-                    ? 'border-brand-600 bg-brand-50'
-                    : 'border-neutral-200 hover:bg-neutral-50'
-                }`}
-              >
-                <div className="text-sm font-medium">
-                  {m.label}
-                  {blocked && <span className="ml-1 text-[10px] text-amber-600">需先设套餐</span>}
-                </div>
-                <div className="text-[11px] text-neutral-500 mt-0.5 leading-snug">{m.desc}</div>
-              </button>
-            );
-          })}
+          ] as const).map((m) => (
+            <button
+              key={m.key}
+              type="button"
+              onClick={() => setPricing((p) => ({ ...p, pricing_mode: m.key }))}
+              className={`text-left px-3 py-2.5 rounded-lg border transition-all ${
+                pricing.pricing_mode === m.key
+                  ? 'border-brand-600 bg-brand-50'
+                  : 'border-neutral-200 hover:bg-neutral-50'
+              }`}
+            >
+              <div className="text-sm font-medium">{m.label}</div>
+              <div className="text-[11px] text-neutral-500 mt-0.5 leading-snug">{m.desc}</div>
+            </button>
+          ))}
         </div>
-        {!hasMembershipPlan && (
-          <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mb-4">
-            {t('edit.noPlanWarningPrefix')}
-            <Link href="/account/membership" className="underline font-medium text-amber-700 hover:text-amber-800">「{t('edit.noPlanWarningLink')}」</Link>
-            {t('edit.noPlanWarningSuffix')}
+        {pricing.pricing_mode === 'paid' && (
+          <p className="text-xs text-neutral-500 bg-neutral-50 rounded-lg px-3 py-2 mb-4">
+            {hasMembershipPlan ? t('edit.paidWithPlanHint') : t('edit.paidNoPlanHint')}
           </p>
         )}
 
-        {pricing.pricing_mode === 'paid' || pricing.pricing_mode === 'both' ? (
+        {pricing.pricing_mode === 'paid' ? (
           <div className="space-y-4">
             <Field label={t('edit.priceLabel')}>
               <input
@@ -263,19 +248,7 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
               />
               <span className="block text-xs text-neutral-500 mt-1">{t('edit.commercialHint')}</span>
             </Field>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={pricing.pricing_mode === 'both' ? true : pricing.member_included}
-                disabled={pricing.pricing_mode === 'both'}
-                onChange={(e) => setPricing((p) => ({ ...p, member_included: e.target.checked }))}
-                className="w-4 h-4"
-              />
-              <span className="text-sm text-neutral-700">{t('edit.memberIncluded')}</span>
-            </label>
           </div>
-        ) : pricing.pricing_mode === 'member_only' ? (
-          <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">{t('edit.modeMemberNote')}</p>
         ) : (
           <p className="text-xs text-neutral-500">{t('edit.modeFreeNote')}</p>
         )}

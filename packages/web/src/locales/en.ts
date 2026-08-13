@@ -137,6 +137,8 @@ const en = {
     memberIncluded: 'Free for members (checked = members need no purchase)',
     modeMemberNote: 'Members only: only your members can download this skill for free. Subscription fees go straight to your balance (minus platform commission).',
     modeFreeNote: 'Free: anyone can download and use it, with no revenue share.',
+    paidWithPlanHint: 'Paid skill: you have a membership plan, so your subscribers can download it for free.',
+    paidNoPlanHint: 'Paid skill: no membership plan set — users must purchase it. To allow member-free download, enable a membership plan in Trade Settings first.',
     noPlanWarningPrefix: 'You have not set up a membership plan. "Members Only" and "Paid + Member Free" modes are unavailable. Click',
     noPlanWarningLink: 'Subscription Plans',
     noPlanWarningSuffix: ' to set your membership price.',
