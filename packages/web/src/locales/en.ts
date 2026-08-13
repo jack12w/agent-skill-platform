@@ -625,7 +625,7 @@ const en = {
     qsStep4: '4. Create Teams',
     qsStep4Desc: 'Click "Create Team" on your dashboard to get started. As the team owner you can edit the team name, description, and add scene/role/category tags. When publishing or editing a skill, you can link it to a team to manage skills under one team identity.',
     qsTeamShowcase: 'Team page: shows team members (with roles), team skills, and subscriber count. Visitors can filter team skills by tag.',
-    qsTeamVisibility: 'Visibility toggle: in team settings you can switch between "Public" and "Members only". Private teams are visible and downloadable only to their members.',
+    qsTeamVisibility: 'Visibility toggle: in team settings you can switch between "Public" and "Members only". Public teams are visible to everyone, but downloading a skill is gated by that skill\'s pricing / team membership (skills with a subscription price require a subscription or purchase; otherwise free). Private teams are visible and downloadable only to their members.',
     qsTeamSubscribe: 'Subscribe to teams: other users can subscribe to a team and get notified when it publishes new skills or updates.',
     qsTeamRanking: 'Team leaderboard: likes and downloads of team skills count toward the team leaderboard for more exposure.',
     profileTitle: '5. User Profile',

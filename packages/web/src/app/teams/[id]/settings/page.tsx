@@ -282,7 +282,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
           <div>
             <h2 className="text-base font-bold text-neutral-900">对外展示</h2>
             <p className="text-sm text-neutral-500 mt-1">
-              {isPublic ? '开启后，所有用户都能查看并下载该团队的技能' : '关闭后，仅团队成员可以查看并下载该团队的技能'}
+              {isPublic ? '开启后，所有用户都能查看该团队的技能；下载是否收费由团队会员定价决定——已设订阅价的技能需订阅或付费后下载，未设团队会员价则免费下载' : '关闭后，仅团队成员可以查看并下载该团队的技能'}
             </p>
           </div>
           <label className="inline-flex items-center cursor-pointer shrink-0">
