@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import useTranslation from '../../hooks/useTranslation';
+import { clearAuthCookies } from './AuthProvider';
 
 function loadUser() {
   try {
@@ -68,7 +69,7 @@ export default function AvatarMenu() {
             {isAdmin() && (
               <Link href="/hub" onClick={() => setOpen(false)} className="block px-4 py-2 text-sm text-brand-600 hover:bg-neutral-100">{t('admin.hub')}</Link>
             )}
-            <button onClick={() => { localStorage.removeItem('token'); localStorage.removeItem('user'); setOpen(false); setUser(null); router.push('/'); }} className="block w-full text-left px-4 py-2 text-sm text-danger-600 hover:bg-neutral-100">{t('avatar.logout')}</button>
+            <button onClick={() => { localStorage.removeItem('token'); localStorage.removeItem('user'); clearAuthCookies(); setOpen(false); setUser(null); router.push('/'); }} className="block w-full text-left px-4 py-2 text-sm text-danger-600 hover:bg-neutral-100">{t('avatar.logout')}</button>
           </div>
         </>
       )}

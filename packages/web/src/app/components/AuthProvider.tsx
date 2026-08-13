@@ -29,7 +29,7 @@ function hydrateTokenFromCookie() {
   }
 }
 
-function clearAuthCookies() {
+export function clearAuthCookies() {
   if (typeof document === 'undefined') return;
   document.cookie = 'token=; Path=/; Max-Age=0; SameSite=Lax';
   document.cookie = 'user=; Path=/; Max-Age=0; SameSite=Lax';
