@@ -35,6 +35,15 @@ function clearAuthCookies() {
   document.cookie = 'user=; Path=/; Max-Age=0; SameSite=Lax';
 }
 
+// 将登录态同时写入 Cookie（与 mp 静默登录通道一致），使任意页面在任意时刻都能从 Cookie 同步恢复，
+// 不再依赖扫码弹窗的 postMessage / storage 异步通知链。user 传 JSON 字符串，由本函数统一编码。
+export function setAuthCookie(token: string, userJson: string, maxAgeDays = 7) {
+  if (typeof document === 'undefined') return;
+  const maxAge = maxAgeDays * 24 * 60 * 60;
+  document.cookie = `token=${token}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
+  document.cookie = `user=${encodeURIComponent(userJson)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
+}
+
 /**
  * 全局 401 拦截器：监听所有 fetch 请求，当后端返回 401 时自动清除本地 token
  * 并跳转到登录页。
@@ -69,6 +78,21 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       window.fetch = originalFetch;
     };
   }, [router]);
+
+  // 全局兜底：扫码登录弹窗写入 wechat_login_event 后，即使 /auth 的监听偶发未接住，
+  // 这里也从 Cookie 同步到 localStorage，确保任意页面登录态恢复（token 已落盘为 Cookie）。
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'wechat_login_event' && e.newValue) {
+        try {
+          const data = JSON.parse(e.newValue);
+          if (data.type === 'WECHAT_LOGIN') hydrateTokenFromCookie();
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   return <>{children}</>;
 }

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import useTranslation from '../../hooks/useTranslation';
 import { isWechat } from '../../lib/auth';
+import { setAuthCookie } from '../components/AuthProvider';
 
 // 健壮关闭微信弹窗：跨域 302（open.weixin.qq.com）后部分浏览器会收回「脚本可关闭」标记。
 // 弹窗落地页本身也会自关，这里父窗口再尝试一次作为辅助；若关不掉也不阻塞主流程跳转。
@@ -45,6 +46,7 @@ export default function AuthPage() {
     popupRef.current = null;
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(user));
+    setAuthCookie(token, JSON.stringify(user));
     router.push(redirect || '/dashboard');
   }, [router, redirect]);
 

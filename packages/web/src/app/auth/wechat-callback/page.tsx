@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { setAuthCookie } from '../../components/AuthProvider';
 
 // 健壮自关弹窗：直接 window.close() 在跨域 302（open.weixin.qq.com）后常被浏览器静默拦截。
 // 本页反复尝试多种关闭技巧，仍关不掉则明确提示用户手动关闭，绝不再把弹窗重定向到 dashboard。
@@ -56,6 +57,7 @@ export default function WechatLoginCallback() {
       try { parsedUser = JSON.parse(user); } catch {}
       localStorage.setItem('token', token);
       localStorage.setItem('user', user);
+      setAuthCookie(token, user);
       notifyParent({ type: 'WECHAT_LOGIN', token, user: parsedUser });
       setTip('登录成功，正在关闭窗口…');
 
