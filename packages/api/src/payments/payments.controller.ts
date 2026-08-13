@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
+import { Public } from '../auth/public.decorator';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan } from 'typeorm';
 import { OrdersService } from './orders.service';
@@ -113,7 +114,8 @@ export class PaymentsController {
     };
   }
 
-  /** 某创作者的有效会员订阅数（供主页"X人订阅"展示） */
+  /** 某创作者的有效会员订阅数（供主页"X人订阅"展示，纯公开数据，无需登录） */
+  @Public()
   @Get('membership/subscribers/:targetType/:targetId')
   async membershipSubscribers(@Param('targetType') targetType: string, @Param('targetId') targetId: string) {
     return { count: await this.membership.subscriberCount(targetType, targetId) };

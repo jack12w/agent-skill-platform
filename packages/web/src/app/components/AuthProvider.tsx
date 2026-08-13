@@ -59,15 +59,25 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     window.fetch = async (...args: Parameters<typeof fetch>) => {
       const response = await originalFetch(...args);
 
-      // 检测到 401 → token 过期或无效
+      // 检测到 401
       if (response.status === 401) {
         const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url;
-        // 避免登录接口本身返回 401 时陷入死循环
+        // 登录/注册接口本身返回 401（凭证错误）不视为登录态失效，避免死循环
         if (!url.includes('/auth/login') && !url.includes('/auth/register')) {
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          clearAuthCookies();
-          router.push('/auth');
+          // 关键：仅当本次请求「携带了登录态」(Authorization) 时，401 才说明 token 失效，
+          // 应清登录态并跳登录。未携带 token 的「公开请求」(如订阅数、公开列表) 返回 401
+          // 不应清登录态——否则会把游客/公开页的已登录用户误踢回登录页。
+          const init = args[1] as { headers?: Record<string, string> | Headers } | undefined;
+          const headers = init?.headers;
+          const hasAuth =
+            (!!headers && (headers as Record<string, string>).Authorization) ||
+            (typeof Headers !== 'undefined' && headers instanceof Headers && !!headers.get('authorization'));
+          if (hasAuth) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            clearAuthCookies();
+            router.push('/auth');
+          }
         }
       }
 
