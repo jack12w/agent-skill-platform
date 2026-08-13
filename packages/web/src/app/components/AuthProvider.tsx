@@ -79,7 +79,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     };
   }, [router]);
 
-  // 全局兜底：扫码登录弹窗写入 wechat_login_event 后，即使 /auth 的监听偶发未接住，
+  // 跨标签页兜底：扫码登录弹窗写入 wechat_login_event 后，即使 /auth 的监听偶发未接住，
   // 这里也从 Cookie 同步到 localStorage，确保任意页面登录态恢复（token 已落盘为 Cookie）。
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -92,6 +92,27 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  // 纯前端轮询兜底（服务器零负担）：同标签页写入 localStorage 不会触发 storage 事件，
+  // 故以 setInterval 周期性「只读」本地 localStorage.getItem('wechat_login_event')，命中后从 Cookie
+  // 同步登录态到 localStorage，并消费掉该事件避免重复触发。不发任何网络请求。
+  useEffect(() => {
+    const timer = setInterval(() => {
+      try {
+        const raw = localStorage.getItem('wechat_login_event');
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (data && data.type === 'WECHAT_LOGIN') {
+          hydrateTokenFromCookie();
+          localStorage.removeItem('wechat_login_event');
+        } else if (data && data.type === 'WECHAT_LOGIN_ERROR') {
+          // 仅清理残留事件（错误提示由 /auth 的 postMessage/storage 通道负责），避免长期滞留
+          localStorage.removeItem('wechat_login_event');
+        }
+      } catch {}
+    }, 1000);
+    return () => clearInterval(timer);
   }, []);
 
   return <>{children}</>;
