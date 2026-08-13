@@ -34,6 +34,7 @@ export default function UserProfile({ params }: { params: { username: string } }
   const [memberModalOpen, setMemberModalOpen] = useState(false);
   // 无付费套餐时的「免费关注」状态
   const [hasPlan, setHasPlan] = useState(false);
+  const [pendingDownloadSkill, setPendingDownloadSkill] = useState<any>(null);
   const [freeSub, setFreeSub] = useState(false);
   const [freeSubCount, setFreeSubCount] = useState(0);
   const [followBusy, setFollowBusy] = useState(false);
@@ -242,6 +243,12 @@ export default function UserProfile({ params }: { params: { username: string } }
         return;
       }
       if (result.kind === 'payment-required') {
+        // 会员技能且归属创作者已设套餐 → 引导订阅创作者（与详情页一致）
+        if (result.pricing?.member_included && result.owner?.target_type === 'user' && hasPlan) {
+          setPendingDownloadSkill(s);
+          setMemberModalOpen(true);
+          return;
+        }
         setPendingPricing(result.pricing);
         setPendingSkill(s);
         setCheckoutOpen(true);
@@ -492,6 +499,12 @@ export default function UserProfile({ params }: { params: { username: string } }
           onPaid={() => {
             setMemberModalOpen(false);
             refreshMemberState();
+            // 若本次是从「下载被拦截」触发订阅，订阅成功后自动重试下载（与单购支付一致）
+            if (pendingDownloadSkill) {
+              const sk = pendingDownloadSkill;
+              setPendingDownloadSkill(null);
+              handleDownload(sk);
+            }
           }}
         />
       )}
