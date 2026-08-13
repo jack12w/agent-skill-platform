@@ -42,6 +42,7 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [pendingSkill, setPendingSkill] = useState<any>(null);
   const [pendingPricing, setPendingPricing] = useState<any>(null);
+  const [pendingDownloadSkill, setPendingDownloadSkill] = useState<any>(null);
 
   const load = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -253,6 +254,13 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
         return;
       }
       if (result.kind === 'payment-required') {
+        // 会员专属/会员+单卖 且归属团队、且团队已设会员套餐 → 弹「订阅团队」窗口（订阅后整团队技能可下）
+        // 否则回退单技能购买（与技能详情页一致）
+        if (result.pricing?.member_included && result.owner?.target_type === 'team' && hasPlan) {
+          setPendingDownloadSkill(s);
+          setMemberModalOpen(true);
+          return;
+        }
         setPendingPricing(result.pricing);
         setPendingSkill(s);
         setCheckoutOpen(true);
@@ -544,6 +552,12 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
           onPaid={() => {
             setMemberModalOpen(false);
             refreshMemberState();
+            // 若本次是从「下载被拦截」触发订阅，订阅成功后自动重试下载（与单购支付一致）
+            if (pendingDownloadSkill) {
+              const sk = pendingDownloadSkill;
+              setPendingDownloadSkill(null);
+              handleDownload(sk);
+            }
           }}
         />
       )}
