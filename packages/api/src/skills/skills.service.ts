@@ -740,7 +740,11 @@ export class SkillsService {
     const rawName = `${skillName}-v${version.version}.zip`;
     const encodedName = encodeURIComponent(rawName);
     const dispValue = `attachment; filename="${asciiName}-v${version.version}.zip"; filename*=UTF-8''${encodedName}`;
-    const objectKey = `skills/${skill.id}/${version.version}.zip`;
+    // 优先以 package_url 反解的真实存储 key 为准（兼容批量上传曾硬编码 1.0.0.zip 的存量数据），
+    // 解析不到再回退到 skill.id + version.version 重拼。
+    const objectKey =
+      this.ossService.getObjectKeyFromUrl(version.package_url) ||
+      `skills/${skill.id}/${version.version}.zip`;
     const signedUrl = await this.ossService.signDownloadWithDisposition(objectKey, dispValue);
     const url = signedUrl ?? version.package_url;
 
@@ -1085,8 +1089,8 @@ export class SkillsService {
         const saved = await this.skillRepository.save(skill);
         await this.statsRepository.save({ skill_id: saved.id });
 
-        // Upload version
-        const objectKey = `skills/${saved.id}/1.0.0.zip`;
+        // Upload version（key 必须与存储的版本号一致，避免下载重拼 key 时 NoSuchKey）
+        const objectKey = `skills/${saved.id}/${meta.version || '1.0.0'}.zip`;
         const packageUrl = await this.ossService.putBuffer(objectKey, file.buffer);
         const version = this.versionRepository.create({
           skill_id: saved.id, version: meta.version || '1.0.0',
