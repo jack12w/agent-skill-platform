@@ -18,6 +18,7 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
+  const [isManager, setIsManager] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
 
   // ── 创作者会员相关 ──
@@ -67,6 +68,7 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
         imgUrl: data.cover_url || undefined,
       });
       setIsOwner(data.is_owner);
+      setIsManager(!!data.is_manager);
       setHasPendingRequest(!!data.has_pending_request);
 
       // 创作者是否设置了付费会员套餐（公开接口，未登录也可读）
@@ -395,7 +397,7 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
                 </button>
               )
             )}
-            {isOwner && (
+            {(isOwner || isManager) && (
               <Link
                 href={`/teams/${params.id}/settings`}
                 className="inline-flex items-center gap-2 px-4 py-2 border border-neutral-300 rounded-lg text-sm font-medium text-neutral-700 hover:bg-neutral-100 transition"

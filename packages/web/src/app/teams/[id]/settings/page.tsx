@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import useTranslation from '../../../../hooks/useTranslation';
@@ -38,6 +38,21 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
 
+  // 拉取待审加入申请（owner 或维护者）；抽成独立函数供挂载轮询 / 聚焦刷新复用
+  const fetchRequests = useCallback(async () => {
+    const token = localStorage.getItem('token'); if (!token) return;
+    setRequestsLoading(true);
+    try {
+      const res = await fetch(`/api/teams/${params.id}/join-requests`, { headers: { Authorization: `Bearer ${token}` } });
+      const list = res.ok ? await res.json() : [];
+      setJoinRequests(Array.isArray(list) ? list : []);
+    } catch {
+      setJoinRequests([]);
+    } finally {
+      setRequestsLoading(false);
+    }
+  }, [params.id]);
+
   const load = async () => {
     const token = localStorage.getItem('token'); if (!token) return router.push('/auth');
     try {
@@ -46,12 +61,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
       const tData = await res.json(); setTeam(tData); setForm({ name: tData.name ?? '', description: tData.description ?? '' }); setIsPublic(tData.is_public !== false);
       // 加入申请（owner 或维护者可拉取待审列表）
       if (tData.is_owner || tData.is_manager) {
-        setRequestsLoading(true);
-        fetch(`/api/teams/${params.id}/join-requests`, { headers: { Authorization: `Bearer ${token}` } })
-          .then((r) => (r.ok ? r.json() : []))
-          .then((list) => setJoinRequests(Array.isArray(list) ? list : []))
-          .catch(() => setJoinRequests([]))
-          .finally(() => setRequestsLoading(false));
+        await fetchRequests();
       }
       // 团队会员定价
       setPlanLoading(true);
@@ -102,6 +112,15 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
     finally { setSavingPlan(false); }
   };
   useEffect(() => { load(); }, [params.id]);
+
+  // 自动刷新待审加入申请：owner/维护者停留页面时，每 15s 轮询（后台标签页不触发）+ 窗口聚焦即拉取
+  useEffect(() => {
+    if (!team || !(team.is_owner || team.is_manager)) return;
+    const tick = () => { if (!document.hidden) fetchRequests(); };
+    const id = setInterval(tick, 15000);
+    window.addEventListener('focus', tick);
+    return () => { clearInterval(id); window.removeEventListener('focus', tick); };
+  }, [team, params.id, fetchRequests]);
 
   const handleSave = async (e: React.FormEvent) => { e.preventDefault(); const token = localStorage.getItem('token'); if (!token) return; setSaving(true);
     try {
