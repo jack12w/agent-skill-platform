@@ -230,6 +230,8 @@ const en = {
   team: {
     backToDashboard: 'Back to dashboard',
     backToTeam: 'Back to team',
+    teamNameLabel: 'Team name',
+    teamDescriptionLabel: 'Description',
     yourRole: 'Your role',
     manage: 'Manage',
     edit: 'Edit',

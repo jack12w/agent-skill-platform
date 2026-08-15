@@ -297,37 +297,33 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
                   {(team.name || '').charAt(0)}
                 </div>
                 <div className="pb-1 flex-1 bg-transparent">
-                  {!editing ? (
-                    <>
-                      <h1 className="text-2xl font-bold">{team.name}</h1>
-                      {team.description && <p className="text-neutral-600 mt-2 text-sm">{team.description}</p>}
-                    </>
-                  ) : (
-                    <form onSubmit={handleSave} className="w-full space-y-3">
-                      <label className="block">
-                        <span className="block text-sm font-medium text-neutral-700 mb-1">Team name</span>
-                        <input type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required className="w-full px-3 py-2 border rounded-lg" />
-                      </label>
-                      <label className="block">
-                        <span className="block text-sm font-medium text-neutral-700 mb-1">Description</span>
-                        <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} className="w-full px-3 py-2 border rounded-lg" />
-                      </label>
-                      <div className="flex gap-2 pt-1">
-                        <button type="submit" disabled={saving || !form.name.trim()} className="px-5 py-2 bg-neutral-900 text-white rounded-lg font-medium hover:bg-neutral-900 disabled:opacity-50">{saving ? t('team.saving') : t('team.save')}</button>
-                        <button type="button" onClick={() => { setEditing(false); setForm({ name: team.name, description: team.description ?? '' }); }} className="px-5 py-2 border rounded-lg font-medium hover:bg-neutral-100">{t('team.cancel')}</button>
-                      </div>
-                    </form>
-                  )}
+                  <h1 className="text-2xl font-bold">{team.name}</h1>
+                  {team.description && <p className="text-neutral-600 mt-2 text-sm">{team.description}</p>}
                 </div>
               </div>
             </div>
             <div className="px-6 pt-14 pb-6">
-              {!editing && team.is_owner && (
+              {editing ? (
+                <form onSubmit={handleSave} className="w-full space-y-3">
+                  <label className="block">
+                    <span className="block text-sm font-medium text-neutral-700 mb-1">{t('team.teamNameLabel')}</span>
+                    <input type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required className="w-full px-3 py-2 border rounded-lg" />
+                  </label>
+                  <label className="block">
+                    <span className="block text-sm font-medium text-neutral-700 mb-1">{t('team.teamDescriptionLabel')}</span>
+                    <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={3} className="w-full px-3 py-2 border rounded-lg" />
+                  </label>
+                  <div className="flex gap-2 pt-1">
+                    <button type="submit" disabled={saving || !form.name.trim()} className="px-5 py-2 bg-neutral-900 text-white rounded-lg font-medium hover:bg-neutral-900 disabled:opacity-50">{saving ? t('team.saving') : t('team.save')}</button>
+                    <button type="button" onClick={() => { setEditing(false); setForm({ name: team.name, description: team.description ?? '' }); }} className="px-5 py-2 border rounded-lg font-medium hover:bg-neutral-100">{t('team.cancel')}</button>
+                  </div>
+                </form>
+              ) : team.is_owner ? (
                 <div className="flex gap-2">
                   <button onClick={() => setEditing(true)} className="px-4 py-2 border rounded-lg text-sm font-medium hover:bg-neutral-100">{t('team.edit')}</button>
                   <button onClick={handleDelete} disabled={deleting} className="px-4 py-2 border border-red-300 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 disabled:opacity-50">{deleting ? t('team.deleting') : t('team.delete')}</button>
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
 
