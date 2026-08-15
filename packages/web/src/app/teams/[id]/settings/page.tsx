@@ -280,14 +280,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
                 <div className="pb-1 flex-1">
                   {!editing ? (
                     <>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h1 className="text-2xl font-bold">{team.name}</h1>
-                        {team.my_role && (
-                          <span className="text-xs px-2 py-0.5 bg-brand-50 text-brand-700 border border-brand-200 rounded-full">
-                            {team.is_owner ? t('team.roleOwner') : roleLabel(team.my_role)}
-                          </span>
-                        )}
-                      </div>
+                      <h1 className="text-2xl font-bold">{team.name}</h1>
                       {team.description && <p className="text-neutral-600 mt-2 text-sm">{team.description}</p>}
                     </>
                   ) : (
@@ -384,7 +377,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
                 <>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                     <PlanCard label={t('pay.planMonthly')} value={teamPlan.monthly} placeholder={`建议${RECOMMENDED_PLAN.monthly}`} onChange={(v) => setTeamPlan((p) => ({ ...p, monthly: v }))} />
-                    <PlanCard label={t('pay.planQuarterly')} value={teamPlan.quarterly} placeholder={`建议${RECOMMENDED_PLAN.quarterly}`} onChange={(v) => setTeamPlan((p) => ({ ...p, quarterly: v }))} recommended />
+                    <PlanCard label={t('pay.planQuarterly')} value={teamPlan.quarterly} placeholder={`建议${RECOMMENDED_PLAN.quarterly}`} onChange={(v) => setTeamPlan((p) => ({ ...p, quarterly: v }))} />
                     <PlanCard label={t('pay.planYearly')} value={teamPlan.yearly} placeholder={`建议${RECOMMENDED_PLAN.yearly}`} onChange={(v) => setTeamPlan((p) => ({ ...p, yearly: v }))} />
                   </div>
                   <button onClick={handleSavePlan} disabled={savingPlan}
@@ -457,24 +450,25 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
         <aside className="flex flex-col gap-6">
           {/* 对外展示开关 */}
           {team.is_owner && (
-            <div className="p-6 border rounded-xl bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <h2 className="text-base font-bold text-neutral-900">对外展示</h2>
-                <p className="text-sm text-neutral-500 mt-1">
-                  {isPublic ? '开启后，所有用户都能查看该团队的技能；下载是否收费由团队会员定价决定——已设订阅价的技能需订阅或付费后下载，未设团队会员价则免费下载' : '关闭后，仅团队成员可以查看并下载该团队的技能'}
-                </p>
+            <div className="p-6 border rounded-xl bg-white">
+              <h2 className="text-base font-bold text-neutral-900">对外展示</h2>
+              <p className="text-sm text-neutral-400 mt-1">开启后团队页面对所有人可见</p>
+              <div className="mt-4 flex items-center justify-between rounded-lg bg-neutral-50 px-4 py-3">
+                <span className="text-sm font-medium text-neutral-700">公开展示</span>
+                <label className="inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={isPublic}
+                    disabled={togglingPublic}
+                    onChange={(e) => handleTogglePublic(e.target.checked)}
+                  />
+                  <div className="relative w-11 h-6 bg-neutral-200 peer-focus:outline-none rounded-full peer-checked:bg-brand-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+                </label>
               </div>
-              <label className="inline-flex items-center cursor-pointer shrink-0">
-                <input
-                  type="checkbox"
-                  className="sr-only peer"
-                  checked={isPublic}
-                  disabled={togglingPublic}
-                  onChange={(e) => handleTogglePublic(e.target.checked)}
-                />
-                <div className="relative w-11 h-6 bg-neutral-200 peer-focus:outline-none rounded-full peer-checked:bg-brand-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
-                <span className="ml-2 text-sm text-neutral-700">{isPublic ? '已公开' : '仅团队'}</span>
-              </label>
+              <p className={`mt-2 text-xs ${isPublic ? 'text-emerald-600' : 'text-neutral-400'}`}>
+                {isPublic ? '已开启' : '已关闭'}
+              </p>
             </div>
           )}
 
@@ -524,17 +518,14 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
   );
 }
 
-function PlanCard({ label, value, placeholder, onChange, recommended }: { label: string; value: string; placeholder?: string; onChange: (v: string) => void; recommended?: boolean }) {
+function PlanCard({ label, value, placeholder, onChange }: { label: string; value: string; placeholder?: string; onChange: (v: string) => void }) {
   return (
-    <div className={`rounded-xl border p-4 ${recommended ? 'border-2 border-brand-500' : 'border-neutral-200'}`}>
-      <div className="flex items-center justify-between">
-        <label className="text-sm text-neutral-500">{label}</label>
-        {recommended && <span className="text-xs px-2 py-0.5 bg-brand-600 text-white rounded-full">推荐</span>}
-      </div>
-      <div className="mt-2 flex items-center rounded-lg border border-neutral-200 px-3 focus-within:border-brand-500">
-        <span className="text-neutral-400">¥</span>
+    <div className="rounded-xl border border-neutral-200 p-4">
+      <label className="text-sm text-neutral-500">{label}</label>
+      <div className="mt-2 flex items-center rounded-lg border border-neutral-200 px-3">
+        <span className="text-neutral-400 text-sm">¥</span>
         <input type="number" step="0.01" min="0" value={value} placeholder={placeholder || '0'} onChange={(e) => onChange(e.target.value)}
-          className="w-full py-1.5 text-lg font-bold outline-none" />
+          className="w-full py-1.5 text-base font-semibold outline-none placeholder:text-sm placeholder:font-normal placeholder:text-neutral-300" />
       </div>
     </div>
   );
