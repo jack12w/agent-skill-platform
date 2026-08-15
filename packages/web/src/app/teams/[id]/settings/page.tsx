@@ -271,15 +271,13 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
 
           {/* 基本信息 Hero 卡 */}
           <div className="border rounded-xl bg-white overflow-hidden">
-            <div className="relative h-24 bg-gradient-to-r from-brand-500 to-cyan-400">
-              <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-t from-white via-white/50 to-transparent"></div>
-            </div>
-            <div className="px-6 pb-6">
-              <div className="-mt-10 flex items-end gap-4">
+            <div className="relative h-28 bg-gradient-to-r from-brand-500 to-cyan-400">
+              <div className="absolute inset-x-0 top-0 h-full bg-gradient-to-t from-white via-white/50 to-transparent pointer-events-none"></div>
+              <div className="absolute left-6 bottom-0 translate-y-1/2 flex items-end gap-4 z-10">
                 <div className="grid h-20 w-20 shrink-0 place-items-center rounded-2xl border-4 border-white bg-white text-2xl font-bold text-brand-700 shadow">
                   {(team.name || '').charAt(0)}
                 </div>
-                <div className="pb-1 flex-1">
+                <div className="pb-1 flex-1 bg-transparent">
                   {!editing ? (
                     <>
                       <h1 className="text-2xl font-bold">{team.name}</h1>
@@ -303,8 +301,10 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
                   )}
                 </div>
               </div>
+            </div>
+            <div className="px-6 pt-14 pb-6">
               {!editing && team.is_owner && (
-                <div className="mt-4 flex gap-2">
+                <div className="flex gap-2">
                   <button onClick={() => setEditing(true)} className="px-4 py-2 border rounded-lg text-sm font-medium hover:bg-neutral-100">{t('team.edit')}</button>
                   <button onClick={handleDelete} disabled={deleting} className="px-4 py-2 border border-red-300 text-red-600 rounded-lg text-sm font-medium hover:bg-red-50 disabled:opacity-50">{deleting ? t('team.deleting') : t('team.delete')}</button>
                 </div>
@@ -454,7 +454,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
           {team.is_owner && (
             <div className="p-6 border rounded-xl bg-white">
               <h2 className="text-base font-bold text-neutral-900">{t('team.publicDisplay')}</h2>
-              <p className="text-sm text-neutral-400 mt-1">{t('team.publicDisplayDesc')}</p>
+              <p className="text-[10px] text-neutral-400 mt-1">{t('team.publicDisplayDesc')}</p>
               <div className="mt-4 flex items-center justify-between rounded-lg bg-neutral-50 px-4 py-3">
                 <span className="text-sm font-medium text-neutral-700">{t('team.publicOn')}</span>
                 <label className="inline-flex items-center cursor-pointer">
