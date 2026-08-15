@@ -274,7 +274,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
   if (!team) return null;
 
   const members = team.members ?? [];
-  // owner 或维护者均可管理成员（添加 / 移除 / 审批申请）；改角色等仍限 owner
+  // 可进入管理页并查看成员/申请；其中：添加成员、审批申请仅 owner；移除仅限普通成员（维护者/所有者不可被移除）
   const canManage = team.is_owner || team.is_manager;
 
   return (
@@ -413,7 +413,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
           {/* 成员管理 */}
           <div>
             <h2 className="text-xl font-bold mb-4">{t('team.members')} ({members.length})</h2>
-            {canManage && (
+            {team.is_owner && (
               <div className="mb-4 p-4 border rounded-xl bg-neutral-50 flex flex-col sm:flex-row gap-3 sm:items-end">
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-neutral-600 mb-1">{t('team.inviteTitle')}</label>
@@ -454,7 +454,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
                       ) : (
                         <span className="text-xs px-2 py-1 bg-neutral-100 rounded">{roleLabel(m.role)}</span>
                       )}
-                      {canManage && !isOwner && (
+                      {canManage && !isOwner && m.role !== 'maintainer' && (
                         <button onClick={() => handleRemoveMember(m.user_id)} disabled={memberLoading} className="text-xs text-danger-500 hover:underline">
                           {memberLoading ? t('team.removingMember') : t('team.removeMember')}
                         </button>
@@ -511,21 +511,27 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
                         {r.message && <div className="text-xs text-neutral-500 mt-1">“{r.message}”</div>}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <select
-                          defaultValue="viewer"
-                          disabled={requestsLoading}
-                          onChange={(e) => reviewRequest(r.user_id, 'approve', e.target.value as 'maintainer' | 'viewer')}
-                          className="text-xs px-2 py-1 border rounded bg-white"
-                        >
-                          <option value="maintainer">{t('team.roleMaintainer')}</option>
-                          <option value="viewer">{t('team.roleViewer')}</option>
-                        </select>
-                        <button onClick={() => reviewRequest(r.user_id, 'approve')} disabled={requestsLoading} className="text-xs px-3 py-1.5 bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-50">
-                          {t('team.approve')}
-                        </button>
-                        <button onClick={() => reviewRequest(r.user_id, 'reject')} disabled={requestsLoading} className="text-xs px-3 py-1.5 border border-neutral-300 rounded hover:bg-neutral-100">
-                          {t('team.reject')}
-                        </button>
+                        {team.is_owner ? (
+                          <>
+                            <select
+                              defaultValue="viewer"
+                              disabled={requestsLoading}
+                              onChange={(e) => reviewRequest(r.user_id, 'approve', e.target.value as 'maintainer' | 'viewer')}
+                              className="text-xs px-2 py-1 border rounded bg-white"
+                            >
+                              <option value="maintainer">{t('team.roleMaintainer')}</option>
+                              <option value="viewer">{t('team.roleViewer')}</option>
+                            </select>
+                            <button onClick={() => reviewRequest(r.user_id, 'approve')} disabled={requestsLoading} className="text-xs px-3 py-1.5 bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-50">
+                              {t('team.approve')}
+                            </button>
+                            <button onClick={() => reviewRequest(r.user_id, 'reject')} disabled={requestsLoading} className="text-xs px-3 py-1.5 border border-neutral-300 rounded hover:bg-neutral-100">
+                              {t('team.reject')}
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-xs text-neutral-400">{t('team.pendingOwnerReview')}</span>
+                        )}
                       </div>
                     </div>
                   ))}

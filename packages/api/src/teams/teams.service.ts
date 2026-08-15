@@ -74,7 +74,7 @@ export class TeamsService {
 
   // 按邮箱直接添加成员：查到已注册用户后直接加入并指定角色（无需对方确认）
   async addMemberByEmail(teamId: string, email: string, role: MemberRole, operatorId: string) {
-    await this.assertManager(teamId, operatorId);
+    await this.assertOwner(teamId, operatorId);
     const normalized = (email || '').trim().toLowerCase();
     if (!normalized) throw new BadRequestException('Email is required');
     if (role === MemberRole.OWNER) throw new BadRequestException('Cannot add an owner via invite');
@@ -99,9 +99,14 @@ export class TeamsService {
   }
 
   async removeMember(teamId: string, userId: string, operatorId: string) {
-    await this.assertManager(teamId, operatorId);
-    const team = await this.teamRepository.findOne({ where: { id: teamId } });
-    if (team!.owner_user_id === userId) throw new BadRequestException('Cannot remove the team owner');
+    const team = await this.assertManager(teamId, operatorId);
+    const member = await this.memberRepository.findOne({ where: { team_id: teamId, user_id: userId } });
+    if (!member) throw new NotFoundException('Member not found');
+    // 所有者与维护者（管理员）不可被直接移除；维护者须先降级为普通成员
+    if (team.owner_user_id === userId) throw new BadRequestException('Cannot remove the team owner');
+    if (member.role === MemberRole.MAINTAINER) {
+      throw new BadRequestException('Cannot remove a maintainer; demote to member first');
+    }
     const result = await this.memberRepository.delete({ team_id: teamId, user_id: userId });
     if (result.affected === 0) throw new NotFoundException('Member not found');
     return { ok: true };
@@ -163,7 +168,7 @@ export class TeamsService {
     role: MemberRole,
     operatorId: string,
   ) {
-    await this.assertManager(teamId, operatorId);
+    await this.assertOwner(teamId, operatorId);
     if (role === MemberRole.OWNER) throw new BadRequestException('Cannot assign owner role');
     const req = await this.joinRequestRepository.findOne({
       where: { team_id: teamId, user_id: userId, status: 'pending' },

@@ -272,6 +272,7 @@ const en = {
     cancelApply: 'Cancel application',
     approve: 'Approve',
     reject: 'Reject',
+    pendingOwnerReview: 'Pending owner review',
     noJoinRequests: 'No join requests',
     publicDisplay: 'Public display',
     publicDisplayDesc: 'When enabled, all users can view this team’s skills',
