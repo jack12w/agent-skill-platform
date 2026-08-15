@@ -271,7 +271,9 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
 
           {/* 基本信息 Hero 卡 */}
           <div className="border rounded-xl bg-white overflow-hidden">
-            <div className="h-20 bg-gradient-to-r from-brand-500 to-cyan-400"></div>
+            <div className="relative h-24 bg-gradient-to-r from-brand-500 to-cyan-400">
+              <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-t from-white via-white/50 to-transparent"></div>
+            </div>
             <div className="px-6 pb-6">
               <div className="-mt-10 flex items-end gap-4">
                 <div className="grid h-20 w-20 shrink-0 place-items-center rounded-2xl border-4 border-white bg-white text-2xl font-bold text-brand-700 shadow">
