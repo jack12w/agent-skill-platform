@@ -452,7 +452,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
           {team.is_owner && (
             <div className="p-6 border rounded-xl bg-white">
               <h2 className="text-base font-bold text-neutral-900">对外展示</h2>
-              <p className="text-sm text-neutral-400 mt-1">开启后团队页面对所有人可见</p>
+              <p className="text-sm text-neutral-400 mt-1">开启后所有用户都能查看该团队的技能</p>
               <div className="mt-4 flex items-center justify-between rounded-lg bg-neutral-50 px-4 py-3">
                 <span className="text-sm font-medium text-neutral-700">公开展示</span>
                 <label className="inline-flex items-center cursor-pointer">
@@ -525,7 +525,7 @@ function PlanCard({ label, value, placeholder, onChange }: { label: string; valu
       <div className="mt-2 flex items-center rounded-lg border border-neutral-200 px-3">
         <span className="text-neutral-400 text-sm">¥</span>
         <input type="number" step="0.01" min="0" value={value} placeholder={placeholder || '0'} onChange={(e) => onChange(e.target.value)}
-          className="w-full py-1.5 text-base font-semibold outline-none placeholder:text-sm placeholder:font-normal placeholder:text-neutral-300" />
+          className="w-full py-1.5 text-base font-semibold outline-none ring-0 focus:ring-0 focus:outline-none placeholder:text-sm placeholder:font-normal placeholder:text-neutral-300" />
       </div>
     </div>
   );
