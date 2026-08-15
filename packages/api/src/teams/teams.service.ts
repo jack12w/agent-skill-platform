@@ -74,10 +74,12 @@ export class TeamsService {
 
   // 按邮箱直接添加成员：查到已注册用户后直接加入并指定角色（无需对方确认）
   async addMemberByEmail(teamId: string, email: string, role: MemberRole, operatorId: string) {
-    await this.assertOwner(teamId, operatorId);
+    const team = await this.assertManager(teamId, operatorId);
     const normalized = (email || '').trim().toLowerCase();
     if (!normalized) throw new BadRequestException('Email is required');
     if (role === MemberRole.OWNER) throw new BadRequestException('Cannot add an owner via invite');
+    // 仅 owner 可直接添加为管理员；维护者添加时强制为普通成员
+    const effectiveRole = team.owner_user_id === operatorId ? role : MemberRole.VIEWER;
 
     const user = await this.userRepository.findOne({ where: { email: normalized } });
     if (!user) throw new BadRequestException('该邮箱对应的用户不存在');
@@ -85,7 +87,7 @@ export class TeamsService {
     const existing = await this.memberRepository.findOne({ where: { team_id: teamId, user_id: user.id } });
     if (existing) throw new BadRequestException('该用户已是团队成员');
 
-    const member = this.memberRepository.create({ team_id: teamId, user_id: user.id, role });
+    const member = this.memberRepository.create({ team_id: teamId, user_id: user.id, role: effectiveRole });
     return this.memberRepository.save(member);
   }
 
@@ -168,8 +170,10 @@ export class TeamsService {
     role: MemberRole,
     operatorId: string,
   ) {
-    await this.assertOwner(teamId, operatorId);
+    const team = await this.assertManager(teamId, operatorId);
     if (role === MemberRole.OWNER) throw new BadRequestException('Cannot assign owner role');
+    // 仅 owner 可赋予管理员角色；维护者审批时强制为普通成员
+    const effectiveRole = team.owner_user_id === operatorId ? role : MemberRole.VIEWER;
     const req = await this.joinRequestRepository.findOne({
       where: { team_id: teamId, user_id: userId, status: 'pending' },
     });
@@ -184,11 +188,11 @@ export class TeamsService {
     // approve：加入成员（若已存在成员不重复插入）
     if (!(await this.memberRepository.findOne({ where: { team_id: teamId, user_id: userId } }))) {
       await this.memberRepository.save(
-        this.memberRepository.create({ team_id: teamId, user_id: userId, role }),
+        this.memberRepository.create({ team_id: teamId, user_id: userId, role: effectiveRole }),
       );
     }
     req.status = 'approved';
-    req.role = role;
+    req.role = effectiveRole;
     await this.joinRequestRepository.save(req);
     return { ok: true, status: 'approved' };
   }

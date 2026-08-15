@@ -208,7 +208,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
       const res = await fetch(`/api/teams/${params.id}/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ email, role: inviteRole }),
+        body: JSON.stringify({ email, role: team.is_owner ? inviteRole : 'viewer' }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.message || t('team.emailNotFound'));
@@ -274,7 +274,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
   if (!team) return null;
 
   const members = team.members ?? [];
-  // 可进入管理页并查看成员/申请；其中：添加成员、审批申请仅 owner；移除仅限普通成员（维护者/所有者不可被移除）
+  // owner 与 maintainer 均可进入管理页、查看成员/申请、移除普通成员、审批加入申请；其中「添加为管理员」仅 owner 能做，maintainer 添加/审批默认只能产生普通成员
   const canManage = team.is_owner || team.is_manager;
 
   return (
@@ -413,19 +413,23 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
           {/* 成员管理 */}
           <div>
             <h2 className="text-xl font-bold mb-4">{t('team.members')} ({members.length})</h2>
-            {team.is_owner && (
+            {canManage && (
               <div className="mb-4 p-4 border rounded-xl bg-neutral-50 flex flex-col sm:flex-row gap-3 sm:items-end">
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-neutral-600 mb-1">{t('team.inviteTitle')}</label>
                   <input type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder={t('team.inviteEmailPlaceholder')} className="w-full px-3 py-2 border rounded-lg text-sm" />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-600 mb-1">{t('team.inviteRoleLabel')}</label>
-                  <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as 'maintainer' | 'viewer')} className="px-3 py-2 border rounded-lg text-sm bg-white">
-                    <option value="maintainer">{t('team.roleMaintainer')}</option>
-                    <option value="viewer">{t('team.roleViewer')}</option>
-                  </select>
-                </div>
+                {team.is_owner ? (
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-600 mb-1">{t('team.inviteRoleLabel')}</label>
+                    <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as 'maintainer' | 'viewer')} className="px-3 py-2 border rounded-lg text-sm bg-white">
+                      <option value="maintainer">{t('team.roleMaintainer')}</option>
+                      <option value="viewer">{t('team.roleViewer')}</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div className="text-xs text-neutral-500 py-2">{t('team.roleViewer')}</div>
+                )}
                 <button onClick={handleAddMember} disabled={memberLoading || !inviteEmail.trim()} className="px-4 py-2 bg-brand-600 text-white text-sm rounded-lg hover:bg-brand-700 disabled:opacity-50">
                   {memberLoading ? t('team.saving') : t('team.addMember')}
                 </button>
@@ -512,26 +516,24 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         {team.is_owner ? (
-                          <>
-                            <select
-                              defaultValue="viewer"
-                              disabled={requestsLoading}
-                              onChange={(e) => reviewRequest(r.user_id, 'approve', e.target.value as 'maintainer' | 'viewer')}
-                              className="text-xs px-2 py-1 border rounded bg-white"
-                            >
-                              <option value="maintainer">{t('team.roleMaintainer')}</option>
-                              <option value="viewer">{t('team.roleViewer')}</option>
-                            </select>
-                            <button onClick={() => reviewRequest(r.user_id, 'approve')} disabled={requestsLoading} className="text-xs px-3 py-1.5 bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-50">
-                              {t('team.approve')}
-                            </button>
-                            <button onClick={() => reviewRequest(r.user_id, 'reject')} disabled={requestsLoading} className="text-xs px-3 py-1.5 border border-neutral-300 rounded hover:bg-neutral-100">
-                              {t('team.reject')}
-                            </button>
-                          </>
+                          <select
+                            defaultValue="viewer"
+                            disabled={requestsLoading}
+                            onChange={(e) => reviewRequest(r.user_id, 'approve', e.target.value as 'maintainer' | 'viewer')}
+                            className="text-xs px-2 py-1 border rounded bg-white"
+                          >
+                            <option value="maintainer">{t('team.roleMaintainer')}</option>
+                            <option value="viewer">{t('team.roleViewer')}</option>
+                          </select>
                         ) : (
-                          <span className="text-xs text-neutral-400">{t('team.pendingOwnerReview')}</span>
+                          <span className="text-xs text-neutral-500">{t('team.roleViewer')}</span>
                         )}
+                        <button onClick={() => reviewRequest(r.user_id, 'approve')} disabled={requestsLoading} className="text-xs px-3 py-1.5 bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-50">
+                          {t('team.approve')}
+                        </button>
+                        <button onClick={() => reviewRequest(r.user_id, 'reject')} disabled={requestsLoading} className="text-xs px-3 py-1.5 border border-neutral-300 rounded hover:bg-neutral-100">
+                          {t('team.reject')}
+                        </button>
                       </div>
                     </div>
                   ))}

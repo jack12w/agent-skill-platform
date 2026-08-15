@@ -272,7 +272,6 @@ const zh = {
     cancelApply: '撤销申请',
     approve: '批准',
     reject: '拒绝',
-    pendingOwnerReview: '等待所有者审批',
     noJoinRequests: '暂无加入申请',
     publicDisplay: '对外展示',
     publicDisplayDesc: '开启后所有用户都能查看该团队的技能',
