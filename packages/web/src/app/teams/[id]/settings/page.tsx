@@ -372,7 +372,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
               <p className="text-sm text-neutral-500 mb-2">{t('team.membershipHint')}</p>
               <p className="text-xs text-brand-600 mb-4">{t('team.membershipRecommended')}</p>
               {planLoading ? (
-                <div className="text-sm text-neutral-400">加载中…</div>
+                <div className="text-sm text-neutral-400">{t('team.loading')}</div>
               ) : (
                 <>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -451,10 +451,10 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
           {/* 对外展示开关 */}
           {team.is_owner && (
             <div className="p-6 border rounded-xl bg-white">
-              <h2 className="text-base font-bold text-neutral-900">对外展示</h2>
-              <p className="text-sm text-neutral-400 mt-1">开启后所有用户都能查看该团队的技能</p>
+              <h2 className="text-base font-bold text-neutral-900">{t('team.publicDisplay')}</h2>
+              <p className="text-sm text-neutral-400 mt-1">{t('team.publicDisplayDesc')}</p>
               <div className="mt-4 flex items-center justify-between rounded-lg bg-neutral-50 px-4 py-3">
-                <span className="text-sm font-medium text-neutral-700">公开展示</span>
+                <span className="text-sm font-medium text-neutral-700">{t('team.publicOn')}</span>
                 <label className="inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
@@ -467,7 +467,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
                 </label>
               </div>
               <p className={`mt-2 text-xs ${isPublic ? 'text-emerald-600' : 'text-neutral-400'}`}>
-                {isPublic ? '已开启' : '已关闭'}
+                {isPublic ? t('team.publicEnabled') : t('team.publicDisabled')}
               </p>
             </div>
           )}
@@ -477,7 +477,7 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
             <div>
               <h2 className="text-xl font-bold mb-4">{t('team.joinRequests')} ({joinRequests.length})</h2>
               {requestsLoading ? (
-                <p className="text-sm text-neutral-400">加载中…</p>
+                <p className="text-sm text-neutral-400">{t('team.loading')}</p>
               ) : joinRequests.length === 0 ? (
                 <p className="text-sm text-neutral-400">{t('team.noJoinRequests')}</p>
               ) : (

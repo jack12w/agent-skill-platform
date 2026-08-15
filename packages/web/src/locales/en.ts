@@ -273,6 +273,12 @@ const en = {
     approve: 'Approve',
     reject: 'Reject',
     noJoinRequests: 'No join requests',
+    publicDisplay: 'Public display',
+    publicDisplayDesc: 'When enabled, all users can view this team’s skills',
+    publicOn: 'Public',
+    publicEnabled: 'Enabled',
+    publicDisabled: 'Disabled',
+    loading: 'Loading...',
   },
   avatar: {
     dashboard: 'Dashboard',

@@ -273,6 +273,12 @@ const zh = {
     approve: '批准',
     reject: '拒绝',
     noJoinRequests: '暂无加入申请',
+    publicDisplay: '对外展示',
+    publicDisplayDesc: '开启后所有用户都能查看该团队的技能',
+    publicOn: '公开展示',
+    publicEnabled: '已开启',
+    publicDisabled: '已关闭',
+    loading: '加载中...',
   },
   avatar: {
     dashboard: '个人中心',
