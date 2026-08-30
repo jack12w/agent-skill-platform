@@ -140,6 +140,10 @@ export class SkillsService {
         .createQueryBuilder('skill')
         .leftJoin('skill.stats', 'stats')
         .leftJoin('skill.owner_user', 'owner_user')
+        // 团队技能 owner_user_id 为 NULL（见迁移 0017 的 XOR 归属），名称必须回退到
+        // 原创作者 created_by_user 或团队名 owner_team，否则前端显示 Anonymous。
+        .leftJoin('skill.created_by_user', 'author_user')
+        .leftJoin('skill.owner_team', 'owner_team')
         .leftJoin('events', 'e', `skill.id = e.skill_id AND e.created_at >= ${intervalExpr}`)
         .leftJoin('skill_versions', 'lv', 'skill.published_version_id = lv.id')
         // Entity columns → resolved from TypeORM metadata (no typos)
@@ -158,6 +162,11 @@ export class SkillsService {
         .addSelect('owner_user.id', 'owner_id')
         .addSelect('owner_user.name', 'owner_name')
         .addSelect('owner_user.avatar_url', 'owner_avatar_url')
+        .addSelect('author_user.id', 'author_id')
+        .addSelect('author_user.name', 'author_name')
+        .addSelect('author_user.avatar_url', 'author_avatar_url')
+        .addSelect('owner_team.id', 'team_id')
+        .addSelect('owner_team.name', 'team_name')
         .addSelect('lv.version', 'latest_version')
         // Computed aggregates (still raw, but no entity column names here)
         .addSelect("COUNT(CASE WHEN e.type = 'like' THEN 1 END)::int", '_likes')
@@ -170,6 +179,9 @@ export class SkillsService {
         .groupBy('skill.id')
         .addGroupBy('stats.skill_id')
         .addGroupBy('owner_user.id')
+        // 按主键分组，PG 的函数依赖允许同表其它列出现在 SELECT（与 owner_user 同款写法）
+        .addGroupBy('author_user.id')
+        .addGroupBy('owner_team.id')
         .addGroupBy('lv.version')
         .addGroupBy('skill.published_version_id')
         .orderBy('_score', 'DESC')
@@ -224,6 +236,11 @@ export class SkillsService {
           name: row.owner_name,
           avatar_url: sanitizeAvatarUrl(row.owner_avatar_url),
         },
+        // 原创作者（个人技能 = owner_user；团队技能 owner_user_id 为 NULL，靠 created_by 还原作者）
+        author: row.author_id
+          ? { id: row.author_id, name: row.author_name, avatar_url: sanitizeAvatarUrl(row.author_avatar_url) }
+          : null,
+        owner_team: row.team_id ? { id: row.team_id, name: row.team_name } : null,
       }));
       await this.attachUpdateInfo(skills, userId);
       return skills;
@@ -237,6 +254,11 @@ export class SkillsService {
       .leftJoinAndSelect('skill.published_version', 'published_version')
       .leftJoin('skill.owner_user', 'owner_user')
       .addSelect(['owner_user.id', 'owner_user.name', 'owner_user.avatar_url'])
+      // 团队技能 owner_user_id 为 NULL（迁移 0017），名称回退到原创作者 / 团队名
+      .leftJoin('skill.created_by_user', 'author_user')
+      .addSelect(['author_user.id', 'author_user.name', 'author_user.avatar_url'])
+      .leftJoin('skill.owner_team', 'owner_team')
+      .addSelect(['owner_team.id', 'owner_team.name'])
       .orderBy('skill.created_at', 'DESC')
       .take(size)
       .skip((page - 1) * size);
@@ -277,6 +299,12 @@ export class SkillsService {
       if (s.owner_user) {
         (s.owner_user as any).avatar_url = sanitizeAvatarUrl(s.owner_user.avatar_url);
       }
+      // 统一暴露为 author（与 weekly/total 分支字段一致），并移除内部关系对象避免多余字段外泄
+      const creator = (s as any).created_by_user;
+      (s as any).author = creator
+        ? { id: creator.id, name: creator.name, avatar_url: sanitizeAvatarUrl(creator.avatar_url) }
+        : null;
+      delete (s as any).created_by_user;
     }
 
     await this.attachUpdateInfo(skills, userId);
@@ -982,7 +1010,7 @@ export class SkillsService {
     const BASE_URL = process.env.PUBLIC_BASE_URL;
     const [skills, total] = await this.skillRepository.findAndCount({
       where: { status: SkillStatus.PUBLISHED },
-      relations: ['owner_user', 'stats'],
+      relations: ['owner_user', 'created_by_user', 'owner_team', 'stats'],
       order: { updated_at: 'DESC' },
       take: size,
       skip: (page - 1) * size,
@@ -1004,7 +1032,11 @@ export class SkillsService {
         summary: s.short_summary || s.summary || '',
         tags: s.tags || [],
         url: `${BASE_URL}/skills/${s.slug || s.id}`,
-        author: s.owner_user ? { name: s.owner_user.name } : null,
+        // 团队技能 owner_user_id 为 NULL（迁移 0017），回退到原创作者 / 团队名
+        author: (() => {
+          const n = s.owner_user?.name || s.created_by_user?.name || s.owner_team?.name;
+          return n ? { name: n } : null;
+        })(),
         created_at: s.created_at,
         updated_at: s.updated_at,
         stats: {

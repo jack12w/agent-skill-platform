@@ -7,7 +7,21 @@ interface SkillItem {
   id: string; name: string; slug: string; status: string; tags: string[];
   created_at: string; updated_at: string;
   owner_user: { id: string; name: string; email: string };
+  /** 原创作者：团队技能 owner_user 为 null（迁移 0017），发布者需回退到它 */
+  author?: { id: string; name: string; email: string } | null;
+  owner_team?: { id: string; name: string } | null;
   stats?: { likes_total: number; downloads_total: number };
+}
+
+/**
+ * 发布者展示：个人技能用 owner_user；团队技能回退到原创作者 author，并标注所属团队。
+ * 三者都没有时显示占位符，避免整列空白。
+ */
+function ownerLabel(s: SkillItem): string {
+  const person = s.author || s.owner_user;
+  if (person?.name) return s.owner_team?.name ? `${person.name} · ${s.owner_team.name}` : person.name;
+  if (person?.email) return person.email;
+  return s.owner_team?.name || '—';
 }
 interface SkillList { items: SkillItem[]; total: number; page: number; size: number }
 
@@ -162,7 +176,7 @@ export default function HubSkillsPage() {
                         </>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-neutral-600 hidden md:table-cell">{s.owner_user?.name || s.owner_user?.email}</td>
+                    <td className="px-4 py-3 text-neutral-600 hidden md:table-cell">{ownerLabel(s)}</td>
                     <td className="px-4 py-3 hidden lg:table-cell">
                       <div className="flex flex-wrap gap-1">
                         {(() => {

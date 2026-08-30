@@ -88,8 +88,13 @@ export class AdminService {
     const qb = this.skillRepo.createQueryBuilder('s')
       .leftJoinAndSelect('s.owner_user', 'u')
       .leftJoinAndSelect('s.stats', 'st')
+      // 团队技能 owner_user_id 为 NULL（迁移 0017），发布者需回退到原创作者 created_by
+      .leftJoin('s.created_by_user', 'au')
+      .leftJoin('s.owner_team', 't')
       .select(['s.id', 's.name', 's.slug', 's.short_summary', 's.tags', 's.status', 's.created_at', 's.updated_at'])
       .addSelect(['u.id', 'u.name', 'u.email'])
+      .addSelect(['au.id', 'au.name', 'au.email'])
+      .addSelect(['t.id', 't.name'])
       .addSelect(['st.likes_total', 'st.downloads_total'])
       .orderBy('s.created_at', 'DESC')
       .take(size)
@@ -103,6 +108,13 @@ export class AdminService {
     }
 
     const [items, total] = await qb.getManyAndCount();
+    // 统一暴露 author（原创作者）与 owner_team，供后台「发布者」列在团队技能上回退显示
+    for (const s of items as any[]) {
+      s.author = s.created_by_user
+        ? { id: s.created_by_user.id, name: s.created_by_user.name, email: s.created_by_user.email }
+        : null;
+      delete s.created_by_user;
+    }
     return { items, total, page, size };
   }
 
@@ -386,12 +398,17 @@ export class AdminService {
     //      (latest_version_id != published_version_id)
     const qb = this.skillRepo.createQueryBuilder('skill')
       .leftJoinAndSelect('skill.owner_user', 'owner_user')
+      // 团队技能 owner_user_id 为 NULL（迁移 0017），提交者需回退到原创作者 created_by
+      .leftJoin('skill.created_by_user', 'author_user')
+      .leftJoin('skill.owner_team', 'owner_team')
       .select([
         'skill.id', 'skill.name', 'skill.slug', 'skill.short_summary',
         'skill.tags', 'skill.status', 'skill.created_at', 'skill.updated_at',
         'skill.latest_version_id', 'skill.published_version_id',
       ])
       .addSelect(['owner_user.id', 'owner_user.name', 'owner_user.email'])
+      .addSelect(['author_user.id', 'author_user.name', 'author_user.email'])
+      .addSelect(['owner_team.id', 'owner_team.name'])
       .where('skill.status = :pendingStatus', { pendingStatus: SkillStatus.PENDING })
       .orWhere(
         'skill.status = :publishedStatus AND skill.latest_version_id IS DISTINCT FROM skill.published_version_id',
@@ -404,10 +421,17 @@ export class AdminService {
     const [items, total] = await qb.getManyAndCount();
 
     // Tag each item with its review type for the frontend
-    const enriched = items.map((skill) => ({
-      ...skill,
-      reviewType: skill.status === SkillStatus.PENDING ? 'new_submission' : 'version_update',
-    }));
+    const enriched = items.map((skill: any) => {
+      const { created_by_user, ...rest } = skill;
+      return {
+        ...rest,
+        // 统一暴露 author（原创作者），供后台「提交者」列在团队技能上回退显示
+        author: created_by_user
+          ? { id: created_by_user.id, name: created_by_user.name, email: created_by_user.email }
+          : null,
+        reviewType: skill.status === SkillStatus.PENDING ? 'new_submission' : 'version_update',
+      };
+    });
 
     return { items: enriched, total, page, size };
   }

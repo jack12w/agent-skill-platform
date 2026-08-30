@@ -57,6 +57,9 @@ export function SkillSchema(skill: {
   tags?: string[];
   cover_url?: string;
   owner_user?: { name?: string; email?: string };
+  /** 原创作者（团队技能 owner_user 为 null，靠它还原作者） */
+  author?: { name?: string };
+  owner_team?: { name?: string };
   stats?: {
     likes_total?: number;
     downloads_total?: number;
@@ -75,12 +78,13 @@ export function SkillSchema(skill: {
     operatingSystem: 'All',
     url: `${BASE_URL}/skills/${skill.slug || skill.id}`,
     image: skill.cover_url || `${BASE_URL}/favicon.svg`,
-    author: skill.owner_user
-      ? {
-          '@type': 'Person',
-          name: skill.owner_user.name || 'Anonymous',
-        }
-      : undefined,
+    // 团队技能 owner_user 为 null，回退到原创作者；再退到团队（Organization）
+    author: (() => {
+      const personName = skill.owner_user?.name || skill.author?.name;
+      if (personName) return { '@type': 'Person', name: personName };
+      if (skill.owner_team?.name) return { '@type': 'Organization', name: skill.owner_team.name };
+      return undefined;
+    })(),
     datePublished: skill.created_at,
     dateModified: skill.updated_at,
     keywords: skill.tags?.join(', ') || '',

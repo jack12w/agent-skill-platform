@@ -6,6 +6,17 @@ import { startDownload, openLoginInNewTab } from '../../../lib/skill-actions';
 
 function getToken() { try { return localStorage.getItem('token'); } catch { return null; } }
 
+/**
+ * 提交者展示：个人技能用 owner_user；团队技能 owner_user 为 null（迁移 0017），
+ * 回退到原创作者 author，并标注所属团队。三者皆无时显示占位符，避免整列空白。
+ */
+function submitterLabel(s: any): string {
+  const person = s.author || s.owner_user;
+  if (person?.name) return s.owner_team?.name ? `${person.name} · ${s.owner_team.name}` : person.name;
+  if (person?.email) return person.email;
+  return s.owner_team?.name || '—';
+}
+
 export default function HubReviewsPage() {
   const { t } = useTranslation();
   const [data, setData] = useState<any>(null);
@@ -77,7 +88,7 @@ export default function HubReviewsPage() {
                   <a href={`/skills/${s.slug}`} target="_blank" className="font-medium text-brand-600 hover:underline">{s.name}</a>
                   {s.short_summary && <div className="text-xs text-neutral-400 mt-0.5 truncate max-w-xs">{s.short_summary}</div>}
                 </td>
-                <td className="px-4 py-3 text-neutral-600 hidden md:table-cell">{s.owner_user?.name || s.owner_user?.email}</td>
+                <td className="px-4 py-3 text-neutral-600 hidden md:table-cell">{submitterLabel(s)}</td>
                 <td className="px-4 py-3 hidden lg:table-cell">
                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                     s.reviewType === 'version_update'

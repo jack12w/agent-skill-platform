@@ -97,6 +97,22 @@ function SkillSquareInner() {
     window.history.replaceState(null, '', newUrl);
   }, [activeTags, sort, query]);
 
+  /**
+   * 技能作者展示：
+   * - 个人技能 → owner_user（= created_by）
+   * - 团队技能 → owner_user_id 为 NULL（迁移 0017 的 XOR 归属），回退到原创作者 author，
+   *   并在旁边标注所属团队；作者也没取到时再退到团队名，避免显示 Anonymous。
+   */
+  const authorOf = (skill: any) => {
+    const person = skill.author || skill.owner_user;
+    const teamName: string = skill.owner_team?.name || '';
+    return {
+      name: person?.name || teamName || '',
+      avatar: person?.avatar_url || '',
+      teamName,
+    };
+  };
+
   const getTagGroup = (tag: string): string | null => {
     for (const [group, tags] of Object.entries(tagGroups)) {
       if (tags.includes(tag)) return group;
@@ -213,15 +229,30 @@ function SkillSquareInner() {
                 {skill.updated_at && ` · ${new Date(skill.updated_at).toLocaleDateString()}`}
               </div>
               <div className="flex items-center justify-between pt-4 border-t mt-auto">
-                <div className="flex items-center gap-2">
-                  {skill.owner_user?.avatar_url ? (
-                    <img src={skill.owner_user.avatar_url} alt={skill.owner_user?.name || ''} className="w-6 h-6 rounded-full object-cover" />
-                  ) : (
-                    <div className="w-6 h-6 bg-brand-100 rounded-full flex items-center justify-center text-[10px] font-bold text-brand-600">{skill.owner_user?.name?.[0] || 'U'}</div>
-                  )}
-                  <span className="text-sm font-medium">{skill.owner_user?.name || 'Anonymous'}</span>
+                <div className="flex items-center gap-2 min-w-0">
+                  {(() => {
+                    const a = authorOf(skill);
+                    return (
+                      <>
+                        {a.avatar ? (
+                          <img src={a.avatar} alt={a.name} className="w-6 h-6 rounded-full object-cover shrink-0" />
+                        ) : (
+                          <div className="w-6 h-6 bg-brand-100 rounded-full flex items-center justify-center text-[10px] font-bold text-brand-600 shrink-0">{a.name?.[0] || 'U'}</div>
+                        )}
+                        <span className="text-sm font-medium truncate">{a.name || t('skills.anonymous')}</span>
+                        {a.teamName && (
+                          <span
+                            title={a.teamName}
+                            className="shrink-0 max-w-[7rem] truncate px-1.5 py-0.5 rounded text-[10px] bg-neutral-100 text-neutral-500 border border-neutral-200"
+                          >
+                            {a.teamName}
+                          </span>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
-                <div className="text-sm font-black text-brand-600">
+                <div className="text-sm font-black text-brand-600 shrink-0 whitespace-nowrap">
                   {parseFloat(
                     sort === 'weekly' ? (skill.stats?.weekly_score || 0) : (skill.stats?.total_score || 0)
                   ).toFixed(1)} {t('skills.score')}

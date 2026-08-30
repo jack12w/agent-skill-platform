@@ -53,6 +53,7 @@ const en = {
     heroDesc: 'Create, upload, and showcase your AI skill packages to help others solve real problems',
     heroSubmit: 'Submit Skill',
     heroExplore: 'Explore Skills',
+    anonymous: 'Anonymous',
   },
   detail: {
     edit: 'Edit',
@@ -275,6 +276,10 @@ const en = {
     approve: 'Approve',
     reject: 'Reject',
     noJoinRequests: 'No join requests',
+    requestsLoadFailed: 'Failed to refresh requests; showing previous results. Please retry later.',
+    requestsRateLimited: 'Rate limited; request list not refreshed (data kept). Please retry later.',
+    approving: 'Processing…',
+    retry: 'Retry',
     publicDisplay: 'Public display',
     publicDisplayDesc: 'When enabled, all users can view this team’s skills',
     publicOn: 'Public',

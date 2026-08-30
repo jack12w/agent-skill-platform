@@ -53,6 +53,7 @@ const zh = {
     heroDesc: '创建、上传、展示你的 AI 技能包，帮助更多人解决实际问题',
     heroSubmit: '提交技能',
     heroExplore: '探索技能',
+    anonymous: '匿名作者',
   },
   detail: {
     edit: '编辑',
@@ -275,6 +276,10 @@ const zh = {
     approve: '批准',
     reject: '拒绝',
     noJoinRequests: '暂无加入申请',
+    requestsLoadFailed: '申请列表刷新失败，已保留上一次结果，可稍后重试',
+    requestsRateLimited: '操作过于频繁被限流，申请列表未刷新（数据仍保留），请稍后重试',
+    approving: '处理中…',
+    retry: '重试',
     publicDisplay: '对外展示',
     publicDisplayDesc: '开启后所有用户都能查看该团队的技能',
     publicOn: '公开展示',

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import useTranslation from '../../../../hooks/useTranslation';
@@ -37,17 +37,34 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
   // ── 加入申请（公开申请 + owner 审批）──
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
+  // 审批中锁单行（而不是整块列表），避免操作一条时其余行全被禁用/闪成「加载中」
+  const [reviewing, setReviewing] = useState<{ id: string; action: 'approve' | 'reject' } | null>(null);
+  // 列表拉取失败的原因码：失败一律保留旧列表并提示，绝不静默清空（曾导致 4 条一次全没）
+  const [requestsError, setRequestsError] = useState<'rate_limited' | 'load_failed' | null>(null);
+  // 每行的角色选择：下拉只记录选择，点「批准」按钮才真正提交审批
+  const [requestRoles, setRequestRoles] = useState<Record<string, 'maintainer' | 'viewer'>>({});
 
-  // 拉取待审加入申请（owner 或维护者）；抽成独立函数供挂载轮询 / 聚焦刷新复用
-  const fetchRequests = useCallback(async () => {
-    const token = localStorage.getItem('token'); if (!token) return;
+  // 拉取待审加入申请（owner 或维护者）；抽成独立函数供轮询 / 聚焦刷新 / 手动重试复用。
+  // 返回是否成功，供轮询做指数退避。
+  const fetchRequests = useCallback(async (): Promise<boolean> => {
+    const token = localStorage.getItem('token'); if (!token) return false;
     setRequestsLoading(true);
     try {
       const res = await fetch(`/api/teams/${params.id}/join-requests`, { headers: { Authorization: `Bearer ${token}` } });
-      const list = res.ok ? await res.json() : [];
-      setJoinRequests(Array.isArray(list) ? list : []);
+      // 关键：拉取失败（429 限流 / 网络抖动 / 后端 5xx）时必须保留原有列表，
+      // 不可用空数组覆盖 —— 否则 15s 轮询任意一次失败，整批申请就会「人间蒸发」且无任何提示。
+      if (!res.ok) {
+        setRequestsError(res.status === 429 ? 'rate_limited' : 'load_failed');
+        return false;
+      }
+      const list = await res.json();
+      if (!Array.isArray(list)) { setRequestsError('load_failed'); return false; }
+      setJoinRequests(list);
+      setRequestsError(null);
+      return true;
     } catch {
-      setJoinRequests([]);
+      setRequestsError('load_failed');
+      return false;
     } finally {
       setRequestsLoading(false);
     }
@@ -113,13 +130,31 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
   };
   useEffect(() => { load(); }, [params.id]);
 
-  // 自动刷新待审加入申请：owner/维护者停留页面时，每 15s 轮询（后台标签页不触发）+ 窗口聚焦即拉取
+  // 自动刷新待审加入申请：owner/维护者停留页面时轮询（后台标签页不触发）+ 窗口聚焦即拉取。
+  // 连续失败时指数退避 15s → 30s → 60s（上限）：共享出口 IP（培训现场同 WiFi）被限流时，
+  // 不再每 15s 持续打 429 把服务端压得更死，也让错误提示不会一直挂着。
+  const pollFailStreak = useRef(0);
   useEffect(() => {
     if (!team || !(team.is_owner || team.is_manager)) return;
-    const tick = () => { if (!document.hidden) fetchRequests(); };
-    const id = setInterval(tick, 15000);
-    window.addEventListener('focus', tick);
-    return () => { clearInterval(id); window.removeEventListener('focus', tick); };
+    const BASE = 15000, MAX = 60000;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
+    const schedule = (delay: number) => {
+      if (stopped) return;
+      if (timer) clearTimeout(timer); // 重新调度前先清掉待执行的，避免叠加多个定时器
+      timer = setTimeout(tick, delay);
+    };
+    const tick = async () => {
+      if (stopped) return;
+      if (document.hidden) return schedule(BASE);
+      const ok = await fetchRequests();
+      pollFailStreak.current = ok ? 0 : Math.min(pollFailStreak.current + 1, 4);
+      schedule(ok ? BASE : Math.min(BASE * 2 ** pollFailStreak.current, MAX));
+    };
+    const onFocus = () => { if (!document.hidden) tick(); };
+    schedule(BASE);
+    window.addEventListener('focus', onFocus);
+    return () => { stopped = true; if (timer) clearTimeout(timer); window.removeEventListener('focus', onFocus); };
   }, [team, params.id, fetchRequests]);
 
   const handleSave = async (e: React.FormEvent) => { e.preventDefault(); const token = localStorage.getItem('token'); if (!token) return; setSaving(true);
@@ -252,9 +287,11 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
   };
 
   // 审批加入申请：approve 加入成员；reject 仅标记
+  // 一次只处理一条 userId；后端 reviewJoinRequest 也只 findOne 改一条，不会连带其它申请。
   const reviewRequest = async (userId: string, action: 'approve' | 'reject', role: 'maintainer' | 'viewer' = 'viewer') => {
     const token = localStorage.getItem('token'); if (!token) return;
-    setRequestsLoading(true);
+    if (reviewing) return; // 串行化：有正在处理的行时忽略新点击，防连点重复提交
+    setReviewing({ id: userId, action });
     try {
       const res = await fetch(`/api/teams/${params.id}/join-requests/${userId}`, {
         method: 'PATCH',
@@ -263,10 +300,16 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.message || 'Failed');
+      // 仅移除这一条（后端复合主键下一人至多一条 pending）
       setJoinRequests((list) => list.filter((r) => r.user_id !== userId));
+      setRequestRoles((m) => { const next = { ...m }; delete next[userId]; return next; });
       if (action === 'approve') await load(); // 刷新成员列表
-    } catch (err: any) { alert(err.message || 'Failed'); }
-    finally { setRequestsLoading(false); }
+    } catch (err: any) {
+      // 失败时该行原样保留，用户可重试，不会出现「申请凭空消失」
+      alert(err.message || 'Failed');
+    } finally {
+      setReviewing(null);
+    }
   };
 
   if (loading) return <div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center text-neutral-500">{t('skills.loading')}</div>;
@@ -496,15 +539,33 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
           {/* 加入申请（owner 或维护者审批） */}
           {canManage && (
             <div>
-              <h2 className="text-xl font-bold mb-4">{t('team.joinRequests')} ({joinRequests.length})</h2>
-              {requestsLoading ? (
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold">{t('team.joinRequests')} ({joinRequests.length})</h2>
+                <button
+                  onClick={() => fetchRequests()}
+                  disabled={requestsLoading}
+                  className="text-xs text-neutral-500 hover:text-neutral-900 disabled:opacity-50"
+                >
+                  {requestsLoading ? t('team.loading') : t('team.retry')}
+                </button>
+              </div>
+              {/* 刷新失败时保留旧列表 + 明确提示，绝不静默清空 */}
+              {requestsError && (
+                <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {requestsError === 'rate_limited' ? t('team.requestsRateLimited') : t('team.requestsLoadFailed')}
+                </div>
+              )}
+              {/* 只有首次加载（列表还空着）才整块显示「加载中」；后续刷新保留列表，避免闪烁 */}
+              {requestsLoading && joinRequests.length === 0 ? (
                 <p className="text-sm text-neutral-400">{t('team.loading')}</p>
               ) : joinRequests.length === 0 ? (
                 <p className="text-sm text-neutral-400">{t('team.noJoinRequests')}</p>
               ) : (
                 <div className="space-y-2">
-                  {joinRequests.map((r: any) => (
-                    <div key={r.user_id} className="flex items-center justify-between p-3 border rounded-lg">
+                  {joinRequests.map((r: any) => {
+                    const busy = reviewing?.id === r.user_id;
+                    return (
+                    <div key={r.user_id} className={`flex items-center justify-between p-3 border rounded-lg ${busy ? 'opacity-60' : ''}`}>
                       <div className="min-w-0">
                         <div className="font-medium">{r.user?.name || r.user?.email || r.user_id.slice(0, 8)}</div>
                         <div className="text-xs text-neutral-500 truncate">{r.user?.email}</div>
@@ -512,10 +573,11 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         {team.is_owner ? (
+                          // 下拉只记录角色选择，不再直接触发审批（原先 onChange 即批准，误触就加入成员）
                           <select
-                            defaultValue="viewer"
-                            disabled={requestsLoading}
-                            onChange={(e) => reviewRequest(r.user_id, 'approve', e.target.value as 'maintainer' | 'viewer')}
+                            value={requestRoles[r.user_id] || 'viewer'}
+                            disabled={!!reviewing}
+                            onChange={(e) => setRequestRoles((m) => ({ ...m, [r.user_id]: e.target.value as 'maintainer' | 'viewer' }))}
                             className="text-xs px-2 py-1 border rounded bg-white"
                           >
                             <option value="maintainer">{t('team.roleMaintainer')}</option>
@@ -524,15 +586,24 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
                         ) : (
                           <span className="text-xs text-neutral-500">{t('team.roleViewer')}</span>
                         )}
-                        <button onClick={() => reviewRequest(r.user_id, 'approve')} disabled={requestsLoading} className="text-xs px-3 py-1.5 bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-50">
-                          {t('team.approve')}
+                        <button
+                          onClick={() => reviewRequest(r.user_id, 'approve', requestRoles[r.user_id] || 'viewer')}
+                          disabled={!!reviewing}
+                          className="text-xs px-3 py-1.5 bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-50"
+                        >
+                          {busy && reviewing?.action === 'approve' ? t('team.approving') : t('team.approve')}
                         </button>
-                        <button onClick={() => reviewRequest(r.user_id, 'reject')} disabled={requestsLoading} className="text-xs px-3 py-1.5 border border-neutral-300 rounded hover:bg-neutral-100">
-                          {t('team.reject')}
+                        <button
+                          onClick={() => reviewRequest(r.user_id, 'reject')}
+                          disabled={!!reviewing}
+                          className="text-xs px-3 py-1.5 border border-neutral-300 rounded hover:bg-neutral-100 disabled:opacity-50"
+                        >
+                          {busy && reviewing?.action === 'reject' ? t('team.approving') : t('team.reject')}
                         </button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
