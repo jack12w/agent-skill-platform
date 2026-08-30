@@ -10,22 +10,9 @@ import { Subscription } from '../subscriptions/subscription.entity';
 import { Notification } from '../subscriptions/notification.entity';
 import { OssService } from '../storage/oss.service';
 import { MailQueueService } from '../common/mail-queue.service';
+import { WechatStateStore } from './wechat-state.store';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
-
-// In-memory CSRF state store for WeChat OAuth (5-min TTL, auto-cleanup)
-const wechatStates = new Map<string, { expiresAt: number }>();
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of wechatStates) { if (v.expiresAt < now) wechatStates.delete(k); }
-}, 600_000);
-
-// 绑定态存储：微信「绑定」（已登录会话发起）使用，关联 userId 做 CSRF 防护
-const wechatBindStates = new Map<string, { userId: string; expiresAt: number }>();
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of wechatBindStates) { if (v.expiresAt < now) wechatBindStates.delete(k); }
-}, 600_000);
 
 @Injectable()
 export class AuthService {
@@ -43,6 +30,13 @@ export class AuthService {
     private dataSource: DataSource,
     private mailQueue: MailQueueService,
   ) {}
+
+  // ── 微信 OAuth 的 CSRF state ──
+  // 存在 Redis 里（跨实例共享），进程内存仅作 Redis 不可用时的兜底。
+  // 单容器时行为与原先一致；扩成多副本后仍能正确校验，不会大面积登录失败。
+  private readonly wechatStates = new WechatStateStore<Record<string, never>>('wx:oauth:state');
+  /** 绑定态额外记录发起绑定的 userId，回调据此把 openid 落到正确账号 */
+  private readonly wechatBindStates = new WechatStateStore<{ userId: string }>('wx:bind:state');
 
   async register(email: string, pass: string, name: string, code?: string) {
     // 验证码必填，防止绕过邮箱验证直接注册
@@ -262,8 +256,8 @@ export class AuthService {
       process.env.WECHAT_REDIRECT_URI || `${process.env.PUBLIC_BASE_URL}/api/auth/wechat/callback`
     );
     const state = crypto.randomBytes(16).toString('hex');
-    // Store state in memory (5-min TTL) for CSRF protection
-    wechatStates.set(state, { expiresAt: Date.now() + 5 * 60 * 1000 });
+    // 存入 Redis（5 分钟 TTL），回调时原子消费，防止 CSRF 与重放
+    await this.wechatStates.put(state, {});
     return {
       url: `https://open.weixin.qq.com/connect/qrconnect?appid=${appId}&redirect_uri=${redirectUri}&response_type=code&scope=snsapi_login&state=${state}#wechat_redirect`,
       state,
@@ -301,11 +295,11 @@ export class AuthService {
   async wechatCallback(code: string, state: string) {
     this.assertWechatLoginEnabled();
     // Verify state to prevent CSRF attacks
-    const stored = wechatStates.get(state);
-    if (!stored || Date.now() > stored.expiresAt) {
+    // take() 原子「读取并删除」：state 只会被消费一次，且跨实例可见
+    const stored = await this.wechatStates.take(state);
+    if (!stored) {
       throw new BadRequestException('Invalid or expired state parameter');
     }
-    wechatStates.delete(state);
 
     const appId = process.env.WECHAT_APPID || 'wxb2537aa7600236a7';
     const appSecret = process.env.WECHAT_APPSECRET;
@@ -377,7 +371,7 @@ export class AuthService {
     const base = process.env.PUBLIC_BASE_URL || 'https://skills.rehomi.com';
     const callbackUri = encodeURIComponent(`${base}/api/auth/wechat/mp-callback?rd=${encodeURIComponent(redirect)}`);
     const state = crypto.randomBytes(16).toString('hex');
-    wechatStates.set(state, { expiresAt: Date.now() + 5 * 60 * 1000 });
+    await this.wechatStates.put(state, {});
     return {
       url: `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appId}&redirect_uri=${callbackUri}&response_type=code&scope=${scope}&state=${state}#wechat_redirect`,
     };
@@ -385,11 +379,10 @@ export class AuthService {
 
   async wechatMpLogin(code: string, state: string, redirect: string) {
     this.assertWechatLoginEnabled();
-    const stored = wechatStates.get(state);
-    if (!stored || Date.now() > stored.expiresAt) {
+    const stored = await this.wechatStates.take(state);
+    if (!stored) {
       throw new BadRequestException('state 无效或已过期');
     }
-    wechatStates.delete(state);
     if (!redirect || !redirect.startsWith('/')) {
       throw new BadRequestException('非法跳转地址');
     }
@@ -528,7 +521,7 @@ export class AuthService {
     const redirectUri = encodeURIComponent(`${base}/api/auth/wechat/bind-callback`);
     const state = crypto.randomBytes(16).toString('hex');
     // 绑定态关联当前登录用户，回调据此把 openid 落到正确账号
-    wechatBindStates.set(state, { userId, expiresAt: Date.now() + 5 * 60 * 1000 });
+    await this.wechatBindStates.put(state, { userId });
     return {
       url: `https://open.weixin.qq.com/connect/qrconnect?appid=${appId}&redirect_uri=${redirectUri}&response_type=code&scope=snsapi_login&state=${state}#wechat_redirect`,
       state,
@@ -537,11 +530,10 @@ export class AuthService {
 
   async completeWechatBind(code: string, state: string) {
     this.assertWechatLoginEnabled();
-    const stored = wechatBindStates.get(state);
-    if (!stored || Date.now() > stored.expiresAt) {
+    const stored = await this.wechatBindStates.take(state);
+    if (!stored) {
       throw new BadRequestException('Invalid or expired state parameter');
     }
-    wechatBindStates.delete(state);
     const userId = stored.userId;
 
     const appId = process.env.WECHAT_APPID || 'wxb2537aa7600236a7';
