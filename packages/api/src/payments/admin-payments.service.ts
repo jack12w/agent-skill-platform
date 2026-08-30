@@ -15,14 +15,26 @@ import { User } from '../auth/user.entity';
 import { Team } from '../teams/team.entity';
 import { WechatPayService, WechatApiError } from './wechat-pay.service';
 import { BalanceService } from './balance.service';
+import { DistributedStore } from '../common/dist-state.store';
+
+/** 提现单 404 计数的保留时长：远超「30min 单龄 + 连续 2 次」判定所需的观察窗口 */
+const NOT_FOUND_TTL_SEC = 7 * 24 * 3600;
+/** 僵尸单告警去重时长：同一单 24h 内最多告警一次 */
+const ZOMBIE_ALERT_TTL_SEC = 24 * 3600;
 
 @Injectable()
 export class AdminPaymentsService implements OnModuleInit {
   private readonly logger = new Logger(AdminPaymentsService.name);
 
-  // 提现收口安全闸：累计 404 次数（仅 REVIEWING，防瞬时误判）；僵尸单告警去重（进程级，重启后重报一次可接受）
-  private readonly notFoundCounts = new Map<string, number>();
-  private readonly zombieAlerted = new Set<string>();
+  // 提现收口安全闸（原为进程内 Map/Set，多副本下计数分散导致收口迟缓，已迁入 Redis 共享）。
+  // - Redis 可用：404 计数跨副本累加，「连续 2 次」按全局视角判定，僵尸单能被及时收口。
+  // - Redis 不可用：退回本进程内存，退化为改造前的单副本视角（每副本各自计数），
+  //   行为不会比改造前更差。
+  // 注意：**重复解冻的防线不在计数上**，而在 failWithdrawal 的原子终态门控 ——
+  // 它的 UPDATE 带 `WHERE status NOT IN ('PAID','FAILED','CANCELLED')`，终态单 affected=0，
+  // 任何副本都不可能把同一笔钱解冻两次。计数只影响「多快判定为未受理」，不影响资金安全。
+  private readonly notFoundCounts = new DistributedStore('pay:wd:notfound');
+  private readonly zombieAlerted = new DistributedStore('pay:wd:zombie');
 
   constructor(
     @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
@@ -306,28 +318,28 @@ export class AdminPaymentsService implements OnModuleInit {
 
       // 僵尸单告警：超 24h 仍未收口（如 PROCESSING 长期查单异常），需人工核查资金是否打出。
       // 不解冻、不改态，交由运营在微信商户平台核对后手动处理。
-      if (ageMin >= 24 * 60 && !this.zombieAlerted.has(wd.id)) {
-        this.zombieAlerted.add(wd.id);
+      // markOnce：跨副本共享去重，同一单 24h 内只告警一次（返回 true 才是首次命中）
+      if (ageMin >= 24 * 60 && (await this.zombieAlerted.markOnce(wd.id, ZOMBIE_ALERT_TTL_SEC))) {
         this.logger.error(`提现单卡在 ${wd.status} 超24h 未收口，需人工核查资金是否打出: ${wd.out_bill_no}`);
       }
 
       try {
         const q = await this.wechat.queryTransfer(wd.out_bill_no);
-        this.notFoundCounts.delete(wd.id); // 拿到真实响应 → 复位 404 计数
+        await this.notFoundCounts.reset(wd.id); // 拿到真实响应 → 复位 404 计数
         await this.applyTransferState(wd, q);
       } catch (e: any) {
         if (e instanceof WechatApiError && e.wechatStatus === 404) {
           if (wd.status === 'REVIEWING') {
             // REVIEWING = 打款请求从未发出（微信侧永远不会有此单）。
             // 30min 窗口 + 多次确认排除"刚发起查单返回不存在"的瞬时误判 → 安全自动解冻退款。
-            const cnt = (this.notFoundCounts.get(wd.id) || 0) + 1;
-            this.notFoundCounts.set(wd.id, cnt);
+            // 计数跨副本共享（Redis），避免多实例各记一份导致永远攒不到 2 次。
+            const cnt = await this.notFoundCounts.incr(wd.id, NOT_FOUND_TTL_SEC);
             if (ageMin >= 30 && cnt >= 2) {
               this.logger.error(
                 `REVIEWING 提现单长时间无微信转账单(${cnt}次404,${ageMin.toFixed(0)}min)，按未受理自动解冻: ${wd.out_bill_no}`,
               );
               await this.failWithdrawal(wd, '打款未受理（微信长时间无此单），已自动退回余额');
-              this.notFoundCounts.delete(wd.id);
+              await this.notFoundCounts.reset(wd.id);
             } else {
               this.logger.warn(`微信无此转账单(${cnt}次)，暂保持观察(${ageMin.toFixed(0)}min): ${wd.out_bill_no}`);
             }
@@ -337,7 +349,7 @@ export class AdminPaymentsService implements OnModuleInit {
           }
         } else {
           // 网络/超时/5xx 等不确定错误：复位计数，仅告警，绝不解冻
-          this.notFoundCounts.delete(wd.id);
+          await this.notFoundCounts.reset(wd.id);
           this.logger.warn(`同步提现状态失败 ${wd.out_bill_no}: ${e?.message}`);
         }
       }

@@ -12,6 +12,13 @@ import {
 } from './payments.entity';
 import { WechatPayService, WechatApiError } from './wechat-pay.service';
 import { BalanceService } from './balance.service';
+import { DistributedStore } from '../common/dist-state.store';
+
+/**
+ * 对账链标记的保留时长：必须覆盖整条退避链（5s+20s+60s+3m+10m+30m ≈ 44.4min）
+ * 再加首轮 0–3s 抖动，取 46min 留余量。仅作防泄漏兜底 —— 链正常结束会主动 unmark。
+ */
+const RECONCILE_CHAIN_TTL_SEC = 46 * 60;
 
 /**
  * 退款闭环。
@@ -307,12 +314,36 @@ export class RefundService implements OnModuleInit {
    * 网络抖动处理：queryRefund 抛错（超时/连接重置/微信 5xx）时只记日志、保持 PENDING，
    * 由退避链自动重试，无需人工介入。
    */
-  private scheduled = new Set<string>();
+  /**
+   * 去重标记（原为进程内 Set）：多副本下各自为政会让同一退款单起 N 条退避链，
+   * 重复查单既浪费额度又有触发微信频限的风险。迁入 Redis 后跨副本共享，
+   * 「同一单只跑一条链」在所有副本上成立。
+   * 注意：链本身仍跑在起链的那个副本里，进程重启后链会丢 —— 由 onModuleInit 的
+   * 慢速安全网兜底，与改造前一致。
+   */
+  private readonly scheduled = new DistributedStore('pay:refund:reconcile');
   private readonly reconcileDelays = [5_000, 20_000, 60_000, 180_000, 600_000, 1_800_000];
 
+  /**
+   * 起链入口（同步，调用方无需 await）。
+   * 去重标记要访问 Redis，真正的起链动作放在异步分支里，确认「首个标记者」后才执行。
+   * 标记过程本身不会抛错（内部已降级），catch 仅为兜底：宁可重复起一条链，
+   * 也绝不让退款单因去重失败而永远卡在 PENDING。
+   */
   private scheduleReconcile(outRefundNo: string): void {
-    if (this.scheduled.has(outRefundNo)) return; // 同一单不重复起链
-    this.scheduled.add(outRefundNo);
+    void this.tryScheduleReconcile(outRefundNo).catch((e) => {
+      this.logger.warn(`退款对账链去重标记异常，退化为本副本直接起链 ${outRefundNo}: ${e?.message}`);
+      this.startReconcileChain(outRefundNo);
+    });
+  }
+
+  private async tryScheduleReconcile(outRefundNo: string): Promise<void> {
+    const isFirst = await this.scheduled.markOnce(outRefundNo, RECONCILE_CHAIN_TTL_SEC);
+    if (!isFirst) return; // 已有副本（或本副本）在跑这条链
+    this.startReconcileChain(outRefundNo);
+  }
+
+  private startReconcileChain(outRefundNo: string): void {
     let attempt = 0;
     const run = () => {
       this.reconcileOne(outRefundNo)
@@ -323,7 +354,7 @@ export class RefundService implements OnModuleInit {
             setTimeout(run, this.reconcileDelays[attempt]).unref();
           } else {
             // 退避链用尽仍非终态：交慢速安全网兜底，清理本链标记
-            this.scheduled.delete(outRefundNo);
+            void this.scheduled.unmark(outRefundNo).catch(() => {});
           }
         });
     };
@@ -336,7 +367,7 @@ export class RefundService implements OnModuleInit {
   private async reconcileOne(outRefundNo: string): Promise<void> {
     const rf = await this.refundRepo.findOne({ where: { out_refund_no: outRefundNo } });
     if (!rf || rf.status !== 'PENDING') {
-      this.scheduled.delete(outRefundNo); // 已被回调/其他路径收口，退出链
+      await this.scheduled.unmark(outRefundNo); // 已被回调/其他路径收口，退出链
       return;
     }
     try {
@@ -371,7 +402,8 @@ export class RefundService implements OnModuleInit {
   async reconcileStuckRefunds(): Promise<void> {
     const pending = await this.refundRepo.find({ where: { status: 'PENDING' }, take: 100 });
     for (const rf of pending) {
-      if (this.scheduled.has(rf.out_refund_no)) continue; // 事件链还在跑，跳过避免重复查单
+      // 事件链还在跑（可能是别的副本起的）→ 跳过，避免重复查单
+      if (await this.scheduled.exists(rf.out_refund_no)) continue;
       try {
         const q = await this.wechat.queryRefund(rf.out_refund_no);
         if (!q) continue;

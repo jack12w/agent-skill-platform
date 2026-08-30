@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import { getSharedRedis, reportRedisFailure } from '../common/redis.client';
 
 /**
  * 微信 OAuth 的 CSRF state 存储。
@@ -10,10 +10,9 @@ import Redis from 'ioredis';
  * 因此改为 Redis 为主存、进程内存为兜底：
  * - Redis 可用 → 跨实例共享，多副本安全
  * - Redis 不可用 → 退回内存，行为与改造前完全一致（不会比现在更差）
- * - 写入双写、读取 Redis 优先内存兜底 → Redis 中途抖动也能尽量救回
  *
- * 容错参数与 rate-limit.guard.ts / system-metrics.service.ts 保持一致，
- * 目的相同：Redis 出问题时降级，绝不阻塞登录主链路。
+ * Redis 连接复用 common/redis.client.ts 的全局共享实例：全站只维护一个连接，
+ * 且享受统一的「故障冷却 + 自动重连探测」，不会因一次抖动永久降级。
  */
 
 /** state 有效期 5 分钟，与微信授权页的合理停留时间匹配 */
@@ -28,36 +27,6 @@ local v = redis.call('GET', KEYS[1])
 if v then redis.call('DEL', KEYS[1]) end
 return v
 `;
-
-/** Redis 惰性单例：直到第一次使用才连接，未配置 REDIS_URL 时直接走内存 */
-let redisClient: Redis | null | undefined;
-
-function getRedis(): Redis | null {
-  if (redisClient !== undefined) return redisClient;
-  const url = process.env.REDIS_URL;
-  if (!url) {
-    redisClient = null;
-    return null;
-  }
-  try {
-    const client = new Redis(url, {
-      lazyConnect: true, // 首次命令时才连接，不阻塞启动
-      maxRetriesPerRequest: 1,
-      connectTimeout: 1000,
-      commandTimeout: 1000,
-      retryStrategy: () => null, // 连接失败后不再自动重连，直接降级内存兜底
-    });
-    // 连接级错误 → 丢弃该实例，后续请求走内存兜底
-    client.on('error', () => {
-      if (redisClient === client) redisClient = null;
-    });
-    redisClient = client;
-    return client;
-  } catch {
-    redisClient = null;
-    return null;
-  }
-}
 
 /** 所有 store 实例，供统一清理内存兜底条目 */
 const allStores: WechatStateStore<any>[] = [];
@@ -86,13 +55,14 @@ export class WechatStateStore<T extends object> {
    */
   async put(state: string, value: T): Promise<void> {
     const k = this.key(state);
-    const r = getRedis();
+    const r = getSharedRedis();
     if (r) {
       try {
         await r.set(k, JSON.stringify(value), 'EX', TTL_SEC);
         return;
       } catch {
-        // Redis 写失败 → 落到下面的内存兜底
+        // Redis 写失败 → 上报故障（冷却后自动重连），本次落到下面的内存兜底
+        reportRedisFailure(r);
       }
     }
     this.mem.set(k, { value, expiresAt: Date.now() + TTL_SEC * 1000 });
@@ -104,7 +74,7 @@ export class WechatStateStore<T extends object> {
    */
   async take(state: string): Promise<T | null> {
     const k = this.key(state);
-    const r = getRedis();
+    const r = getSharedRedis();
     if (r) {
       try {
         const raw = (await r.eval(TAKE_AND_DELETE_LUA, 1, k)) as string | null;
@@ -113,7 +83,8 @@ export class WechatStateStore<T extends object> {
           return JSON.parse(raw) as T;
         }
       } catch {
-        // Redis 读失败 → 落到下面的内存兜底
+        // Redis 读失败 → 上报故障（冷却后自动重连），本次落到下面的内存兜底
+        reportRedisFailure(r);
       }
     }
     const hit = this.mem.get(k);

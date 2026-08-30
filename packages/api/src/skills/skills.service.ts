@@ -60,7 +60,10 @@ export class SkillsService {
    *   listVersions 对非 owner 会自动剥掉 package_url → 结果对所有非 owner 访客完全一致、可安全共享。
    * - 会员订阅状态（membershipStatus / isTeamMember）与 has_update 永远 per-request 取，绝不进缓存，
    *   因此对订阅/会员鉴权零影响。
-   * - 10s TTL；单进程内存，多实例各自缓存（数据相同，仅放大一点点内存，无正确性问题）。
+   * - 10s TTL；**刻意保持单进程内存，不迁 Redis**：各实例缓存的是同一份公开数据，
+   *   多副本只是各存一份（内存开销 = 副本数 × 热点技能数，上限 1000 条/实例），
+   *   没有正确性问题；换成 Redis 反而给每个详情页请求增加一次网络往返，
+   *   把「降低 DB 压力」的收益又吐回去，得不偿失。
    */
   private coreCache = new Map<string, { value: any; exp: number }>();
 

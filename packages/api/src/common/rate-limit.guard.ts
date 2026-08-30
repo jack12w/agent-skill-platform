@@ -1,5 +1,5 @@
 import { Injectable, CanActivate, ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
-import Redis from 'ioredis';
+import { getSharedRedis, reportRedisFailure } from './redis.client';
 
 /**
  * 基于 IP 的滑动窗口限流器 —— Redis 版（跨进程共享计数，按真实客户端 IP 精确限流）。
@@ -13,6 +13,11 @@ import Redis from 'ioredis';
  * 3. Redis 跨进程共享计数，PM2 多实例计数一致；Redis 不可用/未配置时**降级内存兜底**，
  *    绝不因此阻塞全站。
  * 4. 健康检查 /api/health 豁免，避免影响探针/监控。
+ *
+ * 修复记录：旧实现在 Redis 命令失败时执行 `this.redis = null` 之后再也不恢复 ——
+ * 一次网络抖动（甚至一条命令超时）就会让限流器**永久**退化成单进程内存计数，
+ * 多副本下实际阈值被放大 N 倍，且没有任何日志提示，属于静默失效。
+ * 现改为走共享客户端的「故障冷却 + 自动重连探测」：降级只是暂时的，Redis 恢复后自动切回。
  */
 
 const WINDOW_MS = 60_000;
@@ -72,7 +77,6 @@ function isPrivateOrInternalIp(ip: string): boolean {
 
 @Injectable()
 export class RateLimitGuard implements CanActivate {
-  private redis: Redis | null = null;
   private readonly maxPerIp: number;
   private readonly maxGlobal: number;
   /** 内存兜底（仅当 Redis 不可用/未配置时启用，按进程计数，尽力而为） */
@@ -83,27 +87,10 @@ export class RateLimitGuard implements CanActivate {
     this.maxPerIp = maxPerIp;
     this.maxGlobal = Math.max(maxPerIp * 5, DEFAULT_MAX_GLOBAL);
 
-    const url = process.env.REDIS_URL;
-    if (url) {
-      try {
-        this.redis = new Redis(url, {
-          lazyConnect: true, // 首次命令时才连接，不阻塞启动
-          maxRetriesPerRequest: 1,
-          connectTimeout: 1000,
-          commandTimeout: 1000,
-          retryStrategy: () => null, // 连接失败后不再自动重连，直接降级内存兜底
-        });
-        // 连接级错误 → 丢弃 Redis，后续请求走内存兜底，绝不阻塞全站
-        this.redis.on('error', () => {
-          this.redis = null;
-        });
-      } catch {
-        this.redis = null;
-      }
-    }
-
     // 内存兜底过期清理，防止泄漏（仅兜底路径使用）
-    setInterval(() => this.cleanup(), 300_000);
+    const sweeper = setInterval(() => this.cleanup(), 300_000);
+    // 不阻止进程退出
+    if (typeof sweeper.unref === 'function') sweeper.unref();
   }
 
   /**
@@ -140,15 +127,17 @@ export class RateLimitGuard implements CanActivate {
     const bucketKey = realClient ? `rl:ip:${key}` : GLOBAL_KEY;
     const max = realClient ? this.maxPerIp : this.maxGlobal;
 
-    if (this.redis) {
+    // 每次请求都取当前共享实例：Redis 故障冷却结束后这里会自动拿到新连接（自愈）
+    const redis = getSharedRedis();
+    if (redis) {
       try {
-        const count = await this.redis.incr(bucketKey);
+        const count = await redis.incr(bucketKey);
         // 首条记录写入时设定窗口 TTL
         if (count === 1) {
-          await this.redis.expire(bucketKey, this.windowSec);
+          await redis.expire(bucketKey, this.windowSec);
         }
         if (count > max) {
-          const ttl = await this.redis.ttl(bucketKey);
+          const ttl = await redis.ttl(bucketKey);
           const retryAfter = ttl > 0 ? ttl : this.windowSec;
           throw new HttpException(
             {
@@ -163,8 +152,9 @@ export class RateLimitGuard implements CanActivate {
       } catch (err) {
         // Redis 命令层面的限流异常需原样抛出；其它 Redis 异常降级内存兜底
         if (err instanceof HttpException) throw err;
-        // 连接/超时错误 → 标记降级（下次直接走内存），本条请求用内存兜底放行判断
-        this.redis = null;
+        // 连接/超时错误 → 上报故障进入冷却期（到期自动重连探测），
+        // 本条请求用内存兜底放行判断。**不要**再写 this.redis = null —— 那是永久降级。
+        reportRedisFailure(redis);
       }
     }
 

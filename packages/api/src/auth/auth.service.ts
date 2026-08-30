@@ -11,6 +11,7 @@ import { Notification } from '../subscriptions/notification.entity';
 import { OssService } from '../storage/oss.service';
 import { MailQueueService } from '../common/mail-queue.service';
 import { WechatStateStore } from './wechat-state.store';
+import { DistributedStore } from '../common/dist-state.store';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
@@ -125,31 +126,30 @@ export class AuthService {
   }
 
   // ── 邮箱验证码 ───────────────────────────
-  // 应用层限流（内存，单实例部署足够）：
+  // 应用层限流（原为进程内 static Map，多副本下每个副本各计一份 → 冷却/锁定力度被稀释 N 倍，
+  // 6 位验证码的暴力枚举窗口随之放大 N 倍。已迁入 Redis 跨副本共享，进程内存仅作降级兜底）：
   //  - sendCooldown：同邮箱两次「获取验证码」最小间隔，防狂点打满 SMTP 连接池
   //  - verifyAttempts：同邮箱验证码错误累计次数，超限锁定一段时间，防暴力枚举 6 位码
-  private static sendCooldown = new Map<string, number>(); // email -> 下次允许发送的时间戳
-  private static verifyAttempts = new Map<string, { count: number; resetAt: number }>();
+  private readonly sendCooldown = new DistributedStore('auth:send:cd'); // email -> 下次允许发送的时间戳
+  private readonly verifyAttempts = new DistributedStore('auth:verify:attempts'); // email -> 窗口内错误次数
   private static readonly SEND_COOLDOWN_MS = 60 * 1000; // 同邮箱 60s 冷却
   private static readonly MAX_VERIFY_ATTEMPTS = 5; // 窗口内最多 5 次错误
-  private static readonly VERIFY_WINDOW_MS = 10 * 60 * 1000; // 计数窗口 10 分钟
-
-  // 惰性清理过期条目，避免 Map 无限增长（配合 P2-1 数据卫生思路）
-  private static sweepRateLimitMaps(now: number) {
-    for (const [k, ts] of AuthService.sendCooldown) if (ts <= now) AuthService.sendCooldown.delete(k);
-    for (const [k, r] of AuthService.verifyAttempts) if (r.resetAt <= now) AuthService.verifyAttempts.delete(k);
-  }
+  private static readonly VERIFY_WINDOW_SEC = 10 * 60; // 计数窗口 10 分钟（固定窗口，非滑动）
 
   async sendVerificationCode(email: string) {
     const now = Date.now();
-    AuthService.sweepRateLimitMaps(now);
     // 同邮箱发送冷却：命中则直接拒绝，不落库、不发信（防狂点耗尽连接池）
-    const nextAllowed = AuthService.sendCooldown.get(email) || 0;
+    const nextAllowed = Number(await this.sendCooldown.get(email)) || 0;
     if (now < nextAllowed) {
       const wait = Math.ceil((nextAllowed - now) / 1000);
       throw new BadRequestException(`验证码发送过于频繁，请 ${wait} 秒后再试`);
     }
-    AuthService.sendCooldown.set(email, now + AuthService.SEND_COOLDOWN_MS);
+    // TTL 与冷却时长一致：到点自动失效，无需额外清理逻辑
+    await this.sendCooldown.set(
+      email,
+      String(now + AuthService.SEND_COOLDOWN_MS),
+      AuthService.SEND_COOLDOWN_MS / 1000,
+    );
 
     // P2-1 数据卫生：惰性清理该邮箱已使用/已过期的旧验证码，避免 verification_codes 表无限膨胀。
     // 每次获取新码时触发，无需额外定时任务依赖；仅删 junk（保留本次即将写入的未用记录之外）。
@@ -189,10 +189,9 @@ export class AuthService {
   // manager 可选：传入时复用调用方事务，保证「校验+消费+建用户」原子回滚
   private async verifyCode(email: string, code: string, manager?: EntityManager) {
     // 尝试次数限制（防暴力枚举 6 位码）：窗口内错误达上限则暂时锁定该邮箱
-    const now = Date.now();
-    AuthService.sweepRateLimitMaps(now);
-    const att = AuthService.verifyAttempts.get(email);
-    if (att && now < att.resetAt && att.count >= AuthService.MAX_VERIFY_ATTEMPTS) {
+    // 计数跨副本共享，窗口随首次错误固定（不因后续错误续期，避免持续试探永远出不了窗口）
+    const cnt = await this.verifyAttempts.getCount(email);
+    if (cnt >= AuthService.MAX_VERIFY_ATTEMPTS) {
       throw new BadRequestException('验证码错误次数过多，请稍后重试');
     }
     const repo = manager ? manager.getRepository(VerificationCode) : this.codeRepository;
@@ -202,28 +201,26 @@ export class AuthService {
     });
     if (!record || new Date() > record.expires_at) {
       // 记一次失败（record 为空=码错，或已过期都计入，防枚举）
-      this.bumpVerifyAttempts(email, now);
+      await this.bumpVerifyAttempts(email);
       throw new BadRequestException(record ? '验证码已过期' : '验证码错误');
     }
     // 原子消费：仅当 used=false 时才置 true，并校验 affected 行数，
     // 并发场景下败者 update 命中 0 行 → 抛错，避免同一验证码被重复消费
     const result = await repo.update({ id: record.id, used: false }, { used: true });
     if (result.affected === 0) {
-      this.bumpVerifyAttempts(email, now);
+      await this.bumpVerifyAttempts(email);
       throw new BadRequestException('验证码错误');
     }
-    // 校验成功：清零该邮箱失败计数
-    AuthService.verifyAttempts.delete(email);
+    // 校验成功：清零该邮箱失败计数。
+    // 刻意**不 await**：此处正处在调用方（注册/重置密码）的 DB 事务内，且刚 UPDATE 过
+    // 验证码行、持有行锁；等 Redis 回执（最坏 1s 超时）会白白拉长行锁持有时间。
+    // 清零丢失可接受：计数本就有 10 分钟窗口，残留计数只会让用户下次多等，不影响安全。
+    void this.verifyAttempts.reset(email).catch(() => {});
   }
 
-  /** 累加某邮箱的验证码错误次数（窗口内滚动，用于暴力枚举防护） */
-  private bumpVerifyAttempts(email: string, now: number) {
-    const att = AuthService.verifyAttempts.get(email);
-    if (att && now < att.resetAt) {
-      att.count += 1;
-    } else {
-      AuthService.verifyAttempts.set(email, { count: 1, resetAt: now + AuthService.VERIFY_WINDOW_MS });
-    }
+  /** 累加某邮箱的验证码错误次数（固定窗口，用于暴力枚举防护） */
+  private async bumpVerifyAttempts(email: string): Promise<void> {
+    await this.verifyAttempts.incr(email, AuthService.VERIFY_WINDOW_SEC);
   }
 
   // ── 忘记密码 ───────────────────────────

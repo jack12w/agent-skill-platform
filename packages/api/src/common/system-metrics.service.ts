@@ -94,7 +94,11 @@ export class SystemMetricsService implements OnModuleInit {
   private todayConc = new Array<number>(TODAY_SLOTS).fill(0); // 当天每 5 分钟并发峰值
 
   // ── 请求耗时 / 错误埋点（定位「页面卡在加载中」这类问题的核心数据）──
-  // 纯内存计数（++/-- 天然原子），不落 Redis、不发网络请求，单次开销纳秒级。
+  // 刻意保持纯进程内存（++/-- 天然原子），不落 Redis、不发网络请求，单次开销纳秒级。
+  // 取舍：埋点若上 Redis，等于给**每一个** API 请求增加一次网络写，
+  // 在高并发下会拖慢响应、并把核心缓存省下的 DB 压力又吐回去。
+  // 代价是多副本时后台看到的是「某一个实例」的耗时/错误数据（响应体里的 pid 标明是哪个），
+  // 排查问题时按需到对应实例取；总量类指标（每分钟请求数、当天曲线）仍由 Redis 跨实例持久化。
   private readonly pathStats = new Map<string, PathStat>();
   private readonly slowLog: { ts: number; path: string; ms: number; status: number }[] = [];
   private errCounts = { http401: 0, http429: 0, http5xx: 0 };
