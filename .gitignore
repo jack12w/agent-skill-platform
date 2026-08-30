@@ -24,6 +24,7 @@ coverage/
 .codebuddy/
 # local debug / temp scripts
 _*
+diagnostic-*.sql
 # build artifacts in source dirs
 packages/shared/src/*.js
 packages/shared/src/*.d.ts
