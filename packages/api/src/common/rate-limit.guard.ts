@@ -37,6 +37,12 @@ const READONLY_WHITELIST = [
   '/api/skills', // 技能列表/详情/版本：服务端 30s 缓存
   '/api/tags/groups', // 标签分组：几乎静态
   '/api/ai/feed', // AI feed：服务端 60s 缓存
+  // 登录后落地页（/dashboard）首屏必打的两个幂等只读 GET，且都需 JWT 才能访问。
+  // 培训场景（50 人共享同一出口 IP）下，每人进 dashboard 就计 2 次、登录链路再计 2 次，
+  // 合计约 200 次/min 直接撞穿「每 IP 120/min」上限 → 首屏被 429，页面卡在「加载中」。
+  // 放开销路：攻击者要打这两个接口必须先持有合法 token，防爬能力不受影响。
+  '/api/auth/me', // 当前用户资料：单次主键查询，成本与 subscriptions/count 同级
+  '/api/teams/my', // 我的团队：单次 join 查询；注意精确匹配，不影响 /api/teams/:id
 ];
 
 /** 是否命中只读白名单（仅 GET/HEAD，写操作一律不豁免） */

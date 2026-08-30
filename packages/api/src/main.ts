@@ -70,12 +70,17 @@ async function bootstrap() {
     if (url.startsWith('/api') && !url.includes('/api/health')) {
       metrics.recordRequest();
       metrics.incInFlight();
+      // 耗时埋点：从「请求进入 Node」开始计时，覆盖限流排队、守卫、controller 全链路。
+      // 被 429 拒绝的请求不会进 controller，但同样会走到这里，因此限流命中可被完整捕获 ——
+      // 这正是诊断「培训现场 50 人同 IP，首屏卡在加载中」所需的关键数据。
+      const t0 = Date.now();
       // finish / close 都可能触发，用 ended 标志保证只减一次，避免 inFlight 泄露
       let ended = false;
       const dec = () => {
         if (!ended) {
           ended = true;
           metrics.decInFlight();
+          metrics.recordResponse(url, res.statusCode || 0, Date.now() - t0);
         }
       };
       res.on('finish', dec);

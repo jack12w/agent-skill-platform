@@ -27,6 +27,33 @@ function ymd(d: Date = new Date()): string {
 /** 全天 5 分钟一档 = 288 槽 */
 const TODAY_SLOTS = 288;
 
+/** 慢请求阈值：超过此耗时才记入慢请求明细（避免刷屏，也避免内存无界增长） */
+const SLOW_MS = 1000;
+/** 慢请求明细最多保留条数（环形覆盖，只留最近的） */
+const SLOW_LOG_MAX = 100;
+
+interface PathStat {
+  n: number;
+  totalMs: number;
+  maxMs: number;
+  slow: number;
+  err429: number;
+  err5xx: number;
+}
+
+/** 把 /api/skills/<uuid> 归一为 /api/skills/:id，避免 UUID 撑爆统计 Map */
+function normalizePath(url: string): string {
+  const segs = url.split('?')[0].split('/').filter(Boolean);
+  const out = segs.map((s) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s) ||
+    /^[0-9a-f]{16,}$/i.test(s) ||
+    /^\d+$/.test(s)
+      ? ':id'
+      : s,
+  );
+  return '/' + out.join('/');
+}
+
 /**
  * 轻量系统指标收集（用于管理后台「系统设置」展示）。
  * - 请求计数：每收到一个 API 请求调用 recordRequest()，维护滑动窗口算 QPS / 每分钟。
@@ -65,6 +92,13 @@ export class SystemMetricsService implements OnModuleInit {
   private todayDate = ymd(new Date());
   private todayReq = new Array<number>(TODAY_SLOTS).fill(0); // 当天每 5 分钟请求数
   private todayConc = new Array<number>(TODAY_SLOTS).fill(0); // 当天每 5 分钟并发峰值
+
+  // ── 请求耗时 / 错误埋点（定位「页面卡在加载中」这类问题的核心数据）──
+  // 纯内存计数（++/-- 天然原子），不落 Redis、不发网络请求，单次开销纳秒级。
+  private readonly pathStats = new Map<string, PathStat>();
+  private readonly slowLog: { ts: number; path: string; ms: number; status: number }[] = [];
+  private errCounts = { http401: 0, http429: 0, http5xx: 0 };
+  private respSince = Date.now();
 
   constructor(
     private readonly dataSource: DataSource,
@@ -171,6 +205,37 @@ export class SystemMetricsService implements OnModuleInit {
   /** 请求结束时调用：当前在飞 -1（不会减到负数） */
   decInFlight(): void {
     if (this.inFlight > 0) this.inFlight--;
+  }
+
+  /**
+   * 请求结束时调用：记录耗时与状态码，用于定位「页面卡在加载中」「登录被踢」这类问题。
+   * 被限流拒绝（429）的请求不会进入 controller，但仍会走 main.ts 的中间件，因此这里能完整捕获。
+   * 只做内存累加 + 阈值判断，无 IO、无 await，对单请求开销可忽略。
+   */
+  recordResponse(url: string, status: number, ms: number): void {
+    const path = normalizePath(url);
+    let st = this.pathStats.get(path);
+    if (!st) {
+      st = { n: 0, totalMs: 0, maxMs: 0, slow: 0, err429: 0, err5xx: 0 };
+      this.pathStats.set(path, st);
+    }
+    st.n++;
+    st.totalMs += ms;
+    if (ms > st.maxMs) st.maxMs = ms;
+    if (ms >= SLOW_MS) {
+      st.slow++;
+      this.slowLog.push({ ts: Date.now(), path, ms, status });
+      if (this.slowLog.length > SLOW_LOG_MAX) this.slowLog.shift();
+    }
+    if (status === 429) {
+      st.err429++;
+      this.errCounts.http429++;
+    } else if (status >= 500) {
+      st.err5xx++;
+      this.errCounts.http5xx++;
+    } else if (status === 401) {
+      this.errCounts.http401++;
+    }
   }
 
   /** 把某一分钟的请求数写入 Redis，并清理旧数据 */
@@ -345,6 +410,35 @@ export class SystemMetricsService implements OnModuleInit {
       },
       database: { activeConnections: dbConnections },
       mailQueue,
+      responses: this.responseStats(),
+    };
+  }
+
+  /**
+   * 请求耗时 / 错误统计快照，用于排查「首屏卡在加载中」：
+   * - errors.http429 大于 0，就说明确实有人被限流挡在首屏外（培训现场的典型症状）；
+   * - byPath 里 /api/auth/me 的 avgMs 远大于其自身 DB 查询耗时，就说明是排队而非慢查询。
+   * 只取请求数 Top 15 路径 + 最近 20 条慢请求，避免响应体过大。
+   */
+  private responseStats() {
+    const byPath = [...this.pathStats.entries()]
+      .map(([path, s]) => ({
+        path,
+        count: s.n,
+        avgMs: Math.round(s.totalMs / s.n),
+        maxMs: s.maxMs,
+        slow: s.slow,
+        err429: s.err429,
+        err5xx: s.err5xx,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15);
+    return {
+      since: new Date(this.respSince).toISOString(),
+      slowThresholdMs: SLOW_MS,
+      errors: { ...this.errCounts },
+      slow: this.slowLog.slice(-20).reverse(),
+      byPath,
     };
   }
 }

@@ -73,17 +73,24 @@ export default function Dashboard() {
     reloadSkills();
     // 拉取最新个人资料，避免 localStorage 与服务器不一致（如换头像后 bio/tags 丢失）
     fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
+      .then(async (r) => (r.ok ? { status: 200, data: await r.json() } : { status: r.status, data: null }))
+      .then(({ status, data }) => {
         if (data) {
           setUser(data);
           localStorage.setItem('user', JSON.stringify(data));
-        } else {
-          // getMe 失败（如 token 已失效），清掉脏状态
+          return;
+        }
+        // 关键：只有 401（token 真正失效）才清登录态。
+        // 429 限流 / 5xx 抖动绝不能清 —— 培训现场 50 人共享同一出口 IP 极易命中限流，
+        // 原逻辑把 429 当成「token 已失效」直接 clearAuthCookies()，
+        // 表现为「明明登录成功了，却被弹回登录页」，反复重试后才挤进去。
+        // 401 的清态与跳转由 AuthProvider 全局拦截器统一处理，此处与其保持一致。
+        if (status === 401) {
           localStorage.removeItem('token');
           localStorage.removeItem('user');
           clearAuthCookies();
         }
+        // 其余非 200：保留登录态，等窗口聚焦 / 手动刷新时自动恢复，绝不踢人下线
       })
       .catch(() => {})
       .finally(() => setLoading(false));

@@ -302,6 +302,79 @@ export default function HubSettingsPage() {
               <div className="bg-white border rounded-xl px-5 py-4 text-xs text-neutral-400">今日暂无并发数据</div>
             )}
           </div>
+
+          {/* 请求耗时与错误：定位「首屏卡在加载中 / 登录成功却被踢」的关键数据。
+              429 大于 0 = 确实有人被限流挡住；某路径平均耗时远高于其自身 DB 查询
+              耗时 = 是排队被堵，而非慢查询。 */}
+          {metrics.responses && (
+            <div className="mt-4 bg-white border rounded-xl px-5 py-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-sm text-neutral-600">{t('admin.metricsResponses')}</div>
+                <div className="flex items-center gap-4 text-xs">
+                  <span className="text-neutral-500">
+                    {t('admin.metricsErr429')}：
+                    <b className={metrics.responses.errors?.http429 > 0 ? 'text-red-600' : 'text-neutral-900'}>
+                      {metrics.responses.errors?.http429 ?? 0}
+                    </b>
+                  </span>
+                  <span className="text-neutral-500">
+                    {t('admin.metricsErr5xx')}：
+                    <b className="text-neutral-900">{metrics.responses.errors?.http5xx ?? 0}</b>
+                  </span>
+                </div>
+              </div>
+
+              {metrics.responses.byPath?.length ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-neutral-400 border-b">
+                        <th className="text-left font-normal py-1.5">{t('admin.metricsRespPath')}</th>
+                        <th className="text-right font-normal py-1.5">{t('admin.metricsRespCount')}</th>
+                        <th className="text-right font-normal py-1.5">{t('admin.metricsRespAvg')}</th>
+                        <th className="text-right font-normal py-1.5">{t('admin.metricsRespMax')}</th>
+                        <th className="text-right font-normal py-1.5">429</th>
+                        <th className="text-right font-normal py-1.5">{t('admin.metricsSlow')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metrics.responses.byPath.slice(0, 8).map((p: any) => (
+                        <tr key={p.path} className="border-b border-neutral-50 last:border-0">
+                          <td className="py-1.5 font-mono text-neutral-700 truncate max-w-[220px]">{p.path}</td>
+                          <td className="text-right text-neutral-900">{p.count}</td>
+                          <td className="text-right text-neutral-600">{p.avgMs}{t('admin.metricsRespUnit')}</td>
+                          <td className="text-right text-neutral-600">{p.maxMs}{t('admin.metricsRespUnit')}</td>
+                          <td className={`text-right ${p.err429 > 0 ? 'text-red-600 font-medium' : 'text-neutral-400'}`}>{p.err429}</td>
+                          <td className={`text-right ${p.slow > 0 ? 'text-amber-600' : 'text-neutral-400'}`}>{p.slow}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-xs text-neutral-400">{t('admin.metricsRespEmpty')}</div>
+              )}
+
+              <div className="text-sm text-neutral-600 mt-4 mb-2">
+                {t('admin.metricsSlowList', { ms: metrics.responses.slowThresholdMs })}
+              </div>
+              {metrics.responses.slow?.length ? (
+                <div className="space-y-1">
+                  {metrics.responses.slow.slice(0, 5).map((s: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between text-xs">
+                      <span className="font-mono text-neutral-700 truncate">{s.path}</span>
+                      <span className="text-neutral-400 shrink-0 ml-3">
+                        <b className="text-amber-600">{s.ms}ms</b> · HTTP {s.status} ·{' '}
+                        {new Date(s.ts).toLocaleTimeString('zh-CN')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-neutral-400">{t('admin.metricsSlowNone')}</div>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>
