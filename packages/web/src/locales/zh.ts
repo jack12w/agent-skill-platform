@@ -350,6 +350,9 @@ const zh = {
   },
   admin: {
     title: '管理后台',
+    settingsLoading: '正在加载后台设置…',
+    settingsLoadFailed: '后台设置加载失败，可能是网络波动或服务繁忙，请稍后重试',
+    retry: '重试',
     stats: '数据总览',
     overview: '平台核心数据一览',
     users: '用户管理',

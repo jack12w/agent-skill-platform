@@ -130,6 +130,7 @@ export class AuthController {
   }
 
   // ── 本地开发模拟微信登录 ──────────────────
+  // 生产环境由 AuthService.mockWechatLogin 直接抛 404（详见那里的说明）。
   @Post('wechat/mock-login')
   async mockWechatLogin(@Body() body: { nickname?: string }) {
     return this.authService.mockWechatLogin(body.nickname);

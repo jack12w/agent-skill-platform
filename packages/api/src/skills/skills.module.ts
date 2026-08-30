@@ -14,11 +14,13 @@ import { Subscription } from '../subscriptions/subscription.entity';
 import { SkillPricing, CreatorMembershipPlan, CreatorSubscription } from '../payments/payments.entity';
 import { StatsAggregationService } from '../stats-aggregation.service';
 import { PaymentsModule } from '../payments/payments.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Skill, SkillVersion, Event, SkillStats, Comment, TeamMember, Team, Subscription, SkillPricing, CreatorMembershipPlan, CreatorSubscription]),
     PaymentsModule,
+    AuthModule, // 提供 IdentityService（公开接口的登录可选身份解析，必须验签）
   ],
   providers: [SkillsService, StatsAggregationService],
   controllers: [SkillsController, GeoController],

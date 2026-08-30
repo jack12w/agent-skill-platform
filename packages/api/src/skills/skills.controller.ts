@@ -1,40 +1,35 @@
 import { Controller, Post, Patch, Delete, Get, Body, UseGuards, Request, Param, Query, UseInterceptors, UploadedFile, UploadedFiles, BadRequestException } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
-import { JwtService } from '@nestjs/jwt';
 import { SkillsService } from './skills.service';
 import { AuthGuard } from '../auth/auth.guard';
+import { AdminGuard } from '../common/admin.guard';
+import { IdentityService, extractBearerToken } from '../auth/identity.service';
 import { EventType } from '@platform/shared';
 
 @Controller('skills')
 export class SkillsController {
   constructor(
     private skillsService: SkillsService,
-    private jwtService: JwtService,
+    private identity: IdentityService,
   ) {}
 
   @Get()
-  findAll(@Query() query: any, @Request() req: any) {
+  async findAll(@Query() query: any, @Request() req: any) {
     let userId: string | undefined;
     if (query.owner === 'me') {
-      const token = req.headers.authorization?.split(' ')[1];
+      // 「我的技能」必须已登录：无 token / token 无效都拒绝。
+      // 这里必须真验签 —— decode() 不验签意味着随便构造一个裸 JWT 就能列出他人的草稿。
+      // 保持原有的 400 语义（前端已适配），不改成 401 以免破坏现有交互。
+      const token = extractBearerToken(req);
       if (!token) throw new BadRequestException('Unauthorized');
-      try {
-        const payload = this.jwtService.decode(token) as { sub: string } | null;
-        query.owner_id = payload?.sub;
-        userId = payload?.sub;
-        if (!query.owner_id) throw new BadRequestException('Invalid token');
-      } catch {
-        throw new BadRequestException('Invalid token');
-      }
+      const payload = await this.identity.verify(token);
+      if (!payload?.sub) throw new BadRequestException('Invalid token');
+      query.owner_id = payload.sub;
+      userId = payload.sub;
     } else {
-      // Extract userId for authenticated users to check update status
-      const token = req.headers.authorization?.split(' ')[1];
-      if (token) {
-        try {
-          const payload = this.jwtService.decode(token) as { sub: string } | null;
-          userId = payload?.sub || undefined;
-        } catch { /* ignore */ }
-      }
+      // 公开列表：登录可选，token 无效按匿名处理（保持原有 catch 后忽略的行为）
+      const identity = await this.identity.fromRequest(req);
+      userId = identity.userId;
     }
     return this.skillsService.findAll(query, userId);
   }
@@ -45,6 +40,8 @@ export class SkillsController {
     return this.skillsService.createSkill(body, req.user.sub);
   }
 
+  // 全表重写标签的运维操作，原先无任何守卫 —— 匿名一个 POST 就能改写全库 tags。
+  @UseGuards(AuthGuard, AdminGuard)
   @Post('fix-tags')
   fixTags() {
     return this.skillsService.fixAllTags();
@@ -76,17 +73,9 @@ export class SkillsController {
   }
 
   @Get(':id/versions')
-  versions(@Param('id') id: string, @Request() req: any) {
-    let userId: string | undefined;
-    let isAdmin = false;
-    const token = req.headers.authorization?.split(' ')[1];
-    if (token) {
-      try {
-        const payload = this.jwtService.decode(token) as { sub: string; role?: string } | null;
-        userId = payload?.sub || undefined;
-        isAdmin = payload?.role === 'admin';
-      } catch { /* ignore */ }
-    }
+  async versions(@Param('id') id: string, @Request() req: any) {
+    // 登录可选；token 无效按匿名处理。isAdmin 经回库核对，伪造 token 拿不到未发布版本。
+    const { userId, isAdmin } = await this.identity.fromRequest(req);
     return this.skillsService.listVersions(id, userId, isAdmin);
   }
 
@@ -124,16 +113,7 @@ export class SkillsController {
 
   @Get(':id')
   async findOne(@Param('id') id: string, @Request() req: any) {
-    let userId: string | undefined;
-    let isAdmin = false;
-    const token = req.headers.authorization?.split(' ')[1];
-    if (token) {
-      try {
-        const payload = this.jwtService.decode(token) as { sub: string; role?: string } | null;
-        userId = payload?.sub || undefined;
-        isAdmin = payload?.role === 'admin';
-      } catch { /* ignore */ }
-    }
+    const { userId, isAdmin } = await this.identity.fromRequest(req);
     const result = await this.skillsService.findOne(id, userId, false, isAdmin);
     await this.skillsService.assertSkillTeamVisible(id, userId, isAdmin);
     return result;
@@ -142,16 +122,7 @@ export class SkillsController {
   /** 详情页聚合接口：技能+版本+定价+作者套餐+订阅状态 一次返回（降低限流压力） */
   @Get(':id/detail')
   async getDetail(@Param('id') id: string, @Request() req: any) {
-    let userId: string | undefined;
-    let isAdmin = false;
-    const token = req.headers.authorization?.split(' ')[1];
-    if (token) {
-      try {
-        const payload = this.jwtService.decode(token) as { sub: string; role?: string } | null;
-        userId = payload?.sub || undefined;
-        isAdmin = payload?.role === 'admin';
-      } catch { /* ignore */ }
-    }
+    const { userId, isAdmin } = await this.identity.fromRequest(req);
     return this.skillsService.getDetail(id, userId, isAdmin);
   }
 

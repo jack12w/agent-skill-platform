@@ -16,25 +16,46 @@ import { Team } from '../teams/team.entity';
 import { WechatPayService, WechatApiError } from './wechat-pay.service';
 import { BalanceService } from './balance.service';
 import { DistributedStore } from '../common/dist-state.store';
+import { DistributedLock } from '../common/dist-lock';
 
 /** 提现单 404 计数的保留时长：远超「30min 单龄 + 连续 2 次」判定所需的观察窗口 */
 const NOT_FOUND_TTL_SEC = 7 * 24 * 3600;
 /** 僵尸单告警去重时长：同一单 24h 内最多告警一次 */
 const ZOMBIE_ALERT_TTL_SEC = 24 * 3600;
 
+/** 提现状态同步周期（毫秒）：与 onModuleInit 的 setInterval 必须一致，轮次计数按它分轮 */
+const SYNC_INTERVAL_MS = 120_000;
+/**
+ * 单飞锁租约（秒）：必须 **大于** 单轮正常耗时、**小于** 同步周期，
+ * 否则要么锁提前过期让下一个副本重入，要么锁一直不释放导致下一轮被跳过。
+ */
+const SYNC_LOCK_TTL_SEC = 110;
+
 @Injectable()
 export class AdminPaymentsService implements OnModuleInit {
   private readonly logger = new Logger(AdminPaymentsService.name);
 
   // 提现收口安全闸（原为进程内 Map/Set，多副本下计数分散导致收口迟缓，已迁入 Redis 共享）。
-  // - Redis 可用：404 计数跨副本累加，「连续 2 次」按全局视角判定，僵尸单能被及时收口。
-  // - Redis 不可用：退回本进程内存，退化为改造前的单副本视角（每副本各自计数），
-  //   行为不会比改造前更差。
+  //
+  // 计数用**轮次去重**（addRound）而非简单 incr：
+  //   incr 在多副本下会起反作用 —— N 个副本在同一轮内各 +1，计数一轮就顶到 N，
+  //   「连续 2 轮确认」被降级成「同一轮的并发确认」，瞬时 404 误判解冻的概率大增。
+  //   轮次去重把同一轮的并发上报折叠成 1，只有跨了不同同步轮次计数才增长，
+  //   语义与单副本下的 incr 完全一致。
+  // - Redis 可用：跨副本共享，「连续 2 轮」按全局视角判定。
+  // - Redis 不可用：退回本进程内存，退化为改造前的单副本视角，不会比改造前更差。
+  //
   // 注意：**重复解冻的防线不在计数上**，而在 failWithdrawal 的原子终态门控 ——
   // 它的 UPDATE 带 `WHERE status NOT IN ('PAID','FAILED','CANCELLED')`，终态单 affected=0，
   // 任何副本都不可能把同一笔钱解冻两次。计数只影响「多快判定为未受理」，不影响资金安全。
-  private readonly notFoundCounts = new DistributedStore('pay:wd:notfound');
+  private readonly notFoundRounds = new DistributedStore('pay:wd:notfound');
   private readonly zombieAlerted = new DistributedStore('pay:wd:zombie');
+
+  /**
+   * 提现状态同步的单飞锁：多副本下每轮只让一个副本执行，避免同一批卡单被 N 次查单
+   * （微信查单有频限）。拿不到锁的副本直接跳过本轮 —— 定时任务允许「本轮不跑、下轮再跑」。
+   */
+  private readonly syncLock = new DistributedLock('pay:lock:sync-withdrawals');
 
   constructor(
     @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
@@ -130,8 +151,17 @@ export class AdminPaymentsService implements OnModuleInit {
    */
   onModuleInit() {
     setInterval(() => {
-      this.syncProcessingWithdrawals().catch((e) => this.logger.warn('定时同步提现状态失败', e));
-    }, 120_000).unref();
+      // 单飞：多副本下每轮只让一个副本执行。Redis 不可用时降级为「照跑」——
+      // 查单只是兜底（主路径是微信回调），让它停摆比重复查单更糟，且此时行为与加锁前一致。
+      this.syncLock
+        .run(SYNC_LOCK_TTL_SEC, () => this.syncProcessingWithdrawals(), 'run')
+        .then(({ degraded }) => {
+          if (degraded) {
+            this.logger.warn('Redis 不可用，提现同步降级为每副本各自执行（行为与加锁前一致）');
+          }
+        })
+        .catch((e) => this.logger.warn('定时同步提现状态失败', e));
+    }, SYNC_INTERVAL_MS).unref();
   }
 
   /**
@@ -325,23 +355,25 @@ export class AdminPaymentsService implements OnModuleInit {
 
       try {
         const q = await this.wechat.queryTransfer(wd.out_bill_no);
-        await this.notFoundCounts.reset(wd.id); // 拿到真实响应 → 复位 404 计数
+        await this.notFoundRounds.reset(wd.id); // 拿到真实响应 → 复位 404 计数
         await this.applyTransferState(wd, q);
       } catch (e: any) {
         if (e instanceof WechatApiError && e.wechatStatus === 404) {
           if (wd.status === 'REVIEWING') {
             // REVIEWING = 打款请求从未发出（微信侧永远不会有此单）。
-            // 30min 窗口 + 多次确认排除"刚发起查单返回不存在"的瞬时误判 → 安全自动解冻退款。
-            // 计数跨副本共享（Redis），避免多实例各记一份导致永远攒不到 2 次。
-            const cnt = await this.notFoundCounts.incr(wd.id, NOT_FOUND_TTL_SEC);
+            // 30min 窗口 + 多轮确认排除"刚发起查单返回不存在"的瞬时误判 → 安全自动解冻退款。
+            // 用轮次去重而非 incr：同一同步轮内 N 个副本并发上报只算 1 次，
+            // 否则「连续 2 轮」会被一轮的并发顶满，退化成「一轮确认」。
+            const round = String(Math.floor(Date.now() / SYNC_INTERVAL_MS));
+            const cnt = await this.notFoundRounds.addRound(wd.id, round, NOT_FOUND_TTL_SEC);
             if (ageMin >= 30 && cnt >= 2) {
               this.logger.error(
-                `REVIEWING 提现单长时间无微信转账单(${cnt}次404,${ageMin.toFixed(0)}min)，按未受理自动解冻: ${wd.out_bill_no}`,
+                `REVIEWING 提现单长时间无微信转账单(${cnt}轮404,${ageMin.toFixed(0)}min)，按未受理自动解冻: ${wd.out_bill_no}`,
               );
               await this.failWithdrawal(wd, '打款未受理（微信长时间无此单），已自动退回余额');
-              await this.notFoundCounts.reset(wd.id);
+              await this.notFoundRounds.reset(wd.id);
             } else {
-              this.logger.warn(`微信无此转账单(${cnt}次)，暂保持观察(${ageMin.toFixed(0)}min): ${wd.out_bill_no}`);
+              this.logger.warn(`微信无此转账单(${cnt}轮)，暂保持观察(${ageMin.toFixed(0)}min): ${wd.out_bill_no}`);
             }
           } else {
             // PROCESSING = 已受理待打款，404 极可能为瞬时/异常；绝不解冻，保持观察待人工/回调。
@@ -349,7 +381,7 @@ export class AdminPaymentsService implements OnModuleInit {
           }
         } else {
           // 网络/超时/5xx 等不确定错误：复位计数，仅告警，绝不解冻
-          await this.notFoundCounts.reset(wd.id);
+          await this.notFoundRounds.reset(wd.id);
           this.logger.warn(`同步提现状态失败 ${wd.out_bill_no}: ${e?.message}`);
         }
       }

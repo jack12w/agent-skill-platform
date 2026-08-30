@@ -4,6 +4,7 @@ import { Repository, MoreThan, IsNull } from 'typeorm';
 import { SkillPricing, Entitlement, Membership } from './payments.entity';
 import { Skill } from '../skills/skill.entity';
 import { TeamMember } from '../teams/team-member.entity';
+import { MemberRole } from '@platform/shared';
 import { PaymentRequiredException } from './payment-exceptions';
 import { SettingsService } from './settings.service';
 import { MembershipService } from './membership.service';
@@ -25,6 +26,15 @@ export class EntitlementService {
     private readonly settings: SettingsService,
     private readonly membership: MembershipService,
   ) {}
+
+  /**
+   * 团队成员是否拥有管理者权限：OWNER / MAINTAINER，**不含只读的 VIEWER**。
+   * 口径同 teams.service.ts 的 assertManager 与 skills.service.ts 的 isTeamManager。
+   */
+  private async isTeamManager(teamId: string, userId: string): Promise<boolean> {
+    const m = await this.teamMemberRepo.findOne({ where: { team_id: teamId, user_id: userId } });
+    return !!m && (m.role === MemberRole.OWNER || m.role === MemberRole.MAINTAINER);
+  }
 
   async assertCanDownload(skill: Skill, userId?: string, isAdmin = false): Promise<void> {
     let pricing: SkillPricing | null = null;
@@ -54,8 +64,11 @@ export class EntitlementService {
       return;
     }
 
-    // 3. 作者本人 或 所属团队成员（团队技能 owner_user_id 为 null，按团队成员放行，避免团队自己付费下载）
-    if (userId && (skill.owner_user_id === userId || (!!skill.owner_team_id && !!(await this.teamMemberRepo.findOne({ where: { team_id: skill.owner_team_id, user_id: userId } }))))) {
+    // 3. 作者本人 或 团队的 OWNER/MAINTAINER（团队技能 owner_user_id 为 null）。
+    //    只认 OWNER/MAINTAINER、不含只读的 VIEWER —— 这里放行等于**绕过付费墙**，
+    //    若把只读成员也算作归属者，任何被加为 viewer 的人都能免付下载团队的付费技能。
+    //    口径与 teams.service.ts 的 assertManager、skills.service.ts 的 isTeamManager 一致。
+    if (userId && (skill.owner_user_id === userId || (!!skill.owner_team_id && (await this.isTeamManager(skill.owner_team_id, userId))))) {
       return;
     }
 

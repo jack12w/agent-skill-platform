@@ -52,7 +52,11 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
         const [sRes, vRes, tRes] = await Promise.all([fetch(`/api/skills/${params.slug}`), fetch(`/api/skills/${params.slug}/versions`), fetch('/api/teams/my', { headers: { Authorization: `Bearer ${token}` } })]);
         if (!sRes.ok) throw new Error(`HTTP ${sRes.status}`);
         const s = await sRes.json(); const uid = decodeUserId();
-        const myTeamsData = tRes.ok ? await tRes.json() : [];
+        // 团队列表拉取失败 ≠ 不是团队成员。静默按「非成员」处理，会把真正的成员
+        // 永久锁死在编辑页外 —— 一次 429/5xx 就再也进不去，且只提示「你不是所有者」，
+        // 与真实原因完全不符。失败必须显式报错，不做权限判定。
+        if (!tRes.ok) throw new Error(`HTTP ${tRes.status}`);
+        const myTeamsData = await tRes.json();
         const isTeamMember = !!s.owner_team_id && myTeamsData.some((tm: any) => tm.team?.id === s.owner_team_id);
         if (s.owner_user_id !== uid && !isTeamMember) { setError('You are not the owner of this skill.'); setSkill(s); return; }
         setSkill(s); setForm({ name: s.name ?? '', content_md: s.content_md ?? '', tags: (s.tags ?? []).filter((t: string) => t !== '社区').join(', '), cover_url: s.cover_url ?? '', owner_team_id: s.owner_team_id ?? '' });

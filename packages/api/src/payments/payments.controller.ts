@@ -25,6 +25,8 @@ import { BalanceService } from './balance.service';
 import { CreatorBalance, BalanceTransaction, Withdrawal, CreatorMembershipPlan, CreatorSubscription, SkillPricing } from './payments.entity';
 import { User } from '../auth/user.entity';
 import { Team } from '../teams/team.entity';
+import { TeamMember } from '../teams/team-member.entity';
+import { MemberRole } from '@platform/shared';
 import { Skill } from '../skills/skill.entity';
 
 @Controller('pay')
@@ -41,6 +43,7 @@ export class PaymentsController {
     @InjectRepository(Withdrawal) private readonly wdRepo: Repository<Withdrawal>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(Team) private readonly teamRepo: Repository<Team>,
+    @InjectRepository(TeamMember) private readonly teamMemberRepo: Repository<TeamMember>,
     @InjectRepository(CreatorMembershipPlan) private readonly planRepo: Repository<CreatorMembershipPlan>,
     @InjectRepository(CreatorSubscription) private readonly csRepo: Repository<CreatorSubscription>,
     @InjectRepository(SkillPricing) private readonly skillPricingRepo: Repository<SkillPricing>,
@@ -167,7 +170,17 @@ export class PaymentsController {
     } else if (targetType === 'team') {
       const team = await this.teamRepo.findOne({ where: { id: targetId } });
       if (!team) throw new NotFoundException('团队不存在');
-      if (team.owner_user_id !== uid) throw new ForbiddenException('只有团队所有者可设置会员价格');
+      // owner 或 maintainer 可设置 —— 与前端「管理」入口的 canManage = is_owner || is_manager
+      // 保持一致。原先后端只认 owner_user_id，maintainer 在前端点得到按钮却必吃 403。
+      const isOwner = team.owner_user_id === uid;
+      const isMaintainer =
+        !isOwner &&
+        !!(await this.teamMemberRepo.findOne({
+          where: { team_id: targetId, user_id: uid, role: MemberRole.MAINTAINER },
+        }));
+      if (!isOwner && !isMaintainer) {
+        throw new ForbiddenException('只有团队所有者或管理员可设置会员价格');
+      }
     } else {
       throw new BadRequestException('无效的 targetType');
     }

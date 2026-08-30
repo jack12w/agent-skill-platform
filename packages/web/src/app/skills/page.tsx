@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import useTranslation from '../../hooks/useTranslation';
@@ -36,8 +36,15 @@ function SkillSquareInner() {
 
   const activeTagsStr = Array.from(activeTags).join(',');
 
+  /** 当前在途请求的控制器：新请求发起前先取消旧的，避免「先发后到」把旧数据写进新列表 */
+  const inflightRef = useRef<AbortController | null>(null);
+
   const fetchSkills = useCallback(async (pageNum: number, append: boolean) => {
+    // 切换排序/标签时，上一批无限滚动发起的「加载更多」可能后到并 append 到新结果后面。
+    // 原实现只 abort 了 page=1 的请求（靠 effect cleanup），加载更多的请求无人管。
+    inflightRef.current?.abort();
     const controller = new AbortController();
+    inflightRef.current = controller;
     if (pageNum === 1) setLoading(true);
     else setLoadingMore(true);
     try {
@@ -56,9 +63,20 @@ function SkillSquareInner() {
       else setSkills(list);
       setHasMore(list.length >= 20);
     } catch (e) { if ((e as Error).name !== 'AbortError') console.error(e); }
-    finally { setLoading(false); setLoadingMore(false); }
+    finally {
+      // 只有「自己仍是当前在途请求」时才收尾：被新请求取消的旧请求不能去清 loading，
+      // 否则新请求还在跑，界面却显示已加载完毕。
+      if (inflightRef.current === controller) {
+        inflightRef.current = null;
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    }
     return controller;
   }, [sort, query, activeTagsStr]);
+
+  // 组件卸载时取消在途请求
+  useEffect(() => () => { inflightRef.current?.abort(); }, []);
 
   // Initial load + reset on filter change
   useEffect(() => {

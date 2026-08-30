@@ -13,7 +13,7 @@ import { SkillPricing, CreatorMembershipPlan, CreatorSubscription } from '../pay
 import { Subscription, SubscriptionTargetType } from '../subscriptions/subscription.entity';
 import { OssService } from '../storage/oss.service';
 import { EntitlementService } from '../payments/entitlement.service';
-import { EventType, SkillStatus, parseSkillMd } from '@platform/shared';
+import { EventType, SkillStatus, parseSkillMd, MemberRole } from '@platform/shared';
 import AdmZip from 'adm-zip';
 
 /** Strip base64 avatars (legacy data) — keep only OSS URLs */
@@ -94,14 +94,25 @@ export class SkillsService {
     private entitlementService: EntitlementService,
   ) {}
 
-  /** 技能管理者判定：本人（owner_user_id）或所属团队成员均可管理（团队技能 owner_user_id 可能为 null） */
+  /**
+   * 团队成员是否对**团队资源**拥有管理者权限。
+   *
+   * 只认 OWNER / MAINTAINER，**不含 VIEWER** —— 与 teams.service.ts 的 assertManager、
+   * is_manager 判定保持同一口径。原先这里只要「是团队成员」就算管理者，
+   * 导致 viewer（只读角色）也能改/删他人技能、免付下载付费团队技能、改价。
+   */
+  private async isTeamManager(teamId: string, userId: string): Promise<boolean> {
+    const m = await this.teamMemberRepository.findOne({
+      where: { team_id: teamId, user_id: userId },
+    });
+    return !!m && (m.role === MemberRole.OWNER || m.role === MemberRole.MAINTAINER);
+  }
+
+  /** 技能管理者判定：本人（owner_user_id）或团队的 OWNER/MAINTAINER（团队技能 owner_user_id 可能为 null） */
   private async isSkillManager(skill: Skill, userId: string): Promise<boolean> {
     if (skill.owner_user_id === userId) return true;
     if (skill.owner_team_id) {
-      const m = await this.teamMemberRepository.findOne({
-        where: { team_id: skill.owner_team_id, user_id: userId },
-      });
-      return !!m;
+      return this.isTeamManager(skill.owner_team_id, userId);
     }
     return false;
   }
@@ -109,17 +120,15 @@ export class SkillsService {
   /**
    * 技能归属者判定（团队感知）：
    *  - 个人技能：owner_user_id 命中即归属者；
-   *  - 团队技能：owner_user_id 为 NULL（与 owner_team_id 互斥），归属者 = 团队成员。
+   *  - 团队技能：owner_user_id 为 NULL（与 owner_team_id 互斥），归属者 = 团队的 OWNER/MAINTAINER。
    * 用于详情 / 版本 / 下载等「归属者特权」场景，避免团队技能因 owner_user_id 为空而无人可归属。
+   * 注意归属者特权包含 package_url 与绕过付费墙，故必须与 isSkillManager 同口径，不带 viewer。
    */
   private async isOwner(skill: Skill, userId?: string): Promise<boolean> {
     if (!userId) return false;
     if (skill.owner_user_id === userId) return true;
     if (skill.owner_team_id) {
-      const m = await this.teamMemberRepository.findOne({
-        where: { team_id: skill.owner_team_id, user_id: userId },
-      });
-      return !!m;
+      return this.isTeamManager(skill.owner_team_id, userId);
     }
     return false;
   }
@@ -580,9 +589,17 @@ export class SkillsService {
     if (!member) throw new ForbiddenException('该团队未对外展示，仅团队成员可访问');
   }
 
-  async assertSkillTeamVisible(skillId: string, userId?: string, isAdmin = false) {
-    const skill = await this.skillRepository.findOne({ where: { id: skillId } });
-    if (!skill) return; // 404 由调用方处理
+  /**
+   * @param idOrSlug 技能 id 或 slug。当前 slug 与 id 同值（创建时 `slug = id`），
+   *   但这里按 id 或 slug 都能解析，避免将来 slug 规则变化后本校验被绕过。
+   */
+  async assertSkillTeamVisible(idOrSlug: string, userId?: string, isAdmin = false) {
+    const skill = await this.skillRepository.findOne({
+      where: [{ id: idOrSlug }, { slug: idOrSlug }],
+    });
+    // 「查不到就放行」是危险的写法：一旦入参形态与查询条件不匹配（例如将来 slug 不再是 id），
+    // 私有团队的可见性校验就会被静默跳过。查不到直接 404 —— 与调用方原本的 404 行为一致。
+    if (!skill) throw new NotFoundException('Skill not found');
     await this.assertTeamVisible(skill.owner_team_id, userId, isAdmin);
   }
 
@@ -635,10 +652,11 @@ export class SkillsService {
       skill = await this.findOne(idOrSlug, userId, false, true);
       versions = await this.listVersions(idOrSlug, userId, true);
     } else if (userId) {
+      // 与 isOwner() 同口径：团队的 OWNER/MAINTAINER 才算归属者，viewer 只能看公开视图
+      // （否则 viewer 会拿到 package_url 并绕过付费墙）
       const isOwner =
         skill.owner_user_id === userId ||
-        (skill.owner_team_id &&
-          !!(await this.teamMemberRepository.findOne({ where: { team_id: skill.owner_team_id, user_id: userId } })));
+        (!!skill.owner_team_id && (await this.isTeamManager(skill.owner_team_id, userId)));
       if (isOwner) {
         skill = await this.findOne(idOrSlug, userId, false, false);
         versions = await this.listVersions(idOrSlug, userId, false);

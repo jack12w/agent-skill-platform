@@ -14,17 +14,28 @@ function getCookie(name: string): string | undefined {
 function hydrateTokenFromCookie() {
   if (typeof window === 'undefined') return;
   const ckToken = getCookie('token');
-  // Cookie 来自最近一次登录/登出操作，优先级高于 localStorage；只要 Cookie 存在就同步，
-  // 避免部分浏览器 302 后 localStorage 为空导致子组件误判未登录。
-  if (ckToken) {
-    localStorage.setItem('token', ckToken);
-    const ckUser = getCookie('user');
-    if (ckUser) {
-      try {
-        localStorage.setItem('user', decodeURIComponent(ckUser));
-      } catch {
-        /* 解析失败忽略 */
-      }
+  if (!ckToken) return;
+
+  // ⚠️ 只在「Cookie 的 token 与本地不同」时才覆盖本地。
+  //
+  // 本函数在每次渲染时调用。若像原先那样「只要 Cookie 有 token 就无条件覆盖」，
+  // 任何只更新了 localStorage 而没同步 Cookie 的操作都会在下次渲染被静默回滚：
+  //   - 合并账号后拿到新 token（只写 localStorage）→ 被旧 Cookie 覆盖回旧账号
+  //   - 换头像 / 改昵称 / 改简介后（只更新 localStorage 的 user）→ 刷新后回到旧资料
+  // 这类「改了又变回去」的问题极难排查，因为没有任何报错。
+  //
+  // 改为按 token 判定：
+  //   - token 不同 → Cookie 是微信静默登录通道的**下发源**，说明发生了一次新的登录，以它为准。
+  //   - token 相同 → 同一次登录会话，本地的 user 可能已被前端更新过，保留本地值不动。
+  if (localStorage.getItem('token') === ckToken) return;
+
+  localStorage.setItem('token', ckToken);
+  const ckUser = getCookie('user');
+  if (ckUser) {
+    try {
+      localStorage.setItem('user', decodeURIComponent(ckUser));
+    } catch {
+      /* 解析失败忽略 */
     }
   }
 }

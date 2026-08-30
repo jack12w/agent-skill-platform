@@ -238,17 +238,21 @@ export class TeamsService {
       throw new ForbiddenException('该团队未对外展示，仅团队成员可见');
     }
 
-    // Sanitize member data for public access (remove email)
-    const safeMembers = userId
+    // 成员邮箱（PII）只对本团队成员暴露。
+    // 原先的判断条件是「是否登录」而不是「是否本团队成员」—— 任何已登录用户访问任意
+    // 公开团队主页，都能一次性拉走全部成员的 email。改为非成员一律脱敏，与外部访客同待遇。
+    const safeMembers = myMembership
       ? members
       : members.map((m) => ({
           ...m,
-          user: {
-            id: m.user.id,
-            name: m.user.name,
-            avatar_url: m.user.avatar_url,
-            bio: m.user.bio,
-          },
+          user: m.user
+            ? {
+                id: m.user.id,
+                name: m.user.name,
+                avatar_url: m.user.avatar_url,
+                bio: m.user.bio,
+              }
+            : null,
         }));
 
     // Build skill items with published_version_id

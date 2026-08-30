@@ -454,7 +454,18 @@ export class AuthService {
   }
 
   // ── 本地开发：模拟微信登录 ───────────────
+  /**
+   * 本地开发模拟微信登录：跳过微信 OAuth 直接建号并签发 7 天有效 JWT。
+   *
+   * ⚠️ **生产必须禁用** —— 这是一个无需任何凭证即可换取有效 JWT 的后门
+   * （POST /api/auth/wechat/mock-login 无需登录、无需验证码、无需微信授权）。
+   * 门禁放在 service 而非 controller：controller 只是入口之一，放在这里能同时
+   * 挡住将来任何新增的调用路径。生产返回 404（当作路由不存在），不暴露其存在。
+   */
   async mockWechatLogin(nickname?: string) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new NotFoundException();
+    }
     const mockOpenId = 'dev_mock_openid_' + Date.now();
     const mockName = nickname || '微信用户(测试)';
     let user = await this.userRepository.findOne({

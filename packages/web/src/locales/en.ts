@@ -350,6 +350,9 @@ const en = {
   },
   admin: {
     title: 'Admin Hub',
+    settingsLoading: 'Loading admin settings…',
+    settingsLoadFailed: 'Failed to load admin settings. It may be a network blip or the service is busy. Please retry later.',
+    retry: 'Retry',
     stats: 'Dashboard',
     overview: 'Platform overview at a glance',
     users: 'Users',

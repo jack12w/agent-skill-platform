@@ -147,21 +147,68 @@ export default function HubSettingsPage() {
   const { t } = useTranslation();
   const [cfg, setCfg] = useState<any>(null);
   const [metrics, setMetrics] = useState<any>(null);
+  // 三态：loading / ready / error。
+  // 之前只有 cfg 一个状态，接口 429/5xx 返回非 JSON 时 setCfg 拿到的是 undefined，
+  // 下面的 `if (!cfg) return null` 会把整页吞成空白且无任何提示，管理员会以为后台挂了。
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   useEffect(() => {
     const token = getToken();
     if (!token) return;
+    const ctrl = new AbortController();
     const h = { Authorization: `Bearer ${token}` };
-    fetch('/api/admin/settings', { headers: h })
-      .then((r) => r.json())
-      .then(setCfg);
-    fetch('/api/admin/system-metrics', { headers: h })
-      .then((r) => r.json())
+
+    const getJson = async (url: string) => {
+      const r = await fetch(url, { headers: h, signal: ctrl.signal });
+      if (!r.ok) throw new Error(`${url} -> HTTP ${r.status}`);
+      return r.json();
+    };
+
+    setPhase('loading');
+    getJson('/api/admin/settings')
+      .then((data) => {
+        setCfg(data);
+        setPhase('ready');
+      })
+      .catch((e) => {
+        // 组件卸载导致的 abort 不算失败，不要覆盖成错误态
+        if (e?.name === 'AbortError') return;
+        setCfg(null);
+        setPhase('error');
+      });
+
+    // metrics 是辅助数据，失败只降级不阻塞整页（沿用原有语义）
+    getJson('/api/admin/system-metrics')
       .then(setMetrics)
       .catch(() => setMetrics(null));
-  }, []);
 
-  if (!cfg) return null;
+    return () => ctrl.abort();
+  }, [reloadNonce]);
+
+  if (phase === 'loading') {
+    return (
+      <div className="py-10 text-sm text-neutral-500">{t('admin.settingsLoading')}</div>
+    );
+  }
+
+  if (phase === 'error' || !cfg) {
+    return (
+      <div>
+        <h1 className="text-xl font-bold text-neutral-900 mb-4">{t('admin.settings')}</h1>
+        <div className="bg-white border rounded-xl px-5 py-8 text-center">
+          <div className="text-sm text-neutral-600 mb-4">{t('admin.settingsLoadFailed')}</div>
+          <button
+            type="button"
+            onClick={() => setReloadNonce((n) => n + 1)}
+            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+          >
+            {t('admin.retry')}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const settingRows = [
     { label: t('admin.thSiteName'), value: cfg.siteName },

@@ -29,11 +29,24 @@ if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
 return n
 `;
 
+/**
+ * Lua：把一个「轮次标识」加入集合，返回**不同轮次的累计数**。
+ * 只有集合从空变为非空（第一个轮次）时才设 TTL → 固定窗口，与 incr 语义一致。
+ */
+const ADD_ROUND_LUA = `
+redis.call('SADD', KEYS[1], ARGV[1])
+local n = redis.call('SCARD', KEYS[1])
+if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
+return n
+`;
+
 interface MemEntry {
   /** 字符串值（set/get 用） */
   value: string | null;
   /** 计数值（incr/getCount 用） */
   count: number;
+  /** 已记录的轮次（addRound/roundCount 用） */
+  rounds?: Set<string>;
   expiresAt: number;
 }
 
@@ -113,6 +126,61 @@ export class DistributedStore {
       return;
     }
     this.mem.delete(rk);
+  }
+
+  // ── 轮次去重计数 ──────────────────────────────────────
+
+  /**
+   * 记录一次「第 N 轮命中」，返回**不同轮次的累计数**（同一轮重复调用不增加）。
+   *
+   * 存在的理由：普通 `incr` 在多副本下会被稀释成反效果。设想一个
+   * 「连续 2 轮都确认 404 才放行」的资金安全闸 —— 单副本时 incr 每轮 +1，需要 2 轮；
+   * 多副本时 N 个副本在同一轮内各 incr 一次，计数**一轮就顶到 N**，
+   * 于是「连续 2 轮确认」被降级成「同一轮的并发确认」，瞬时误判概率大增。
+   *
+   * 轮次计数把同一轮的并发调用折叠成 1：无论几个副本同时报，round 相同就只记一次。
+   * 只有**跨了不同的轮次**计数才会增长，语义与单副本下的 incr 完全一致。
+   *
+   * @param round 轮次标识，由调用方按任务周期生成（如 `Math.floor(Date.now()/周期)`）
+   * @returns 不同轮次的累计数（≥1）
+   */
+  async addRound(k: string, round: string, ttlSec: number): Promise<number> {
+    const rk = this.key(k);
+    const r = getSharedRedis();
+    if (r) {
+      try {
+        const n = (await r.eval(ADD_ROUND_LUA, 1, rk, round, String(ttlSec))) as number;
+        return Number(n) || 1;
+      } catch {
+        reportRedisFailure(r);
+      }
+    }
+    const now = Date.now();
+    let e = this.mem.get(rk);
+    if (!e || e.expiresAt <= now) {
+      e = { value: null, count: 0, rounds: new Set(), expiresAt: now + ttlSec * 1000 };
+      this.mem.set(rk, e);
+    }
+    if (!e.rounds) e.rounds = new Set();
+    e.rounds.add(round);
+    return e.rounds.size;
+  }
+
+  /** 读已命中的不同轮次数；不存在或已过期返回 0 */
+  async roundCount(k: string): Promise<number> {
+    const rk = this.key(k);
+    const r = getSharedRedis();
+    if (r) {
+      try {
+        const n = await r.scard(rk);
+        return Number(n) || 0;
+      } catch {
+        reportRedisFailure(r);
+      }
+    }
+    const e = this.mem.get(rk);
+    if (!e || e.expiresAt <= Date.now()) return 0;
+    return e.rounds ? e.rounds.size : 0;
   }
 
   // ── 字符串值 ────────────────────────────────────────

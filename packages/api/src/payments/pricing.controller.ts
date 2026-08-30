@@ -16,6 +16,7 @@ import { Repository } from 'typeorm';
 import { SkillPricing, CreatorMembershipPlan } from './payments.entity';
 import { Skill } from '../skills/skill.entity';
 import { TeamMember } from '../teams/team-member.entity';
+import { MemberRole } from '@platform/shared';
 import { SettingsService } from './settings.service';
 import { AuthGuard } from '../auth/auth.guard';
 
@@ -37,6 +38,15 @@ export class PricingController {
     @InjectRepository(TeamMember) private readonly teamMemberRepo: Repository<TeamMember>,
     private readonly settings: SettingsService,
   ) {}
+
+  /**
+   * 团队成员是否拥有管理者权限：OWNER / MAINTAINER，**不含只读的 VIEWER**。
+   * 口径同 teams.service.ts 的 assertManager 与 skills.service.ts 的 isTeamManager。
+   */
+  private async isTeamManager(teamId: string, userId: string): Promise<boolean> {
+    const m = await this.teamMemberRepo.findOne({ where: { team_id: teamId, user_id: userId } });
+    return !!m && (m.role === MemberRole.OWNER || m.role === MemberRole.MAINTAINER);
+  }
 
   /** 单个技能的定价 + 会员方案价格（公开） */
   @Get('pricing/:skillId')
@@ -115,10 +125,13 @@ export class PricingController {
 
     const isAdmin = req.user?.role === 'admin';
     const uid = req.user.sub;
-    const isManager = skill.owner_user_id === uid
-      || (!!skill.owner_team_id && !!(await this.teamMemberRepo.findOne({ where: { team_id: skill.owner_team_id, user_id: uid } })));
+    // 团队的 OWNER/MAINTAINER 才可改价；VIEWER 是只读角色，不能定价
+    // （口径同 teams.service.ts assertManager / skills.service.ts isTeamManager）
+    const isManager =
+      skill.owner_user_id === uid ||
+      (!!skill.owner_team_id && (await this.isTeamManager(skill.owner_team_id, uid)));
     if (!isManager && !isAdmin) {
-      throw new ForbiddenException('Only the skill owner, a team member, or an admin can set its pricing');
+      throw new ForbiddenException('Only the skill owner, a team owner/maintainer, or an admin can set its pricing');
     }
 
     const rawMode = body?.pricing_mode as string;

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In, ILike } from 'typeorm';
 import { Skill } from '../skills/skill.entity';
@@ -244,10 +244,33 @@ export class AdminService {
     return { items, total, page, size, activeUsers };
   }
 
-  async updateUser(id: string, data: { role?: string }) {
+  /** users.role 的合法取值（与 User 实体的默认值保持一致） */
+  private static readonly ALLOWED_ROLES: readonly string[] = ['user', 'admin'];
+
+  /**
+   * 修改用户。
+   *
+   * **必须走字段白名单**：controller 是 `updateUser(id, body)` 把 req.body 整个透传进来，
+   * 直接 `userRepo.update(id, data)` 等于开放任意列写入 —— 可以改掉他人的 password_hash、
+   * 篡改 wechat_openid_oa 接管账号，或者给自己写 `role:'admin'` 完成自提权。
+   * 因此这里只挑出明确允许的字段，其余一律忽略。
+   */
+  async updateUser(id: string, data: Record<string, any>) {
     const user = await this.userRepo.findOneBy({ id });
     if (!user) throw new NotFoundException('User not found');
-    await this.userRepo.update(id, data);
+
+    const patch: { role?: string } = {};
+    if (data?.role !== undefined) {
+      if (!AdminService.ALLOWED_ROLES.includes(data.role)) {
+        throw new BadRequestException(
+          `role 只能是 ${AdminService.ALLOWED_ROLES.join(' / ')}`,
+        );
+      }
+      patch.role = data.role;
+    }
+
+    if (Object.keys(patch).length === 0) return { ok: true, unchanged: true };
+    await this.userRepo.update(id, patch);
     return { ok: true };
   }
 

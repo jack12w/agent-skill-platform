@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import AccountNav from '../components/AccountNav';
+import { setAuthCookie } from '../components/AuthProvider';
 
 interface MeUser {
   id: string;
@@ -172,6 +173,10 @@ export default function AccountPage() {
       if (data.merged) {
         localStorage.setItem('token', data.access_token);
         localStorage.setItem('user', JSON.stringify(data.user));
+        // 合并后 token 换了，Cookie 必须同步更新：AuthProvider 会在每次渲染把 Cookie 里的
+        // token 同步进 localStorage，若 Cookie 还停留在旧 token，新 token 会被覆盖回去，
+        // 用户刷新后莫名回到合并前的账号。
+        setAuthCookie(data.access_token, JSON.stringify(data.user));
         window.dispatchEvent(new Event('user-updated'));
         alert('已自动合并到原邮箱账号');
       } else {

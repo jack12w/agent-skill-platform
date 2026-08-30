@@ -227,6 +227,17 @@ export class RefundService implements OnModuleInit {
    *
    * 若冲正中途失败，SUCCESS 未标记 → 微信退款回调重发或管理员重试时再次进入，
    * 幂等步骤从上次成功断点继续，直至全部完成，不存在「已退款但权益未撤销」的死状态。
+   *
+   * **并发安全（两处，都由事务内的订单行锁解决）**：
+   * 1. 同一笔退款被并发 finalize：入口处「status 已是 SUCCESS 就退出」的检查在事务外，
+   *    是典型的 check-then-act，两个调用可以同时通过它进入冲正 → 重复扣减创作者余额
+   *    （debitForRefund 的幂等键能挡住重复记账，但权益撤销、订单回写仍会跑两遍）。
+   * 2. 同一订单的两笔退款并发 finalize：两边都在 READ COMMITTED 下聚合「已 SUCCESS 的退款」，
+   *    谁也看不见对方的成果，后写覆盖前写 → **refunded_cents 少算** →
+   *    全额退款后 `fullyRefunded` 判 false → 权益/订阅漏撤销（用户白拿）、对账出现 diff。
+   *
+   * 因此在事务内先 `SELECT ... FOR UPDATE` 锁住订单行：同一订单的所有收口被串行化，
+   * 拿到锁后再复查一次退款状态作为真正的原子闸门。
    */
   async finalizeRefund(outRefundNo: string): Promise<void> {
     const refund = await this.refundRepo.findOne({ where: { out_refund_no: outRefundNo } });
@@ -246,6 +257,25 @@ export class RefundService implements OnModuleInit {
     // 冲正多步写（扣余额 + 撤权益 + 撤订阅 + 回写订单 + 标 SUCCESS）包进同一事务，
     // 任一步失败整体回滚，消除「余额已扣但权益未撤 / SUCCESS 未标」的中间态。
     await this.orderRepo.manager.transaction(async (manager) => {
+      // 0. 锁订单行：串行化同一订单的并发收口（见方法注释的「并发安全」）。
+      //    只按订单 id 加锁，不同订单之间互不影响，不会造成全局串行。
+      const locked = await manager
+        .createQueryBuilder()
+        .select('o.id')
+        .from(Order, 'o')
+        .where('o.id = :id', { id: order.id })
+        .setLock('pessimistic_write')
+        .getOne();
+      if (!locked) return; // 订单已被删除
+
+      // 0.1 拿到锁后复查：把入口处非原子的 status 检查补成真正的原子闸门。
+      //     此时同一订单的其他收口都在等这把锁，读到的状态是确定的。
+      const fresh = await manager.findOne(Refund, { where: { out_refund_no: outRefundNo } });
+      if (!fresh || fresh.status === 'SUCCESS') {
+        this.logger.warn(`退款 ${outRefundNo} 已冲正（并发复查），跳过`);
+        return;
+      }
+
       // 1. 回冲创作者余额（按比例扣减当初入账的分成），并入同一事务
       for (const it of items) {
         const income = Number(it.seller_income_cents || 0);
