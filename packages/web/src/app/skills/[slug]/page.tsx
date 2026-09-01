@@ -312,6 +312,9 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
 
   const tags: string[] = skill.tags ?? [];
   const ownerName = skill.owner_user?.name || skill.owner_team?.name || 'Anonymous';
+  // 原创作者（个人技能=owner，团队技能 owner_user_id 为 NULL 时回退到 created_by）：
+  // 团队技能详情页应同时展示「个人名称 + 团队名称」。
+  const personName = skill.author?.name || skill.owner_user?.name || null;
   const isOwner = !!currentUserId && (currentUserId === skill.owner_user_id || isTeamMember);
   const authorTargetType = skill.owner_team_id ? 'team' : 'user';
   const authorTargetId = skill.owner_team_id || skill.owner_user_id;
@@ -421,7 +424,25 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
             </div>
             <button onClick={() => handleDownload()} disabled={acting !== null || versions.length === 0} className="w-full py-3 bg-brand-600 text-white rounded-lg font-bold hover:bg-brand-700 mb-3 disabled:opacity-50 disabled:cursor-not-allowed">{acting === 'download' ? t('detail.downloading') : versions.length === 0 ? t('detail.noVersionYet') : `${t('detail.download')} v${versions.find((v) => v.id === skill.latest_version_id)?.version || versions[0]?.version || 'latest'}`}</button>
           </div>
-          <div className="text-sm text-neutral-500"><div>{t('detail.publishedBy')}: {skill.owner_team ? <Link href={`/teams/${skill.owner_team.id}`} className="text-brand-600 font-medium hover:underline">{skill.owner_team.name}</Link> : <Link href={`/users/${encodeURIComponent(ownerName)}`} className="text-brand-600 font-medium hover:underline">{ownerName}</Link>}</div><div>{t('detail.lastUpdated')}: <span className="text-neutral-900 font-medium" suppressHydrationWarning>{skill.updated_at ? new Date(skill.updated_at).toLocaleDateString() : '-'}</span></div></div>
+          <div className="text-sm text-neutral-500">
+            <div>
+              {t('detail.publishedBy')}:{' '}
+              {personName ? (
+                <Link href={`/users/${encodeURIComponent(personName)}`} className="text-brand-600 font-medium hover:underline">{personName}</Link>
+              ) : skill.owner_team ? (
+                <Link href={`/teams/${skill.owner_team.id}`} className="text-brand-600 font-medium hover:underline">{skill.owner_team.name}</Link>
+              ) : (
+                <span className="font-medium text-neutral-900">{ownerName}</span>
+              )}
+              {skill.owner_team && personName && (
+                <>
+                  {' · '}
+                  <Link href={`/teams/${skill.owner_team.id}`} className="text-brand-600 font-medium hover:underline">{skill.owner_team.name}</Link>
+                </>
+              )}
+            </div>
+            <div>{t('detail.lastUpdated')}: <span className="text-neutral-900 font-medium" suppressHydrationWarning>{skill.updated_at ? new Date(skill.updated_at).toLocaleDateString() : '-'}</span></div>
+          </div>
 
           {/* ── 评论输入（右侧） ── */}
           <div className="p-4 border rounded-xl bg-white">
