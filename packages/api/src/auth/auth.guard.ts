@@ -1,8 +1,8 @@
 import { Injectable, CanActivate, ExecutionContext, Logger, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { Request } from 'express';
 import { IS_PUBLIC_KEY } from './public.decorator';
 import { User } from './user.entity';
@@ -14,7 +14,7 @@ export class AuthGuard implements CanActivate {
   constructor(
     private jwtService: JwtService,
     private reflector: Reflector,
-    @InjectRepository(User) private readonly userRepo: Repository<User>,
+    @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -53,7 +53,7 @@ export class AuthGuard implements CanActivate {
   private async confirmAdminRole(userId?: string): Promise<string> {
     if (!userId) return 'user';
     try {
-      const u = await this.userRepo.findOne({ where: { id: userId }, select: ['id', 'role'] });
+      const u = await this.dataSource.getRepository(User).findOne({ where: { id: userId }, select: ['id', 'role'] });
       return u?.role === 'admin' ? 'admin' : 'user';
     } catch (e: any) {
       this.logger.warn(`管理员 role 回库校验失败，按非管理员处理 user=${userId}: ${e?.message}`);

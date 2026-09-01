@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { User } from './user.entity';
 
@@ -48,7 +48,7 @@ export class IdentityService {
 
   constructor(
     private readonly jwtService: JwtService,
-    @InjectRepository(User) private readonly userRepo: Repository<User>,
+    @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
   /** 校验单个 token（真正验签）。有效返回 payload，无效/过期/签名错误返回 null */
@@ -77,7 +77,7 @@ export class IdentityService {
   /** 回库核对当前 role；任何异常都按非管理员处理（fail-closed） */
   private async confirmAdmin(userId: string): Promise<boolean> {
     try {
-      const u = await this.userRepo.findOne({ where: { id: userId }, select: ['id', 'role'] });
+      const u = await this.dataSource.getRepository(User).findOne({ where: { id: userId }, select: ['id', 'role'] });
       return u?.role === 'admin';
     } catch (e: any) {
       this.logger.warn(`管理员身份回库校验失败，按非管理员处理 user=${userId}: ${e?.message}`);
