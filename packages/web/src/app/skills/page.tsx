@@ -40,9 +40,9 @@ function SkillSquareInner() {
   const inflightRef = useRef<AbortController | null>(null);
 
   const fetchSkills = useCallback(async (pageNum: number, append: boolean) => {
-    // 切换排序/标签时，上一批无限滚动发起的「加载更多」可能后到并 append 到新结果后面。
-    // 原实现只 abort 了 page=1 的请求（靠 effect cleanup），加载更多的请求无人管。
-    inflightRef.current?.abort();
+    // 仅「重置/换筛选」(append=false) 时取消在途请求；append（加载更多）不取消，
+    // 因为 loadMore 已被 loading/loadingMore 串行化，且取消在途的首页请求会导致前 20 条丢失。
+    if (!append) inflightRef.current?.abort();
     const controller = new AbortController();
     inflightRef.current = controller;
     if (pageNum === 1) setLoading(true);
@@ -87,11 +87,14 @@ function SkillSquareInner() {
 
   // Load more
   const loadMore = useCallback(() => {
-    if (loadingMore || !hasMore) return;
+    // 初始加载(loading)或上一页加载中(loadingMore)时禁止触发加载更多：
+    // 否则会在首页请求在途时发起 append，既可能取消在途首页请求导致前 20 条丢失，
+    // 又会在竞态下被首页 replace 覆盖。
+    if (loading || loadingMore || !hasMore) return;
     const next = page + 1;
     setPage(next);
     fetchSkills(next, true);
-  }, [page, loadingMore, hasMore, fetchSkills]);
+  }, [page, loading, loadingMore, hasMore, fetchSkills]);
 
   // IntersectionObserver for infinite scroll
   useEffect(() => {
