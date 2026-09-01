@@ -327,8 +327,23 @@ export class TeamsService {
       throw new ForbiddenException('Only the team owner can delete it');
     }
 
-    // Detach skills (do NOT delete them — they fall back to personal ownership)
-    await this.skillRepository.update({ owner_team_id: teamId }, { owner_team_id: null });
+    // Detach skills：回落到个人归属（原创作者 created_by），避免删团队后变成无主孤儿。
+    // 主路径：owner_user_id 回填为原创作者；兜底：created_by 为空的极端情况落到团队 owner。
+    await this.skillRepository
+      .createQueryBuilder()
+      .update(Skill)
+      .set({ owner_team_id: null, owner_user_id: () => 'created_by' })
+      .where('owner_team_id = :teamId', { teamId })
+      .andWhere('created_by IS NOT NULL')
+      .execute();
+
+    await this.skillRepository
+      .createQueryBuilder()
+      .update(Skill)
+      .set({ owner_team_id: null, owner_user_id: team.owner_user_id })
+      .where('owner_team_id = :teamId', { teamId })
+      .andWhere('created_by IS NULL')
+      .execute();
     // Remove members
     await this.memberRepository.delete({ team_id: teamId });
     // Finally delete team
