@@ -858,10 +858,11 @@ export class SkillsService {
     const where = isUuid ? { id: idOrSlug } : { slug: idOrSlug };
     const skill = await this.skillRepository.findOne({
       where,
-      relations: ['owner_user', 'owner_team', 'stats'],
+      relations: ['owner_user', 'owner_team', 'stats', 'created_by_user'],
       select: {
         owner_user: { id: true, name: true, avatar_url: true },
         owner_team: { id: true, name: true },
+        created_by_user: { id: true, name: true, avatar_url: true },
       },
     });
     if (!skill) throw new NotFoundException();
@@ -877,6 +878,16 @@ export class SkillsService {
     // Strip base64 avatar (legacy data)
     if (skill.owner_user) {
       (skill.owner_user as any).avatar_url = sanitizeAvatarUrl(skill.owner_user.avatar_url);
+    }
+
+    // 原创作者（团队技能 owner_user_id 为 NULL，详情页需同时展示个人作者名）：
+    // 回退到 created_by 用户并挂上 author 字段（实体默认不加载该关系，前端靠 skill.author 取个人名）。
+    if (skill.created_by_user) {
+      (skill as any).author = {
+        id: skill.created_by_user.id,
+        name: skill.created_by_user.name,
+        avatar_url: sanitizeAvatarUrl(skill.created_by_user.avatar_url),
+      };
     }
 
     // Overwrite stats scores with canonical WEIGHTS formula in real time.
