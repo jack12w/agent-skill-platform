@@ -248,7 +248,11 @@ export class AuthService {
 
   async getWechatAuthUrl() {
     this.assertWechatLoginEnabled();
-    const appId = process.env.WECHAT_APPID || 'wxb2537aa7600236a7';
+    const appId = process.env.WECHAT_APPID;
+    // 网站应用(PC 扫码/绑定)与公众号是两套独立 AppID/OpenID 命名空间，
+    // 绝不可静默回退到公众号 AppID，否则 openid 落错列 → 账号分裂。
+    // 生产必须显式配置 WECHAT_APPID，缺失即禁用本路径而非带着错 AppID 跑。
+    if (!appId) throw new BadRequestException('网站应用微信登录未配置（WECHAT_APPID）');
     const redirectUri = encodeURIComponent(
       process.env.WECHAT_REDIRECT_URI || `${process.env.PUBLIC_BASE_URL}/api/auth/wechat/callback`
     );
@@ -298,7 +302,11 @@ export class AuthService {
       throw new BadRequestException('Invalid or expired state parameter');
     }
 
-    const appId = process.env.WECHAT_APPID || 'wxb2537aa7600236a7';
+    const appId = process.env.WECHAT_APPID;
+    // 网站应用(PC 扫码/绑定)与公众号是两套独立 AppID/OpenID 命名空间，
+    // 绝不可静默回退到公众号 AppID，否则 openid 落错列 → 账号分裂。
+    // 生产必须显式配置 WECHAT_APPID，缺失即禁用本路径而非带着错 AppID 跑。
+    if (!appId) throw new BadRequestException('网站应用微信登录未配置（WECHAT_APPID）');
     const appSecret = process.env.WECHAT_APPSECRET;
     if (!appSecret) throw new BadRequestException('WeChat AppSecret not configured');
     // 1. 用 code 交换 access_token
@@ -524,7 +532,11 @@ export class AuthService {
   // ── 微信绑定（已登录会话发起，避免重复账号） ──
   async getWechatBindUrl(userId: string) {
     this.assertWechatLoginEnabled();
-    const appId = process.env.WECHAT_APPID || 'wxb2537aa7600236a7';
+    const appId = process.env.WECHAT_APPID;
+    // 网站应用(PC 扫码/绑定)与公众号是两套独立 AppID/OpenID 命名空间，
+    // 绝不可静默回退到公众号 AppID，否则 openid 落错列 → 账号分裂。
+    // 生产必须显式配置 WECHAT_APPID，缺失即禁用本路径而非带着错 AppID 跑。
+    if (!appId) throw new BadRequestException('网站应用微信登录未配置（WECHAT_APPID）');
     const base = process.env.PUBLIC_BASE_URL || 'http://localhost:3000';
     const redirectUri = encodeURIComponent(`${base}/api/auth/wechat/bind-callback`);
     const state = crypto.randomBytes(16).toString('hex');
@@ -544,7 +556,11 @@ export class AuthService {
     }
     const userId = stored.userId;
 
-    const appId = process.env.WECHAT_APPID || 'wxb2537aa7600236a7';
+    const appId = process.env.WECHAT_APPID;
+    // 网站应用(PC 扫码/绑定)与公众号是两套独立 AppID/OpenID 命名空间，
+    // 绝不可静默回退到公众号 AppID，否则 openid 落错列 → 账号分裂。
+    // 生产必须显式配置 WECHAT_APPID，缺失即禁用本路径而非带着错 AppID 跑。
+    if (!appId) throw new BadRequestException('网站应用微信登录未配置（WECHAT_APPID）');
     const appSecret = process.env.WECHAT_APPSECRET;
     if (!appSecret) throw new BadRequestException('WeChat AppSecret not configured');
 

@@ -54,7 +54,7 @@ services:
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASS=${SMTP_PASS}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      - WECHAT_APPID=${WECHAT_APPID:-wxb2537aa7600236a7}
+      - WECHAT_APPID=${WECHAT_APPID}
       - WECHAT_APPSECRET=${WECHAT_APPSECRET}
       # 微信登录总开关：后端 assertWechatLoginEnabled() 读取，不传则微信链路永远被拒
       - WECHAT_LOGIN_ENABLED=${WECHAT_LOGIN_ENABLED:-false}
