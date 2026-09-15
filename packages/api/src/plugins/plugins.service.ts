@@ -88,29 +88,94 @@ export class PluginsService {
 
   /**
    * 卡密校验（供插件客户端激活用，公开、无 JWT）。
-   * 仅按卡密查订阅，返回最小可见信息；不区分「不存在/已过期/已取消」，统一 valid=false 防探测。
-   * 卡密 ~80bit 随机熵，爆破不可行；插件客户端仅在启动/到期临近时低频调用，无需额外限流。
+   * 设备激活绑定：deviceId 首次出现且未达上限 → 写入 activated_devices 并放行；
+   * 已绑定设备 → 直接放行；达上限的新设备 → 拒（ACTIVATION_LIMIT）。
+   * 不区分「不存在/已过期/已取消」，统一 valid=false 防探测。
+   * 卡密 ~96bit 随机熵，爆破不可行；插件客户端仅在启动/到期临近时低频调用。
    */
-  async verifyKey(key: string): Promise<{
+  async verifyKey(
+    key: string,
+    deviceId?: string,
+  ): Promise<{
     valid: boolean;
+    code?: string;
     plugin_id?: string;
     plugin_slug?: string;
     plugin_name?: string;
     expires_at?: string;
     status?: string;
+    activated?: number;
+    max_activations?: number;
   }> {
     const sub = await this.subRepo.findOne({ where: { license_key: key } });
     if (!sub) return { valid: false };
     const active = sub.status === 'active' && sub.expires_at.getTime() > Date.now();
     if (!active) return { valid: false, status: sub.status };
-    const plugin = await this.pluginRepo.findOne({ where: { id: sub.plugin_id } });
+
+    // 旧客户端未上报 deviceId：降级为不绑定（仍放行），但记录一条提示由插件侧补齐
+    if (!deviceId) {
+      const plugin = await this.pluginRepo.findOne({ where: { id: sub.plugin_id } });
+      return {
+        valid: true,
+        plugin_id: sub.plugin_id,
+        plugin_slug: plugin?.slug,
+        plugin_name: plugin?.name,
+        expires_at: sub.expires_at.toISOString(),
+        status: sub.status,
+        activated: sub.activated_devices?.length ?? 0,
+        max_activations: sub.max_activations,
+      };
+    }
+
+    const devices = sub.activated_devices ?? [];
+    if (devices.includes(deviceId)) {
+      const plugin = await this.pluginRepo.findOne({ where: { id: sub.plugin_id } });
+      return {
+        valid: true,
+        plugin_id: sub.plugin_id,
+        plugin_slug: plugin?.slug,
+        plugin_name: plugin?.name,
+        expires_at: sub.expires_at.toISOString(),
+        status: sub.status,
+        activated: devices.length,
+        max_activations: sub.max_activations,
+      };
+    }
+
+    // 新设备：未达上限则绑定并放行
+    if (devices.length < sub.max_activations) {
+      sub.activated_devices = [...devices, deviceId];
+      await this.subRepo.save(sub);
+      const plugin = await this.pluginRepo.findOne({ where: { id: sub.plugin_id } });
+      return {
+        valid: true,
+        plugin_id: sub.plugin_id,
+        plugin_slug: plugin?.slug,
+        plugin_name: plugin?.name,
+        expires_at: sub.expires_at.toISOString(),
+        status: sub.status,
+        activated: sub.activated_devices.length,
+        max_activations: sub.max_activations,
+      };
+    }
+
+    // 已达上限：拒绝（提示用户到账户页「解绑设备」后重试）
     return {
-      valid: true,
-      plugin_id: sub.plugin_id,
-      plugin_slug: plugin?.slug,
-      plugin_name: plugin?.name,
-      expires_at: sub.expires_at.toISOString(),
+      valid: false,
+      code: 'ACTIVATION_LIMIT',
       status: sub.status,
+      activated: devices.length,
+      max_activations: sub.max_activations,
     };
+  }
+
+  /** 解绑全部已激活设备（用户换机/重装前在账户页操作；清空后需重新激活） */
+  async resetDevices(userId: string, pluginId: string) {
+    const sub = await this.subRepo.findOne({
+      where: { user_id: userId, plugin_id: pluginId },
+    });
+    if (!sub) throw new NotFoundException('未找到订阅记录');
+    sub.activated_devices = [];
+    return this.subRepo.save(sub);
   }
 }

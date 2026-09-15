@@ -18,6 +18,8 @@ interface MySub {
   expires_at: string;
   started_at: string;
   license_key?: string | null;
+  activated_devices?: string[];
+  max_activations?: number;
 }
 
 function authHeaders(): Record<string, string> {
@@ -44,6 +46,7 @@ export default function MyPluginsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [revealId, setRevealId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [resetBusyId, setResetBusyId] = useState<string | null>(null);
 
   const load = async () => {
     if (!getUserId()) {
@@ -99,6 +102,22 @@ export default function MyPluginsPage() {
       setTimeout(() => setCopiedId((v) => (v === sub.id ? null : v)), 1500);
     } catch {
       /* 剪贴板不可用时忽略 */
+    }
+  };
+
+  const handleResetDevices = async (pluginId: string) => {
+    if (!confirm(t('plugins.resetDevicesConfirm'))) return;
+    setResetBusyId(pluginId);
+    try {
+      const res = await fetch(`/api/plugins/${pluginId}/reset-devices`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      if (res.ok) load();
+    } catch {
+      /* 静默 */
+    } finally {
+      setResetBusyId(null);
     }
   };
 
@@ -173,6 +192,21 @@ export default function MyPluginsPage() {
                       </button>
                     </div>
                     <p className="mt-2 text-[11px] leading-relaxed text-neutral-400">{t('plugins.activateHint')}</p>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-neutral-500">
+                        {t('plugins.devicesUsed', {
+                          n: s.activated_devices?.length ?? 0,
+                          max: s.max_activations ?? 2,
+                        })}
+                      </span>
+                      <button
+                        onClick={() => handleResetDevices(s.plugin_id)}
+                        disabled={resetBusyId === s.plugin_id}
+                        className="text-[11px] text-neutral-500 border border-neutral-200 rounded-md px-2 py-1 hover:bg-neutral-100 disabled:opacity-50"
+                      >
+                        {resetBusyId === s.plugin_id ? t('plugins.resetting') : t('plugins.resetDevices')}
+                      </button>
+                    </div>
                   </div>
                 )}
 

@@ -803,6 +803,10 @@ const zh = {
     keyVisible: '显示',
     keyHidden: '隐藏',
     activateHint: '复制卡密，粘贴到插件客户端的「激活」输入框即可启用。卡密与订阅绑定，续费后自动延长有效期，无需更换。',
+    devicesUsed: '已激活 {n}/{max} 台设备',
+    resetDevices: '解绑设备',
+    resetDevicesConfirm: '确定解绑全部已激活设备吗？解绑后需在各设备重新激活（用于换机或重装）。',
+    resetting: '解绑中…',
   },
 };
 

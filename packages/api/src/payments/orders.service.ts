@@ -499,6 +499,8 @@ export class OrdersService implements OnModuleInit {
         expires_at: new Date(now + MONTH),
         order_id: orderId,
         license_key: genPluginLicenseKey(),
+        max_activations: 2,
+        activated_devices: [],
       });
       await this.pluginSubRepo.save(sub);
     }

@@ -42,13 +42,13 @@ export class PluginsController {
 
   /**
    * 卡密校验（插件客户端激活用）。公开、无 JWT。
-   * body: { key: string } → { valid, plugin_slug?, expires_at? }
+   * body: { key: string, deviceId?: string } → 设备激活绑定 + 上限拦截。
    */
   @Public()
   @Post('verify')
-  verify(@Body('key') key: string) {
+  verify(@Body('key') key: string, @Body('deviceId') deviceId?: string) {
     if (!key || typeof key !== 'string') return { valid: false };
-    return this.svc.verifyKey(key.trim());
+    return this.svc.verifyKey(key.trim(), deviceId?.trim() || undefined);
   }
 
   @Get('mine')
@@ -69,5 +69,11 @@ export class PluginsController {
   @Post(':id/cancel')
   cancel(@Req() req: Request, @Param('id') id: string) {
     return this.svc.cancel(this.uid(req), id);
+  }
+
+  /** 解绑全部已激活设备（换机/重装前） */
+  @Post(':id/reset-devices')
+  resetDevices(@Req() req: Request, @Param('id') id: string) {
+    return this.svc.resetDevices(this.uid(req), id);
   }
 }

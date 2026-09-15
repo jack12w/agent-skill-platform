@@ -118,4 +118,16 @@ export class PluginSubscription {
   @Index('uq_plugin_subs_license', { unique: true, where: '"license_key" IS NOT NULL' })
   @Column({ type: 'text', nullable: true })
   license_key: string;
+
+  /**
+   * 卡密防复用：设备激活绑定。
+   * max_activations：允许同时激活的设备数（默认 2，主用+备用）。
+   * activated_devices：已绑定的设备指纹列表（插件客户端安装时生成稳定 device_id 上报）。
+   * 分享卡密给第 3 人时，其 device_id 不在列表且已达上限 → 校验被拒。
+   */
+  @Column({ type: 'int', default: 2 })
+  max_activations: number;
+
+  @Column('text', { array: true, default: () => 'ARRAY[]::text[]' })
+  activated_devices: string[];
 }

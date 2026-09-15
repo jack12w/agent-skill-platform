@@ -800,6 +800,10 @@ const en = {
     keyVisible: 'Show',
     keyHidden: 'Hide',
     activateHint: 'Copy the key and paste it into the plugin client’s “Activate” box to enable it. The key is tied to your subscription and auto-extends on renewal — no need to replace it.',
+    devicesUsed: 'Activated {n}/{max} devices',
+    resetDevices: 'Unbind Devices',
+    resetDevicesConfirm: 'Unbind all activated devices? You will need to re-activate on each device (use this when switching or reinstalling).',
+    resetting: 'Unbinding…',
   },
 };
 
