@@ -11,6 +11,7 @@ import {
   CreatorMembershipPlan,
 } from './payments.entity';
 import { Skill } from '../skills/skill.entity';
+import { Plugin, PluginSubscription } from '../plugins/plugin.entity';
 import { User } from '../auth/user.entity';
 import { Team } from '../teams/team.entity';
 import { WechatPayService } from './wechat-pay.service';
@@ -20,8 +21,9 @@ import { MembershipService } from './membership.service';
 import { SettingsService } from './settings.service';
 
 export interface CreateOrderInput {
-  type: 'skill' | 'membership' | 'creator_membership';
+  type: 'skill' | 'membership' | 'creator_membership' | 'plugin';
   skillId?: string;
+  pluginId?: string;
   plan?: 'monthly' | 'quarterly' | 'yearly';
   targetType?: 'user' | 'team';
   targetId?: string;
@@ -40,6 +42,8 @@ export class OrdersService implements OnModuleInit {
     @InjectRepository(WechatNotifyLog) private readonly logRepo: Repository<WechatNotifyLog>,
     @InjectRepository(SkillPricing) private readonly pricingRepo: Repository<SkillPricing>,
     @InjectRepository(Skill) private readonly skillRepo: Repository<Skill>,
+    @InjectRepository(Plugin) private readonly pluginRepo: Repository<Plugin>,
+    @InjectRepository(PluginSubscription) private readonly pluginSubRepo: Repository<PluginSubscription>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(Team) private readonly teamRepo: Repository<Team>,
     @InjectRepository(CreatorMembershipPlan) private readonly planRepo: Repository<CreatorMembershipPlan>,
@@ -86,6 +90,9 @@ export class OrdersService implements OnModuleInit {
     if (input.type === 'skill') {
       if (!input.skillId) return null;
       qb.andWhere('i.subject_id = :sid', { sid: input.skillId });
+    } else if (input.type === 'plugin') {
+      if (!input.pluginId) return null;
+      qb.andWhere('i.subject_id = :pid', { pid: input.pluginId });
     } else if (input.type === 'creator_membership') {
       if (!input.targetId) return null;
       qb.andWhere('i.subject_id = :tid', { tid: input.targetId })
@@ -181,6 +188,24 @@ export class OrdersService implements OnModuleInit {
         unit_cents: total,
         qty: 1,
         snapshot: { targetType, targetId, plan },
+      };
+    } else if (input.type === 'plugin') {
+      // 平台插件：钱进平台商户号，无创作者分成（seller_user_id=null，不记账到创作者余额）。
+      if (!input.pluginId) throw new BadRequestException('缺少 pluginId');
+      const plugin = await this.pluginRepo.findOne({ where: { id: input.pluginId } });
+      if (!plugin || plugin.status !== 'active') {
+        throw new BadRequestException('插件不存在或未上架');
+      }
+      total = Number(plugin.price_monthly_cents);
+      if (!total || total <= 0) throw new BadRequestException('插件定价异常');
+      description = `插件订阅:${plugin.name}`;
+      item = {
+        subject_type: 'plugin',
+        subject_id: input.pluginId,
+        seller_user_id: null,
+        unit_cents: total,
+        qty: 1,
+        snapshot: { pluginId: input.pluginId, name: plugin.name },
       };
     } else {
       const plan = input.plan || 'monthly';
@@ -409,6 +434,18 @@ export class OrdersService implements OnModuleInit {
       if (seller && income > 0) {
         await this.balance.credit(seller, income, 'membership', `${order.id}:${items[0]?.id}`, `创作者会员 ${order.order_no}`);
       }
+    } else if (order.type === 'plugin') {
+      // 平台插件订阅：授予/顺延 plugin_subscription（30 天）
+      const subjectId = items[0]?.subject_id;
+      const unit = Number(items[0]?.unit_cents) || 0;
+      if (subjectId) {
+        await this.fulfillPluginSubscription(
+          order.user_id,
+          subjectId,
+          unit,
+          order.id,
+        );
+      }
     } else {
       // 老全平台会员（过渡期保留，不参与分成）
       const plan = (items[0]?.snapshot as any)?.plan || 'monthly';
@@ -417,6 +454,50 @@ export class OrdersService implements OnModuleInit {
 
     // 全部步骤成功 → 末尾标记 DELIVERED（仅作为结果标记；步骤幂等已防双发）
     await this.orderRepo.update({ id: order.id, status: Not('DELIVERED') }, { status: 'DELIVERED' });
+  }
+
+  /**
+   * 授予/顺延插件订阅（包月 30 天）。
+   * 幂等：已存在且 active 且未过期 → 在现有 expires_at 基础上 +30 天；
+   * 已存在但 cancelled/expired → 重新激活（started_at=now, expires_at=now+30d）；
+   * 不存在 → 新建。
+   * deliver 仅在 markPaymentPaid 原子抢占成功后调用，故本方法单笔支付只跑一次。
+   */
+  private async fulfillPluginSubscription(
+    userId: string,
+    pluginId: string,
+    priceCents: number,
+    orderId: string,
+  ) {
+    const MONTH = 30 * 86400_000;
+    const now = Date.now();
+    const existing = await this.pluginSubRepo.findOne({
+      where: { user_id: userId, plugin_id: pluginId },
+    });
+    if (existing) {
+      if (existing.status === 'active' && existing.expires_at.getTime() > now) {
+        existing.expires_at = new Date(existing.expires_at.getTime() + MONTH);
+      } else {
+        existing.status = 'active';
+        existing.started_at = new Date();
+        existing.expires_at = new Date(now + MONTH);
+      }
+      existing.price_cents = priceCents;
+      existing.order_id = orderId;
+      await this.pluginSubRepo.save(existing);
+    } else {
+      const sub = this.pluginSubRepo.create({
+        user_id: userId,
+        plugin_id: pluginId,
+        plan: 'monthly',
+        price_cents: priceCents,
+        status: 'active',
+        started_at: new Date(),
+        expires_at: new Date(now + MONTH),
+        order_id: orderId,
+      });
+      await this.pluginSubRepo.save(sub);
+    }
   }
 
 

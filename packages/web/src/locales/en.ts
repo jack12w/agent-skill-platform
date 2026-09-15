@@ -775,6 +775,26 @@ const en = {
     termsLink: 'View the full Terms of Service & Subscription Agreement',
     finalInterpretation: 'The final right of interpretation belongs to SkillDepot.',
   },
+  plugins: {
+    title: 'Plugin Market',
+    subtitle: 'Efficiency tools for cross-border e-commerce sellers · Monthly subscription, cancel anytime, download & use.',
+    allFilter: 'All',
+    download: 'Free Download',
+    subscribe: 'Subscribe',
+    subscribed: 'Subscribed',
+    validUntil: 'Valid until',
+    perMonth: '¥/mo',
+    manage: 'Manage',
+    freeDownloadTip: 'Download the client for free; activate after subscribing.',
+    cancel: 'Cancel Subscription',
+    cancelConfirm: 'Cancel this plugin subscription? You can keep using it until the current period ends (no refund).',
+    cancelled: 'Cancelled',
+    expired: 'Expired',
+    active: 'Active',
+    myTitle: 'My Plugin Subscriptions',
+    myHint: 'Manage your subscribed plugins; cancel anytime.',
+    descLabel: 'Features',
+  },
 };
 
 export default en;
