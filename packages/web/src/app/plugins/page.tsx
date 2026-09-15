@@ -120,13 +120,13 @@ export default function PluginsPage() {
       }
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
-        throw new Error(e.message || '下载失败');
+        throw new Error(e.message || t('plugins.downloadFail'));
       }
       const data = await res.json();
       if (data?.url) window.location.href = data.url;
-      else setErr('未获取到下载地址');
+      else setErr(t('plugins.noDownloadUrl'));
     } catch (e: any) {
-      setErr(e.message || '下载失败');
+      setErr(e.message || t('plugins.downloadFail'));
     }
   };
 
@@ -135,7 +135,11 @@ export default function PluginsPage() {
     loadMine();
   };
 
-  const yuan = (cents: number) => (Number(cents) / 100).toFixed(0);
+  // 整元不显示小数，非整元保留两位（避免 ¥79.5 被四舍五入成 ¥80）
+  const yuan = (cents: number) => {
+    const v = Number(cents || 0) / 100;
+    return Number.isInteger(v) ? String(v) : v.toFixed(2);
+  };
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -149,7 +153,7 @@ export default function PluginsPage() {
             {t('plugins.subtitle')}
           </p>
           <div className="mt-5 inline-block rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-brand-700 border border-brand-100">
-            🚀 {plugins.length} 款能力已上线，更多正在路上
+            🚀 {t('plugins.heroBadge', { n: plugins.length })}
           </div>
         </div>
       </div>
@@ -177,7 +181,7 @@ export default function PluginsPage() {
         )}
 
         {loading ? (
-          <div className="py-20 text-center text-sm text-neutral-400">加载中…</div>
+          <div className="py-20 text-center text-sm text-neutral-400">{t('plugins.loading')}</div>
         ) : visible.length === 0 ? (
           <div className="py-20 text-center text-sm text-neutral-400">{t('home.noData')}</div>
         ) : (

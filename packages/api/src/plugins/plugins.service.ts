@@ -236,8 +236,6 @@ export class PluginsService {
       'tagline',
       'description',
       'icon_url',
-      'category',
-      'currency',
       'download_key',
       'download_filename',
     ];
@@ -246,6 +244,13 @@ export class PluginsService {
     }
     if (body?.name !== undefined && !String(body.name).trim()) {
       throw new BadRequestException('名称不能为空');
+    }
+    // category / currency 是 NOT NULL 列：清空时回落默认值，避免直接置 null 触发 500
+    if (body?.category !== undefined) {
+      plugin.category = String(body.category || '').trim() || '通用';
+    }
+    if (body?.currency !== undefined) {
+      plugin.currency = String(body.currency || '').trim() || 'CNY';
     }
     if (body?.status !== undefined) {
       plugin.status = body.status === 'active' ? 'active' : 'hidden';

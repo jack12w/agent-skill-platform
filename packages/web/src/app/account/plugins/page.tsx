@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import AccountNav from '../../components/AccountNav';
+import PluginCheckoutModal from '../../components/PluginCheckoutModal';
 import useTranslation from '../../../hooks/useTranslation';
 
 interface Plugin {
@@ -47,6 +48,7 @@ export default function MyPluginsPage() {
   const [revealId, setRevealId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [resetBusyId, setResetBusyId] = useState<string | null>(null);
+  const [payInfo, setPayInfo] = useState<{ id: string; name?: string; price: number } | null>(null);
 
   const load = async () => {
     if (!getUserId()) {
@@ -141,13 +143,14 @@ export default function MyPluginsPage() {
 
       {!getUserId() ? (
         <div className="text-sm text-neutral-400">
-          请先<Link href="/auth" className="text-brand-600 hover:underline">登录</Link>
+          {t('plugins.needLogin')}
+          <Link href="/auth" className="text-brand-600 hover:underline">{t('nav.login')}</Link>
         </div>
       ) : loading ? (
-        <div className="py-10 text-center text-sm text-neutral-400">加载中…</div>
+        <div className="py-10 text-center text-sm text-neutral-400">{t('plugins.loading')}</div>
       ) : subs.length === 0 ? (
         <div className="py-10 text-center text-sm text-neutral-400">
-          {t('home.noData')} · <Link href="/plugins" className="text-brand-600 hover:underline">去插件市场</Link>
+          {t('home.noData')} · <Link href="/plugins" className="text-brand-600 hover:underline">{t('plugins.goMarket')}</Link>
         </div>
       ) : (
         <div className="space-y-3">
@@ -210,8 +213,20 @@ export default function MyPluginsPage() {
                   </div>
                 )}
 
-                {valid && (
-                  <div className="mt-3 flex justify-end">
+                <div className="mt-3 flex items-center justify-end gap-2">
+                  <button
+                    onClick={() =>
+                      setPayInfo({
+                        id: s.plugin_id,
+                        name: p?.name,
+                        price: p?.price_monthly_cents || 0,
+                      })
+                    }
+                    className="text-xs text-white bg-brand-600 rounded-lg px-3 py-1.5 hover:bg-brand-700"
+                  >
+                    {valid ? t('plugins.renew') : t('plugins.resubscribe')}
+                  </button>
+                  {valid && (
                     <button
                       onClick={() => handleCancel(s.plugin_id)}
                       disabled={busyId === s.plugin_id}
@@ -219,12 +234,25 @@ export default function MyPluginsPage() {
                     >
                       {t('plugins.cancel')}
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {payInfo && (
+        <PluginCheckoutModal
+          pluginId={payInfo.id}
+          pluginName={payInfo.name}
+          priceCents={payInfo.price}
+          onClose={() => setPayInfo(null)}
+          onPaid={() => {
+            setPayInfo(null);
+            load();
+          }}
+        />
       )}
     </div>
   );
