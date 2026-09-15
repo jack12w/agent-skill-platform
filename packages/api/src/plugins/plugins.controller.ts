@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Param,
+  Body,
   UseGuards,
   Req,
 } from '@nestjs/common';
@@ -37,6 +38,17 @@ export class PluginsController {
   @Get('slug/:slug')
   bySlug(@Param('slug') slug: string) {
     return this.svc.getBySlug(slug);
+  }
+
+  /**
+   * 卡密校验（插件客户端激活用）。公开、无 JWT。
+   * body: { key: string } → { valid, plugin_slug?, expires_at? }
+   */
+  @Public()
+  @Post('verify')
+  verify(@Body('key') key: string) {
+    if (!key || typeof key !== 'string') return { valid: false };
+    return this.svc.verifyKey(key.trim());
   }
 
   @Get('mine')

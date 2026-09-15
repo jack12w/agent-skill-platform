@@ -109,4 +109,13 @@ export class PluginSubscription {
 
   @Column({ type: 'uuid', nullable: true })
   order_id: string;
+
+  /**
+   * 卡密（license key）：每一条订阅记录一个稳定密钥，续费只顺延 expires_at、卡密不变。
+   * 用户购买后在「我的订阅」复制，填入插件客户端；插件调 /api/plugins/verify 校验有效期。
+   * 形如 SD-XXXX-XXXX-XXXX-XXXX（~80bit 熵）。部分唯一索引（忽略 NULL）。
+   */
+  @Index('uq_plugin_subs_license', { unique: true, where: '"license_key" IS NOT NULL' })
+  @Column({ type: 'text', nullable: true })
+  license_key: string;
 }

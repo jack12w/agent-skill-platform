@@ -85,4 +85,32 @@ export class PluginsService {
     sub.status = 'cancelled';
     return this.subRepo.save(sub);
   }
+
+  /**
+   * 卡密校验（供插件客户端激活用，公开、无 JWT）。
+   * 仅按卡密查订阅，返回最小可见信息；不区分「不存在/已过期/已取消」，统一 valid=false 防探测。
+   * 卡密 ~80bit 随机熵，爆破不可行；插件客户端仅在启动/到期临近时低频调用，无需额外限流。
+   */
+  async verifyKey(key: string): Promise<{
+    valid: boolean;
+    plugin_id?: string;
+    plugin_slug?: string;
+    plugin_name?: string;
+    expires_at?: string;
+    status?: string;
+  }> {
+    const sub = await this.subRepo.findOne({ where: { license_key: key } });
+    if (!sub) return { valid: false };
+    const active = sub.status === 'active' && sub.expires_at.getTime() > Date.now();
+    if (!active) return { valid: false, status: sub.status };
+    const plugin = await this.pluginRepo.findOne({ where: { id: sub.plugin_id } });
+    return {
+      valid: true,
+      plugin_id: sub.plugin_id,
+      plugin_slug: plugin?.slug,
+      plugin_name: plugin?.name,
+      expires_at: sub.expires_at.toISOString(),
+      status: sub.status,
+    };
+  }
 }

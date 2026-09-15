@@ -797,6 +797,12 @@ const zh = {
     myTitle: '我的插件订阅',
     myHint: '管理你已订阅的插件，可随时取消。',
     descLabel: '功能',
+    licenseKey: '激活卡密',
+    copyKey: '复制卡密',
+    copied: '已复制',
+    keyVisible: '显示',
+    keyHidden: '隐藏',
+    activateHint: '复制卡密，粘贴到插件客户端的「激活」输入框即可启用。卡密与订阅绑定，续费后自动延长有效期，无需更换。',
   },
 };
 

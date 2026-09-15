@@ -12,6 +12,7 @@ import {
 } from './payments.entity';
 import { Skill } from '../skills/skill.entity';
 import { Plugin, PluginSubscription } from '../plugins/plugin.entity';
+import { genPluginLicenseKey } from '../plugins/license.util';
 import { User } from '../auth/user.entity';
 import { Team } from '../teams/team.entity';
 import { WechatPayService } from './wechat-pay.service';
@@ -481,6 +482,8 @@ export class OrdersService implements OnModuleInit {
         existing.status = 'active';
         existing.started_at = new Date();
         existing.expires_at = new Date(now + MONTH);
+        // 重新激活时若此前无卡密则补发（正常新建分支已带卡密）
+        if (!existing.license_key) existing.license_key = genPluginLicenseKey();
       }
       existing.price_cents = priceCents;
       existing.order_id = orderId;
@@ -495,6 +498,7 @@ export class OrdersService implements OnModuleInit {
         started_at: new Date(),
         expires_at: new Date(now + MONTH),
         order_id: orderId,
+        license_key: genPluginLicenseKey(),
       });
       await this.pluginSubRepo.save(sub);
     }

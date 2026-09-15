@@ -794,6 +794,12 @@ const en = {
     myTitle: 'My Plugin Subscriptions',
     myHint: 'Manage your subscribed plugins; cancel anytime.',
     descLabel: 'Features',
+    licenseKey: 'Activation Key',
+    copyKey: 'Copy Key',
+    copied: 'Copied',
+    keyVisible: 'Show',
+    keyHidden: 'Hide',
+    activateHint: 'Copy the key and paste it into the plugin client’s “Activate” box to enable it. The key is tied to your subscription and auto-extends on renewal — no need to replace it.',
   },
 };
 
