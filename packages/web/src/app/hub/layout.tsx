@@ -20,6 +20,7 @@ const MENU = [
   { key: 'reviews',   label: 'admin.reviews',      icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
   { key: 'users',     label: 'admin.users',        icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z' },
   { key: 'skills',    label: 'admin.skills',       icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
+  { key: 'plugins',   label: 'admin.plugins',      icon: 'M11 3a1 1 0 011 1v1h2a2 2 0 012 2v2h1a1 1 0 110 2h-1v2a2 2 0 01-2 2h-2v1a1 1 0 11-2 0v-1H8a2 2 0 01-2-2v-2H5a1 1 0 110-2h1V8a2 2 0 012-2h2V4a1 1 0 011-1z' },
   { key: 'tags',      label: 'admin.tags',         icon: 'M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z' },
   { key: 'tag-groups', label: 'admin.tagGroups',     icon: 'M4 6h16M4 10h16M4 14h16M4 18h16' },
   { key: 'comments',  label: 'admin.comments',     icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' },

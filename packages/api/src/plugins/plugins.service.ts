@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -177,5 +178,129 @@ export class PluginsService {
     if (!sub) throw new NotFoundException('未找到订阅记录');
     sub.activated_devices = [];
     return this.subRepo.save(sub);
+  }
+
+  // ─────────────────────── 后台上架管理（AdminGuard 保护） ───────────────────────
+
+  /** 后台列表：含下架，按排序 */
+  async adminList(): Promise<Plugin[]> {
+    return this.pluginRepo.find({ order: { sort_order: 'ASC', created_at: 'ASC' } });
+  }
+
+  /** 后台详情（含下架），未找到抛 404 */
+  async adminGet(id: string): Promise<Plugin> {
+    const plugin = await this.pluginRepo.findOne({ where: { id } });
+    if (!plugin) throw new NotFoundException('插件不存在');
+    return plugin;
+  }
+
+  /**
+   * 新增插件。name 必填；slug 缺省时自动生成。
+   * 可编辑字段与实体一一对应；价格按「分」传入（前端元→分换算）。
+   */
+  async adminCreate(body: any): Promise<Plugin> {
+    const name = (body?.name || '').trim();
+    if (!name) throw new BadRequestException('名称必填');
+    let slug = (body?.slug || '').trim().toLowerCase();
+    if (!slug) slug = this.genSlug(name);
+    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(slug)) {
+      throw new BadRequestException('slug 仅允许小写字母/数字/连字符，长度 1-64');
+    }
+    const exists = await this.pluginRepo.findOne({ where: { slug } });
+    if (exists) throw new ConflictException('slug 已存在');
+
+    const plugin = this.pluginRepo.create({
+      slug,
+      name,
+      tagline: body?.tagline ?? null,
+      description: body?.description ?? null,
+      icon_url: body?.icon_url ?? null,
+      category: (body?.category || '通用').trim() || '通用',
+      price_monthly_cents: this.normalizePrice(body?.price_monthly_cents),
+      currency: body?.currency || 'CNY',
+      status: body?.status === 'hidden' ? 'hidden' : 'active',
+      sort_order: Number(body?.sort_order) || 0,
+      download_key: body?.download_key ?? null,
+      download_filename: body?.download_filename ?? null,
+      owner_team_id: body?.owner_team_id || null,
+    });
+    return this.pluginRepo.save(plugin);
+  }
+
+  /** 更新插件（部分字段；未传字段保持原值）。 */
+  async adminUpdate(id: string, body: any): Promise<Plugin> {
+    const plugin = await this.adminGet(id);
+
+    const textFields: (keyof Plugin)[] = [
+      'name',
+      'tagline',
+      'description',
+      'icon_url',
+      'category',
+      'currency',
+      'download_key',
+      'download_filename',
+    ];
+    for (const f of textFields) {
+      if (body?.[f] !== undefined) (plugin as any)[f] = body[f] || null;
+    }
+    if (body?.name !== undefined && !String(body.name).trim()) {
+      throw new BadRequestException('名称不能为空');
+    }
+    if (body?.status !== undefined) {
+      plugin.status = body.status === 'active' ? 'active' : 'hidden';
+    }
+    if (body?.sort_order !== undefined) plugin.sort_order = Number(body.sort_order) || 0;
+    if (body?.price_monthly_cents !== undefined) {
+      plugin.price_monthly_cents = this.normalizePrice(body.price_monthly_cents);
+    }
+    if (body?.owner_team_id !== undefined) plugin.owner_team_id = body.owner_team_id || null;
+
+    if (body?.slug !== undefined) {
+      const next = String(body.slug).trim().toLowerCase();
+      if (next && next !== plugin.slug) {
+        if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(next)) {
+          throw new BadRequestException('slug 格式不合法');
+        }
+        const dup = await this.pluginRepo.findOne({ where: { slug: next } });
+        if (dup) throw new ConflictException('slug 已存在');
+        plugin.slug = next;
+      }
+    }
+    return this.pluginRepo.save(plugin);
+  }
+
+  /**
+   * 删除插件。已有订阅记录时拒绝（避免订阅悬挂指向不存在的插件），
+   * 提示改用「下架」（status=hidden）。
+   */
+  async adminRemove(id: string): Promise<{ ok: boolean; message?: string }> {
+    const plugin = await this.adminGet(id);
+    const subs = await this.subRepo.count({ where: { plugin_id: id } });
+    if (subs > 0) {
+      throw new ConflictException(
+        `该插件已有 ${subs} 条订阅记录，无法删除；请改为「下架」（status=hidden）`,
+      );
+    }
+    await this.pluginRepo.remove(plugin);
+    return { ok: true };
+  }
+
+  /** 价格归一化：非负整数（分），非法值归 0 */
+  private normalizePrice(v: any): number {
+    const n = Math.round(Number(v));
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return n;
+  }
+
+  /** 由名称生成 ascii slug；名称含中文时退化为随机短串 */
+  private genSlug(name: string): string {
+    const ascii = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48);
+    if (ascii) return ascii;
+    return `p-${Math.random().toString(36).slice(2, 8)}`;
   }
 }
