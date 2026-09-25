@@ -2,7 +2,9 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Param,
+  Query,
   Body,
   UseGuards,
   Req,
@@ -11,18 +13,27 @@ import { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { Public } from '../auth/public.decorator';
 import { PluginsService } from './plugins.service';
+import { PluginsAuthService } from './plugins-auth.service';
 
 /**
  * 插件市场接口。
- * 公开：列表 / 详情。
- * 需登录：我的订阅 / 订阅下单 / 下载（免费但需登录，防滥用与统计）/ 取消。
- * 付费闭环复用 PaymentsModule 的 OrdersService，order.type='plugin'，
- * 回调发货在 OrdersService.deliver 内按 type 分发，不在此处写支付逻辑。
+ *
+ * 公开：列表 / 详情 / 设备授权（start、poll）/ 权益校验（entitlement）。
+ * 需登录：我的订阅 / 授权页（pending、approve）/ 设备管理 / 下单 / 下载 / 取消。
+ *
+ * 凭证模型：插件不持有用户会话，只持有平台签发的**设备令牌**（见 PluginsAuthService）。
+ * 因此插件侧调用的三个接口都是 @Public()，与用户 JWT 完全解耦 —— 这既避免了把
+ * 7 天有效的账号凭证塞进插件，也让令牌权限天然收窄到「只能问权益」。
+ *
+ * 路由顺序：字面量路径（auth/*、entitlement、mine）必须声明在 :id/... 之前。
  */
 @Controller('plugins')
 @UseGuards(AuthGuard)
 export class PluginsController {
-  constructor(private readonly svc: PluginsService) {}
+  constructor(
+    private readonly svc: PluginsService,
+    private readonly auth: PluginsAuthService,
+  ) {}
 
   private uid(req: Request): string {
     return (req as any).user?.sub;
@@ -40,20 +51,92 @@ export class PluginsController {
     return this.svc.getBySlug(slug);
   }
 
+  // ─────────────────── 插件客户端（公开，凭授权码 / 设备令牌） ───────────────────
+
   /**
-   * 卡密校验（插件客户端激活用）。公开、无 JWT。
-   * body: { key: string, deviceId?: string } → 设备激活绑定 + 上限拦截。
+   * 发起设备授权：插件带 deviceId 换 `{code, poll_secret, verify_url}`。
+   * 之后插件展示授权码（或直接打开 verify_url），并携 code + poll_secret 轮询。
    */
   @Public()
-  @Post('verify')
-  verify(@Body('key') key: string, @Body('deviceId') deviceId?: string) {
-    if (!key || typeof key !== 'string') return { valid: false };
-    return this.svc.verifyKey(key.trim(), deviceId?.trim() || undefined);
+  @Post('auth/start')
+  start(
+    @Body()
+    body: {
+      pluginSlug?: string;
+      deviceId?: string;
+      deviceName?: string;
+      platform?: string;
+    },
+  ) {
+    return this.auth.start({
+      pluginSlug: body?.pluginSlug || '',
+      deviceId: body?.deviceId || '',
+      deviceName: body?.deviceName,
+      platform: body?.platform,
+    });
   }
+
+  /** 轮询授权结果。必须同时给 code 与 poll_secret（光猜中授权码拿不到令牌）。 */
+  @Public()
+  @Post('auth/poll')
+  poll(@Body('code') code: string, @Body('poll_secret') pollSecret: string) {
+    return this.auth.poll(code, pollSecret);
+  }
+
+  /** 权益校验：插件每次启动/临近到期调用，返回 valid 与 expires_at。 */
+  @Public()
+  @Post('entitlement')
+  entitlement(
+    @Body('device_token') deviceToken: string,
+    @Body('device_id') deviceId: string,
+  ) {
+    return this.auth.entitlement(deviceToken, deviceId);
+  }
+
+  // ─────────────────── 网页授权页（需登录） ───────────────────
+
+  /** 授权页读取请求详情：哪个插件、已授权几台、当前账号是否已订阅 */
+  @Get('auth/pending')
+  pending(@Req() req: Request, @Query('code') code: string) {
+    return this.auth.pending(this.uid(req), code);
+  }
+
+  /** 确认 / 拒绝授权。设备上限校验在此处进行。 */
+  @Post('auth/approve')
+  approve(
+    @Req() req: Request,
+    @Body('code') code: string,
+    @Body('action') action?: 'approve' | 'deny',
+  ) {
+    return this.auth.approve(this.uid(req), code, action === 'deny' ? 'deny' : 'approve');
+  }
+
+  // ─────────────────── 我的订阅 / 设备管理 ───────────────────
 
   @Get('mine')
   mine(@Req() req: Request) {
     return this.svc.mySubscriptions(this.uid(req));
+  }
+
+  /** 已授权设备列表（账户页展示 + 逐台吊销） */
+  @Get(':id/devices')
+  devices(@Req() req: Request, @Param('id') id: string) {
+    return this.auth.listDevices(this.uid(req), id);
+  }
+
+  @Delete(':id/devices/:deviceId')
+  revokeDevice(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Param('deviceId') deviceId: string,
+  ) {
+    return this.auth.revokeDevice(this.uid(req), id, deviceId);
+  }
+
+  /** 全清：换机/重装前的粗粒度操作 */
+  @Post(':id/reset-devices')
+  resetDevices(@Req() req: Request, @Param('id') id: string) {
+    return this.auth.revokeAllDevices(this.uid(req), id);
   }
 
   @Post(':id/subscribe')
@@ -69,11 +152,5 @@ export class PluginsController {
   @Post(':id/cancel')
   cancel(@Req() req: Request, @Param('id') id: string) {
     return this.svc.cancel(this.uid(req), id);
-  }
-
-  /** 解绑全部已激活设备（换机/重装前） */
-  @Post(':id/reset-devices')
-  resetDevices(@Req() req: Request, @Param('id') id: string) {
-    return this.svc.resetDevices(this.uid(req), id);
   }
 }

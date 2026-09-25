@@ -59,6 +59,13 @@ export class Plugin {
   @Column({ type: 'text', nullable: true })
   download_filename: string;
 
+  /**
+   * 允许同时授权使用的设备数（默认 2：主用 + 备用/重装）。
+   * 放在商品而非订阅上：这是**商品属性**（团队版可以给 10 台），后台逐款可调。
+   */
+  @Column({ type: 'int', default: 2 })
+  max_activations: number;
+
   /** 出品方（团队），可为空表示平台直营 */
   @Column({ type: 'uuid', nullable: true })
   owner_team_id: string;
@@ -109,25 +116,4 @@ export class PluginSubscription {
 
   @Column({ type: 'uuid', nullable: true })
   order_id: string;
-
-  /**
-   * 卡密（license key）：每一条订阅记录一个稳定密钥，续费只顺延 expires_at、卡密不变。
-   * 用户购买后在「我的订阅」复制，填入插件客户端；插件调 /api/plugins/verify 校验有效期。
-   * 形如 SD-XXXX-XXXX-XXXX-XXXX（~80bit 熵）。部分唯一索引（忽略 NULL）。
-   */
-  @Index('uq_plugin_subs_license', { unique: true, where: '"license_key" IS NOT NULL' })
-  @Column({ type: 'text', nullable: true })
-  license_key: string;
-
-  /**
-   * 卡密防复用：设备激活绑定。
-   * max_activations：允许同时激活的设备数（默认 2，主用+备用）。
-   * activated_devices：已绑定的设备指纹列表（插件客户端安装时生成稳定 device_id 上报）。
-   * 分享卡密给第 3 人时，其 device_id 不在列表且已达上限 → 校验被拒。
-   */
-  @Column({ type: 'int', default: 2 })
-  max_activations: number;
-
-  @Column('text', { array: true, default: () => 'ARRAY[]::text[]' })
-  activated_devices: string[];
 }

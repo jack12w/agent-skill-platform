@@ -15,6 +15,7 @@ interface PluginItem {
   currency: string;
   status: string;
   sort_order: number;
+  max_activations: number;
   download_key: string | null;
   download_filename: string | null;
   created_at: string;
@@ -30,6 +31,7 @@ interface FormState {
   icon_url: string;
   priceYuan: string;
   sort_order: string;
+  max_activations: string;
   status: string;
   download_key: string;
   download_filename: string;
@@ -44,6 +46,7 @@ const EMPTY_FORM: FormState = {
   icon_url: '',
   priceYuan: '',
   sort_order: '0',
+  max_activations: '2',
   status: 'active',
   download_key: '',
   download_filename: '',
@@ -109,6 +112,7 @@ export default function HubPluginsPage() {
       icon_url: p.icon_url || '',
       priceYuan: p.price_monthly_cents ? String(p.price_monthly_cents / 100) : '',
       sort_order: String(p.sort_order ?? 0),
+      max_activations: String(p.max_activations ?? 2),
       status: p.status || 'active',
       download_key: p.download_key || '',
       download_filename: p.download_filename || '',
@@ -132,6 +136,7 @@ export default function HubPluginsPage() {
       icon_url: form.icon_url.trim() || null,
       price_monthly_cents: Math.max(0, Math.round(Number(form.priceYuan || 0) * 100)),
       sort_order: Number(form.sort_order) || 0,
+      max_activations: Math.max(1, Math.round(Number(form.max_activations) || 2)),
       status: form.status,
       download_key: form.download_key.trim() || null,
       download_filename: form.download_filename.trim() || null,
@@ -235,6 +240,7 @@ export default function HubPluginsPage() {
                 <th className="px-4 py-3 text-left hidden lg:table-cell">{t('admin.thCategory')}</th>
                 <th className="px-4 py-3 text-right">{t('admin.thPrice')}</th>
                 <th className="px-4 py-3 text-center hidden sm:table-cell">{t('admin.thOrder')}</th>
+                <th className="px-4 py-3 text-center hidden lg:table-cell">{t('admin.thDevices')}</th>
                 <th className="px-4 py-3 text-center">{t('admin.thStatus')}</th>
                 <th className="px-4 py-3 text-right">{t('admin.thActions')}</th>
               </tr>
@@ -254,6 +260,9 @@ export default function HubPluginsPage() {
                   <td className="px-4 py-3 text-neutral-600 hidden lg:table-cell">{p.category}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{fmtPrice(p.price_monthly_cents)}</td>
                   <td className="px-4 py-3 text-center text-neutral-500 hidden sm:table-cell">{p.sort_order}</td>
+                  <td className="px-4 py-3 text-center text-neutral-500 hidden lg:table-cell">
+                    {p.max_activations ?? 2}
+                  </td>
                   <td className="px-4 py-3 text-center">
                     <span
                       className={`px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -288,7 +297,7 @@ export default function HubPluginsPage() {
               ))}
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-neutral-400 text-sm">
+                  <td colSpan={8} className="px-4 py-12 text-center text-neutral-400 text-sm">
                     {t('admin.noPlugins')}
                   </td>
                 </tr>
@@ -361,6 +370,20 @@ export default function HubPluginsPage() {
                     value={form.sort_order}
                     onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
                   />
+                </label>
+                <label className="block">
+                  <span className="text-xs text-neutral-500">{t('admin.fieldMaxActivations')}</span>
+                  <input
+                    className={field}
+                    type="number"
+                    min="1"
+                    max="50"
+                    value={form.max_activations}
+                    onChange={(e) => setForm({ ...form, max_activations: e.target.value })}
+                  />
+                  <span className="block mt-1 text-[11px] text-neutral-400">
+                    {t('admin.fieldMaxActivationsHint')}
+                  </span>
                 </label>
                 <label className="block">
                   <span className="text-xs text-neutral-500">{t('admin.fieldStatus')}</span>
