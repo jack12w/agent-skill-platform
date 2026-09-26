@@ -24,6 +24,8 @@ coverage/
 .codebuddy/
 # local debug / temp scripts
 _*
+# 本地沙箱产物（预览页 / 临时静态服务 / 实测脚本，绝不推送）
+.tmp/
 diagnostic-*.sql
 # build artifacts in source dirs
 packages/shared/src/*.js

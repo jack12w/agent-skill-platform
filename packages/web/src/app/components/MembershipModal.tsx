@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import useTranslation from '../../hooks/useTranslation';
+import Modal from './Modal';
 
 type Plan = 'monthly' | 'quarterly' | 'yearly';
 
@@ -173,11 +174,8 @@ export default function MembershipModal({ targetType, targetId, targetName, onCl
   const mmss = `${String(Math.floor(left / 60)).padStart(2, '0')}:${String(left % 60).padStart(2, '0')}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={onClose}>
-      <div
-        className="w-full max-w-md rounded-2xl bg-white shadow-xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal onClose={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100">
           <h3 className="text-lg font-semibold">
             {t('member.title')}
@@ -279,6 +277,6 @@ export default function MembershipModal({ targetType, targetId, targetName, onCl
           </div>
         )}
       </div>
-    </div>
+    </Modal>
   );
 }

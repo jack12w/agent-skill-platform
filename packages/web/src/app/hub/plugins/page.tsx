@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import useTranslation from '../../../hooks/useTranslation';
+import Modal from '../../components/Modal';
 
 interface PluginItem {
   id: string;
@@ -98,6 +99,8 @@ export default function HubPluginsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState('');
 
   const fetchData = useCallback(async () => {
     const token = getToken();
@@ -125,6 +128,7 @@ export default function HubPluginsPage() {
     setEditingId(null);
     setForm(EMPTY_FORM);
     setErr('');
+    setUploadErr('');
     setModalOpen(true);
   };
 
@@ -150,6 +154,7 @@ export default function HubPluginsPage() {
       download_filename: p.download_filename || '',
     });
     setErr('');
+    setUploadErr('');
     setModalOpen(true);
   };
 
@@ -205,6 +210,54 @@ export default function HubPluginsPage() {
       setErr(e?.message || t('admin.loadFailed'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  /**
+   * 上传安装包 → OSS `plugins/{slug}/client.{zip|crx}`，成功后回填 download_key / download_filename。
+   * 刻意不自动保存商品：用户还能接着改别的字段再点保存；取消保存也不会写脏数据
+   * （顶多在 OSS 上留一个对象，同 slug 重传会被同名覆盖，不累积）。
+   */
+  const uploadPackage = async (file: File) => {
+    setUploadErr('');
+    const slug = form.slug.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(slug)) {
+      setUploadErr(t('admin.uploadNeedSlug'));
+      return;
+    }
+    if (!/\.(zip|crx)$/i.test(file.name)) {
+      setUploadErr(t('admin.uploadBadType'));
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      setUploadErr(t('admin.uploadTooLarge'));
+      return;
+    }
+    const token = getToken();
+    if (!token) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('slug', slug);
+      // 服务端 multer 的 originalname 按 latin1 解码、中文会乱码 → 再显式传一份 UTF-8 文件名
+      fd.append('filename', file.name);
+      const res = await fetch('/api/admin/plugins/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message || String(res.status));
+      setForm((f) => ({
+        ...f,
+        download_key: data?.download_key || '',
+        download_filename: data?.download_filename || file.name,
+      }));
+    } catch (e: any) {
+      setUploadErr(e?.message || t('admin.uploadFailed'));
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -364,7 +417,7 @@ export default function HubPluginsPage() {
 
       {/* 新增 / 编辑 弹窗 */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
+        <Modal onClose={() => setModalOpen(false)} align="top" backdrop="bg-black/40">
           <div className="bg-white rounded-xl w-full max-w-2xl my-8 shadow-xl">
             <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
               <h2 className="font-semibold text-neutral-900">
@@ -523,25 +576,78 @@ export default function HubPluginsPage() {
                 />
               </label>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <label className="block">
-                  <span className="text-xs text-neutral-500">{t('admin.fieldDownloadKey')}</span>
-                  <input
-                    className={field}
-                    placeholder="plugins/{id}/client.zip"
-                    value={form.download_key}
-                    onChange={(e) => setForm({ ...form, download_key: e.target.value })}
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-xs text-neutral-500">{t('admin.fieldDownloadFilename')}</span>
-                  <input
-                    className={field}
-                    placeholder="RFQ挖掘助手.zip"
-                    value={form.download_filename}
-                    onChange={(e) => setForm({ ...form, download_filename: e.target.value })}
-                  />
-                </label>
+              {/* 安装包：上传到 OSS 的 plugins/{slug}/ 目录，拿到 key 后随表单一起保存 */}
+              <div className="rounded-xl border border-neutral-200 p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-neutral-500">{t('admin.fieldPackage')}</span>
+                  {!!form.download_key && (
+                    <span className="text-[11px] text-green-600">{t('admin.packageUploaded')}</span>
+                  )}
+                </div>
+
+                {form.download_key ? (
+                  <div className="bg-neutral-50 rounded-lg px-3 py-2 mb-3 text-xs">
+                    <div className="font-medium text-neutral-800 break-all">
+                      {form.download_filename || '—'}
+                    </div>
+                    <div className="text-neutral-400 mt-0.5 break-all">{form.download_key}</div>
+                  </div>
+                ) : (
+                  <div className="bg-amber-50 text-amber-700 rounded-lg px-3 py-2 mb-3 text-xs">
+                    {t('admin.packageNone')}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <label
+                    className={`px-3 py-1.5 text-xs rounded-lg border border-neutral-200 ${
+                      uploading ? 'opacity-50 cursor-wait' : 'cursor-pointer hover:bg-neutral-50'
+                    }`}
+                  >
+                    {uploading ? t('admin.uploading') : t('admin.chooseFile')}
+                    <input
+                      type="file"
+                      accept=".zip,.crx"
+                      className="hidden"
+                      disabled={uploading}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        // 先清空 value，否则连续选同一个文件不会再次触发 change
+                        e.target.value = '';
+                        if (f) uploadPackage(f);
+                      }}
+                    />
+                  </label>
+                  <span className="text-[11px] text-neutral-400">{t('admin.fieldPackageHint')}</span>
+                </div>
+
+                {!!uploadErr && <div className="mt-2 text-xs text-red-600">{uploadErr}</div>}
+
+                <details className="mt-3">
+                  <summary className="text-[11px] text-neutral-400 cursor-pointer select-none">
+                    {t('admin.packageManual')}
+                  </summary>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+                    <label className="block">
+                      <span className="text-xs text-neutral-500">{t('admin.fieldDownloadKey')}</span>
+                      <input
+                        className={field}
+                        placeholder="plugins/alibaba-toolkit/client.zip"
+                        value={form.download_key}
+                        onChange={(e) => setForm({ ...form, download_key: e.target.value })}
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs text-neutral-500">{t('admin.fieldDownloadFilename')}</span>
+                      <input
+                        className={field}
+                        placeholder="外贸工具箱.zip"
+                        value={form.download_filename}
+                        onChange={(e) => setForm({ ...form, download_filename: e.target.value })}
+                      />
+                    </label>
+                  </div>
+                </details>
               </div>
 
               {err && <div className="text-xs text-red-600">{err}</div>}
@@ -563,7 +669,7 @@ export default function HubPluginsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

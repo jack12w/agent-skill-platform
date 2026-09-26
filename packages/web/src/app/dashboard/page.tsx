@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import useTranslation from '../../hooks/useTranslation';
 import { fetchTagGroups } from '../../lib/tag-groups';
 import { clearAuthCookies } from '../components/AuthProvider';
+import Modal from '../components/Modal';
 
 function getCookie(name: string): string | undefined {
   const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
@@ -368,7 +369,12 @@ export default function Dashboard() {
         </div>
       </div>
       {showOnboarding && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <Modal
+          onClose={dismissOnboarding}
+          backdrop="bg-black/40"
+          closeOnBackdrop={false}
+          closeOnEsc={false}
+        >
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-in fade-in zoom-in">
             <div className="bg-gradient-to-r from-brand-600 to-brand-500 p-6 text-white text-center">
               <div className="text-4xl mb-2">🚀</div>
@@ -406,13 +412,13 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* 简介编辑弹窗（居中） */}
       {editingBio && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEditingBio(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <Modal onClose={() => setEditingBio(false)} backdrop="bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
             <div className="p-6">
               <h3 className="text-lg font-bold mb-4 text-neutral-900">编辑个人简介</h3>
               <textarea
@@ -433,13 +439,19 @@ export default function Dashboard() {
               <button onClick={handleSaveProfile} disabled={savingProfile} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-bold hover:bg-brand-700 disabled:opacity-50">{savingProfile ? '...' : '保存'}</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* 标签编辑弹窗（居中） */}
       {editingTags && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => { setEditingTags(false); setSelectedTags([]); }}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <Modal
+          onClose={() => {
+            setEditingTags(false);
+            setSelectedTags([]);
+          }}
+          backdrop="bg-black/40"
+        >
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-y-auto">
             <div className="p-6">
               <h3 className="text-lg font-bold mb-4 text-neutral-900">编辑我的标签</h3>
               {tagGroupsLoading ? (
@@ -479,7 +491,7 @@ export default function Dashboard() {
               <button onClick={handleSaveTags} disabled={savingTags} className="flex-1 py-2.5 bg-brand-600 text-white rounded-lg text-sm font-bold hover:bg-brand-700 disabled:opacity-50">{savingTags ? '...' : '保存'}</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

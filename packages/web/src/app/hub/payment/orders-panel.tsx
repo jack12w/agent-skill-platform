@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, Fragment } from 'react';
 import useTranslation from '../../../hooks/useTranslation';
+import Modal from '../../components/Modal';
 
 function getToken() { try { return localStorage.getItem('token'); } catch { return null; } }
 function yuan(c: number) { return ((c || 0) / 100).toFixed(2); }
@@ -238,8 +239,8 @@ export default function OrdersPanel() {
       )}
 
       {refundTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setRefundTarget(null)}>
-          <div className="bg-white rounded-xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+        <Modal onClose={() => setRefundTarget(null)} backdrop="bg-black/40">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm">
             <h2 className="text-lg font-bold mb-1">退款确认</h2>
             <p className="text-sm text-neutral-500 mb-4">订单 {refundTarget.order_no}，实付 ¥{yuan(refundTarget.paid_cents)}</p>
             {Number(refundTarget.refunded_cents) > 0 && (
@@ -258,7 +259,7 @@ export default function OrdersPanel() {
               <button onClick={doRefund} className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700">确认退款</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
