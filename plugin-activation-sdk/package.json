@@ -1,7 +1,0 @@
-{
-  "name": "sd-plugin-activation-sdk",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "description": "SkillDepot 插件客户端激活 SDK。此 package.json 仅用于让 tests/ 下的 Node 测试以 ESM 方式运行，不参与 Chrome 扩展加载，也不属于平台 monorepo 的 workspaces。"
-}

@@ -54,7 +54,7 @@
 ```bash
 curl -X POST https://skills.rehomi.com/api/plugins/auth/start \
   -H 'Content-Type: application/json' \
-  -d '{"pluginSlug":"rfq","deviceId":"a1b2c3d4e5f6...","deviceName":"Chrome 扩展","platform":"Windows"}'
+  -d '{"pluginSlug":"alibaba-toolkit","deviceId":"a1b2c3d4e5f6...","deviceName":"Chrome 扩展","platform":"Windows"}'
 ```
 
 **响应体**
@@ -104,7 +104,7 @@ curl -X POST https://skills.rehomi.com/api/plugins/auth/poll \
   "expires_at": "2026-10-15T11:20:00.000Z",
   "sub_status": "active",
   "plan": "monthly",
-  "plugin": { "slug": "rfq", "name": "RFQ 挖掘助手" },
+  "plugin": { "slug": "alibaba-toolkit", "name": "外贸工具箱·国际站增强" },
   "user": { "email": "u***@example.com" },
   "devices_used": 1, "max_devices": 2 }
 
@@ -154,7 +154,7 @@ curl -X POST https://skills.rehomi.com/api/plugins/entitlement \
 { "valid": true, "status": "active",
   "expires_at": "2026-10-15T11:20:00.000Z",
   "plan": "monthly",
-  "plugin": { "slug": "rfq", "name": "RFQ 挖掘助手" } }
+  "plugin": { "slug": "alibaba-toolkit", "name": "外贸工具箱·国际站增强" } }
 ```
 
 ```json
@@ -264,7 +264,7 @@ curl -X POST https://skills.rehomi.com/api/plugins/entitlement \
   "status": "active",
   "expires_at": "2026-10-15T11:20:00.000Z",
   "last_verified_at": "2026-09-15T11:20:00.000Z",
-  "plugin_slug": "rfq"
+  "plugin_slug": "alibaba-toolkit"
 }
 ```
 
@@ -304,7 +304,7 @@ curl -X POST https://skills.rehomi.com/api/plugins/entitlement \
 
 ## 6. 示例代码
 
-> 完整可跑的实现见 SDK 包 `plugin-activation-sdk/`（含 Chrome 版 + 桌面版 + 116 项断言 + 变异测试）。下面是最小实现，便于理解契约。
+> 本文档是**自包含**的 —— 客户端照下面的契约实现即可，不需要额外依赖任何 SDK 包。
 
 ### 6.1 Chrome 扩展（MV3，service worker）
 
@@ -328,7 +328,7 @@ const API_START = `${ORIGIN}/api/plugins/auth/start`;
 const API_POLL = `${ORIGIN}/api/plugins/auth/poll`;
 const API_ENT = `${ORIGIN}/api/plugins/entitlement`;
 
-const PLUGIN_SLUG = 'rfq';
+const PLUGIN_SLUG = 'alibaba-toolkit';
 const KEY_LIC = 'sd_lic_v2';
 const KEY_AUTH = 'sd_auth_v1';
 const OFFLINE_GRACE_MS = 7 * 24 * 3600 * 1000;
