@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  HttpCode,
   Delete,
   Param,
   Query,
@@ -57,7 +58,18 @@ export class PluginsController {
    * 发起设备授权：插件带 deviceId 换 `{code, poll_secret, verify_url}`。
    * 之后插件展示授权码（或直接打开 verify_url），并携 code + poll_secret 轮询。
    */
+  /**
+   * ⚠️ 下面三个客户端接口**必须显式 `@HttpCode(200)`**，不能走 Nest 对 `@Post()` 的默认
+   * `201 Created` —— 客户端契约（PLUGIN_CLIENT_INTEGRATION.md：「除网络层错误外**始终返回
+   * HTTP 200**」）是按 200 写的，浏览器扩展侧的三个判断点都是 `status !== 200`。
+   *
+   * 2026-09-26 生产事故：默认 201 同时打断了整条链路 —— ①发起授权被判为「连接授权服务器
+   * 失败」②轮询永远拿不到结果（表现为卡在待授权）③权益永远返回「不确定」。而离线测试桩
+   * 返回的是 200，所以全部测试仍绿 —— **桩与真实服务端契约不一致**是本次漏测的根因。
+   * 改这三个装饰器前请先同步扩展侧与 PLUGIN_CLIENT_INTEGRATION.md。
+   */
   @Public()
+  @HttpCode(200)
   @Post('auth/start')
   start(
     @Body()
@@ -78,6 +90,7 @@ export class PluginsController {
 
   /** 轮询授权结果。必须同时给 code 与 poll_secret（光猜中授权码拿不到令牌）。 */
   @Public()
+  @HttpCode(200)
   @Post('auth/poll')
   poll(@Body('code') code: string, @Body('poll_secret') pollSecret: string) {
     return this.auth.poll(code, pollSecret);
@@ -85,6 +98,7 @@ export class PluginsController {
 
   /** 权益校验：插件每次启动/临近到期调用，返回 valid 与 expires_at。 */
   @Public()
+  @HttpCode(200)
   @Post('entitlement')
   entitlement(
     @Body('device_token') deviceToken: string,
