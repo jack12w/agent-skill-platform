@@ -65,6 +65,7 @@ cd agent-skill-platform
 npm ci --legacy-peer-deps
 
 # 启动本地 PostgreSQL
+# 首次启动时容器会按文件名顺序自动执行 migrations/0001 → 0023 建表，无需手工跑迁移
 docker compose up -d db
 
 # 启动前后端开发服务器
@@ -74,6 +75,9 @@ npm run dev
 访问 http://localhost:3000
 
 > 本地开发使用 `docker-compose.yml`，PostgreSQL 暴露 5432 端口，默认账户 `postgres/postgres`。
+> 建表脚本全部在 `migrations/`：`0001_initial_core.sql` 是基线快照，其余是按序叠加的结构变更，**全部幂等**。
+> **注意**：initdb 只在数据卷为空时执行一次。若已有旧数据卷、又拉到了新的迁移文件，需手工补跑：
+> `docker exec -i agent_platform_db psql -U postgres -d platform < migrations/00XX_xxx.sql`
 
 ## 生产部署
 
@@ -89,14 +93,23 @@ cd agent-skill-platform
 # 3. 一键启动（API + Web + PostgreSQL 三容器）
 docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
 
-# 4. 日常更新
+# 4. 执行数据库迁移（生产 compose 不挂 initdb，迁移必须手工按序执行）
+DBUSER=$(docker exec agent_platform_db sh -c 'echo $POSTGRES_USER')
+DBNAME=$(docker exec agent_platform_db sh -c 'echo $POSTGRES_DB')
+for f in migrations/*.sql; do
+  echo "→ $f"
+  docker exec -i agent_platform_db psql -v ON_ERROR_STOP=1 -U "$DBUSER" -d "$DBNAME" < "$f" || exit 1
+done
+
+# 5. 日常更新
 git pull && docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
 
-# 5. 清理构建缓存（可选）
+# 6. 清理构建缓存（可选）
 docker builder prune -f
 ```
 
 > **注意**：生产 Docker Compose 已内置 PostgreSQL 18 容器，不需要外部数据库。数据持久化在 Docker Volume `postgres_data` 中。
+> 生产环境**不会**自动执行 `migrations/`（未挂载 initdb）。每次发布若含新迁移文件，必须手工执行第 4 步；所有迁移幂等，重放安全。
 
 ### 数据库备份
 
@@ -146,6 +159,7 @@ agent-skill-platform/
 │   ├── web/          # Next.js 前端
 │   ├── api/          # NestJS 后端
 │   └── shared/       # 共享类型和工具
+├── migrations/                  # 建表与结构变更（0001 基线 → 最新，按文件名顺序重放）
 ├── docker-compose.yml           # 本地开发
 ├── docker-compose.prod.yml      # 生产部署
 └── README.md

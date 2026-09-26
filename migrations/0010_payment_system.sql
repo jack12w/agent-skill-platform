@@ -1,6 +1,7 @@
 -- 0010: 支付与分成系统地基 + 架构漂移修复
 -- 全部使用 IF NOT EXISTS / 幂等 DO 块，可安全重复执行，不影响任何现有表与接口。
 -- 部署：本文件需在服务器手动 psql 执行（部署命令 `up -d --build` 不自动跑迁移）。
+--       全新环境的完整顺序是 0001（基线）→ 0003 → … → 0023，全部幂等，可直接按序重放。
 --
 -- 注：本文件已内含原 0014/0015/0016/0017 的全部修复（为保持首次部署历史干净而折入）：
 --   * balance_transactions.ref_id 直接建为 TEXT（业务用 `${order.id}:${item.id}` 复合字符串做幂等键，非 UUID）；
@@ -14,11 +15,11 @@
 -- 一、修复架构漂移（与现有功能零耦合）
 -- ============================================================
 
--- 漂移①：users.role 在 user.entity.ts 中存在（默认 'user'），但 schema.sql 的 users 表无此列。
---        从 schema.sql 全新建库会缺列 → 查询报错。补列，默认 'user'，与注册/登录分支一致。
+-- 漂移①：users.role 在 user.entity.ts 中存在（默认 'user'），但基线建表脚本里没有
+--        （原 schema.sql，现 migrations/0001_initial_core.sql）。补列，默认 'user'，与注册/登录分支一致。
 ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
 
--- 漂移②：skill_status 枚举在 schema.sql 仅 'published'/'archived'，缺 'pending'
+-- 漂移②：skill_status 枚举在基线里仅 'published'/'archived'，缺 'pending'
 --        （shared 枚举与 admin.service.ts:379 已引用 SkillStatus.PENDING）。
 --        用 DO 块幂等补充，避免重复执行报「值已存在」。
 DO $$

@@ -1,3 +1,13 @@
+-- 0001: 基线建表脚本（历史快照）
+--
+-- 原名 schema.sql，2026-09-26 归入 migrations/ 成为迁移链的起点（0001）。
+-- ⚠️ 本文件内容保持历史原样，**不要修改**：任何结构变更都请新增迁移文件（0002+），
+--    缺失的列/表由后续迁移补齐（这正是 0003~0023 的职责）。
+--
+-- 本地开发：docker-compose.yml 把 migrations/ 整体挂到 /docker-entrypoint-initdb.d，
+--          initdb 按文件名顺序执行 0001 → 0023，一步得到与生产一致的结构。
+-- 生产环境：不自动执行（见 README「生产部署」），迁移需手工按序 psql。
+
 -- Base Tables for Agent Skill Platform
 
 -- 1. Users table

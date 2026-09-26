@@ -51,7 +51,7 @@ SET payload = payload || jsonb_build_object('targetAvatar', u.avatar_url)
 FROM users u
 WHERE notifications.type = 'subscription'
   AND notifications.payload->>'targetType' = 'user'
-  AND notifications.payload->>'targetId' = u.id
+  AND notifications.payload->>'targetId' = u.id::text
   AND (notifications.payload->>'targetAvatar' IS NULL OR notifications.payload->>'targetAvatar' = '');
 
 -- 5. 回填团队头像（取 owner avatar_url 兜底）
@@ -61,7 +61,7 @@ FROM teams t
 JOIN users u ON t.owner_user_id = u.id
 WHERE notifications.type = 'subscription'
   AND notifications.payload->>'targetType' = 'team'
-  AND notifications.payload->>'targetId' = t.id
+  AND notifications.payload->>'targetId' = t.id::text
   AND (notifications.payload->>'targetAvatar' IS NULL OR notifications.payload->>'targetAvatar' = '');
 
 COMMIT;
