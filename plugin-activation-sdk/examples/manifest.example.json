@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "你的插件名称",
+  "version": "1.0.0",
+  "description": "示例：接入 SkillDepot 设备授权登录所需的最小 manifest 配置",
+  "minimum_chrome_version": "102",
+
+  "permissions": ["storage", "alarms"],
+
+  "host_permissions": ["https://skills.rehomi.com/*"],
+
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+
+  "action": {
+    "default_popup": "ui/activation.html",
+    "default_title": "你的插件"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://www.alibaba.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
