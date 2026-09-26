@@ -457,7 +457,7 @@ export async function ensureEntitlement({ force = false } = {}) {
 
 ```js
 // background.js —— 必须「续轮询」：用户点完授权页，弹窗已经没了
-import { startAuthorization, pollAuthorization } from './sdk/license.js';
+import { startAuthorization, pollAuthorization } from './license.js';
 
 let pollTimer = null;
 
@@ -635,4 +635,5 @@ export async function entitlement(deviceToken, deviceId) {
 
 ---
 
-*文档版本：2026-09-15（v2）· 设备授权登录方案，替代此前的卡密激活（`f0d6cb0` / `5fe4710`）*
+*文档版本：2026-09-26（v2.1）· 设备授权登录方案，替代此前的卡密激活（`f0d6cb0` / `5fe4710`）*
+*v2.1 变更：移除对已删除 SDK 包 `plugin-activation-sdk/` 的引用（本文档自包含）；示例 slug 由 `rfq` 更正为实际的 `alibaba-toolkit`*
