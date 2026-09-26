@@ -296,6 +296,23 @@ export class PluginsService {
   }
 
   /**
+   * 解析订阅状态参数（缺省时回退 fallback）。
+   *
+   * 新增与编辑共用，保证两个入口的白名单、报错文案完全一致 —— 分开写必然漂移。
+   * ⚠️ 非 active 一律会被 entitlement 判为不可用（返回 SUBSCRIPTION_EXPIRED，
+   *    客户端保留令牌），所以「已过期」与「已取消」在拦截效果上等价，只是语义标签不同。
+   */
+  private parseStatusInput(body: any, fallback: string): string {
+    const raw = body?.status;
+    if (raw === undefined || raw === null || raw === '') return fallback;
+    const s = String(raw).trim();
+    if (!PluginsService.SUB_STATUSES.includes(s)) {
+      throw new BadRequestException(`状态只能是 ${PluginsService.SUB_STATUSES.join(' / ')}`);
+    }
+    return s;
+  }
+
+  /**
    * 后台：某插件的订阅列表（join users 取邮箱/昵称）。
    *
    * 用 `manager.getRepository(User)` 而不是构造函数注入 —— 注入就要往
@@ -366,6 +383,8 @@ export class PluginsService {
     if (!user) throw new BadRequestException('用户不存在');
 
     const { expiresAt, days } = this.parseExpiryInput(body);
+    // 状态默认 active（新增/编辑弹窗的默认值也是它）；显式传入才覆盖
+    const status = this.parseStatusInput(body, 'active');
     const DAY = 86400_000;
     const now = Date.now();
 
@@ -382,7 +401,7 @@ export class PluginsService {
         const base = stillActive ? existing.expires_at.getTime() : now;
         existing.expires_at = new Date(base + days * DAY);
       }
-      existing.status = 'active';
+      existing.status = status;
       await this.subRepo.save(existing);
       return existing;
     }
@@ -395,7 +414,7 @@ export class PluginsService {
       plugin_id: pluginId,
       plan: 'manual',
       price_cents: 0,
-      status: 'active',
+      status,
       started_at: new Date(),
       expires_at: expiresAt ?? new Date(now + days * DAY),
     });
@@ -413,13 +432,8 @@ export class PluginsService {
       sub.expires_at = expiresAt as Date;
     }
     if (body?.status !== undefined) {
-      const s = String(body.status);
-      if (!PluginsService.SUB_STATUSES.includes(s)) {
-        throw new BadRequestException(
-          `状态只能是 ${PluginsService.SUB_STATUSES.join(' / ')}`,
-        );
-      }
-      sub.status = s;
+      // 复用同一个解析器：白名单与报错文案与新增入口保持一致
+      sub.status = this.parseStatusInput(body, sub.status);
     }
     await this.subRepo.save(sub);
     return sub;
