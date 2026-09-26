@@ -182,7 +182,7 @@ export class PluginsAdminController {
     @Body() body: any,
     @Request() req: Request,
   ) {
-    const sub = await this.svc.adminUpdateSubscription(sid, body);
+    const sub = await this.svc.adminUpdateSubscription(id, sid, body);
     await this.log(
       this.uid(req),
       'update_plugin_subscription',

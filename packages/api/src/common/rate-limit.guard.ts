@@ -13,6 +13,9 @@ import { getSharedRedis, reportRedisFailure } from './redis.client';
  * 3. Redis 跨进程共享计数，PM2 多实例计数一致；Redis 不可用/未配置时**降级内存兜底**，
  *    绝不因此阻塞全站。
  * 4. 健康检查 /api/health 豁免，避免影响探针/监控。
+ * 5. 两类白名单完全放行：只读 GET（幂等 + 有服务端缓存）与「凭据门控的高频 POST」
+ *    （插件授权轮询 / 权益校验 —— 每次都要带发起方才知道的凭据，且 3 秒一次会打满小桶）。
+ *    其余未知 GET / 所有写操作仍按 120/分钟（真实 IP）或 2000/分钟（全局）拦截。
  *
  * 修复记录：旧实现在 Redis 命令失败时执行 `this.redis = null` 之后再也不恢复 ——
  * 一次网络抖动（甚至一条命令超时）就会让限流器**永久**退化成单进程内存计数，
@@ -50,10 +53,36 @@ const READONLY_WHITELIST = [
   '/api/teams/my', // 我的团队：单次 join 查询；注意精确匹配，不影响 /api/teams/:id
 ];
 
+/**
+ * 凭据门控的高频 POST 豁免名单 —— 不参与按 IP 计数。
+ *
+ * 与只读白名单分开列，因为豁免理由完全不同：这些是**写方法（POST）**，但每次调用都必须
+ * 携带只有发起方知道的凭据（poll 要 code + poll_secret 配对，entitlement 要设备令牌）。
+ * 拿不到凭据时服务端只做一次索引查询就返回失败，不产生写入。
+ *
+ * 为什么必须豁免（2026-09-26 审计第 4 条）：插件授权轮询是 3 秒一次/人 ≈ 20 次/分钟，
+ * 而全局限流是 120 次/分钟/IP。同一出口 IP（办公室、培训教室）只要 6 个人同时点「登录」，
+ * 就会有人撞 429 —— 插件端把 429 当「不确定、继续等」，用户看到的就是「点了确认没反应」，
+ * 最长卡满 10 分钟授权码 TTL。培训场景踩过同类坑（50 人同 IP 撞首屏 429）。
+ *
+ * ⚠️ `/api/plugins/*` 里**只豁免这两个**。精确匹配，不用前缀：
+ *    auth/start（会写库）、auth/pending、auth/approve（需登录且写库）仍然照常限流。
+ */
+const CREDENTIALED_POST_WHITELIST = [
+  '/api/plugins/auth/poll',
+  '/api/plugins/entitlement',
+];
+
 /** 是否命中只读白名单（仅 GET/HEAD，写操作一律不豁免） */
 function isReadonlyWhitelisted(method: string, path: string): boolean {
   if (method !== 'GET' && method !== 'HEAD') return false;
   return READONLY_WHITELIST.some((p) => path === p || path.startsWith(p + '/'));
+}
+
+/** 是否命中「凭据门控 POST」豁免（精确路径匹配） */
+function isCredentialedPost(method: string, path: string): boolean {
+  if (method !== 'POST') return false;
+  return CREDENTIALED_POST_WHITELIST.includes(path);
 }
 
 interface MemWindow {
@@ -121,6 +150,10 @@ export class RateLimitGuard implements CanActivate {
     // 只读 GET 白名单：正常浏览密集触发的幂等只读接口，完全放行不参与限流计数。
     // 仅 GET/HEAD 命中；POST/PATCH/DELETE 等写操作不受影响，仍受 120/分钟拦截。
     if (isReadonlyWhitelisted(request.method, path)) return true;
+
+    // 凭据门控的高频 POST（插件轮询 / 权益校验）：同样完全放行，理由见上面常量注释。
+    // 精确匹配，不放宽到前缀，避免把同前缀的写接口一并放开。
+    if (isCredentialedPost(request.method, path)) return true;
 
     const { key, realClient } = this.resolveClientIp(request);
     // 真实客户端 IP → 精确限流；拿不到真实 IP → 全局大桶兜底

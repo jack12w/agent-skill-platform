@@ -55,6 +55,17 @@ export class PluginDevice {
   @Column({ type: 'timestamptz', nullable: true })
   last_seen_at: Date;
 
+  /**
+   * 令牌**签发**时刻（绝对有效期的起点，见 TOKEN_MAX_AGE_MS = 90 天）。
+   * 与 created_at 的区别：created_at 是这一行被创建的时间，而行会被复用
+   * （吊销后同一台设备重新授权 → revoked_at 置 NULL、换新令牌），此时 created_at 不变。
+   * NULL = 尚未签发（已批准但插件没来取令牌），或迁移前的老数据。
+   *
+   * 迁移：migrations/0024_plugin_device_token_age.sql（必须先在库上跑，否则查询会 500）。
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  token_issued_at: Date;
+
   /** 非 NULL = 已吊销，该设备的令牌立即失效 */
   @Column({ type: 'timestamptz', nullable: true })
   revoked_at: Date;

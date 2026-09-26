@@ -20,10 +20,38 @@ import {
 
 /** 授权码有效期 10 分钟：够用户切到浏览器登录并确认，又短到无法被慢速枚举 */
 const CODE_TTL_MS = 10 * 60 * 1000;
-/** 同一个授权码最多被轮询多少次；超过即作废（配合 poll_secret 使枚举无意义） */
-const MAX_POLL_ATTEMPTS = 40;
+/**
+ * 同一个授权码最多被**用错凭据**试探多少次，超过即整条作废。
+ *
+ * ⚠️ 计数语义（2026-09-26 修正）：**只统计「凭据不匹配」的请求，合法轮询不计数**。
+ * 旧实现每次轮询都 +1，于是 40 × 3 秒 = 2 分钟就撞上限 —— 而授权码本身有效 10 分钟。
+ * 用户在授权页多花两分钟（先跳去订阅、再输密码）就会看到「我明明点了确认，插件却说已过期」，
+ * 并且必须等满 10 分钟 TTL 才能重来。防枚举早已由 poll_secret 配对完成（光猜中 8 位码拿不到
+ * 令牌），这个计数器只该用来掐「已知 code 但不知道 poll_secret」的暴力试探。
+ */
+const MAX_POLL_ATTEMPTS = 100;
 /** 推荐的轮询间隔（秒），由 start 返回给客户端 */
 const POLL_INTERVAL_SEC = 3;
+/** 入参长度上限：device_id 是设备身份（超长直接拒），name/platform 只用于展示（截断） */
+const DEVICE_ID_MAX = 128;
+const DEVICE_NAME_MAX = 64;
+const PLATFORM_MAX = 32;
+/**
+ * 设备令牌的**绝对**有效期（90 天）。超龄后 entitlement 返回 `REAUTH`，
+ * 插件按约定清掉本地令牌、引导用户重新授权一次（订阅仍然有效，只是换一枚新令牌）。
+ *
+ * 为什么需要它：令牌的失效路径只有「手动解绑 / 后台吊销 / 订阅失效」，而订阅失效时令牌是
+ * **保留**的（续费即复活）—— 等于一份外泄的令牌在长期订阅下永久可用。加上这条天花板，
+ * 把最坏情况从「无限期」压到 90 天。
+ */
+const TOKEN_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** 展示类字段的裁剪：空白 → null；超长截断（拒绝会让整条授权流程莫名失败） */
+function clip(v: unknown, max: number): string | null {
+  const s = String(v ?? '').trim();
+  if (!s) return null;
+  return s.length > max ? s.slice(0, max) : s;
+}
 
 export interface StartInput {
   pluginSlug: string;
@@ -42,6 +70,13 @@ export interface StartInput {
  *  1. 轮询必须校验 poll_secret：光猜中 8 位授权码拿不到令牌。
  *  2. 审批时以 start 阶段记录的 device_id 为准，不信网页传参。
  *  3. 令牌明文永不入库；下发靠 `UPDATE ... WHERE consumed_at IS NULL` 原子抢占，只发一次。
+ *
+ * 2026-09-26 审计后的加固（对应 `plugin-coupling-security-report.html`）：
+ *  · 轮询计数只统计「凭据不匹配」，合法轮询不再被 2 分钟卡死（见 MAX_POLL_ATTEMPTS）；
+ *  · 设备上限校验进事务 + 行锁（原 check-then-act 并发可超 1 台）；
+ *  · 「拒绝」改为终态；
+ *  · pending/approve 对「不存在」与「已过期」返回同一结果，不再当存在性探测器；
+ *  · 设备令牌加 90 天绝对有效期（TOKEN_MAX_AGE_MS）。
  */
 @Injectable()
 export class PluginsAuthService {
@@ -68,7 +103,16 @@ export class PluginsAuthService {
     const slug = String(input?.pluginSlug || '').trim().toLowerCase();
     const deviceId = String(input?.deviceId || '').trim();
     if (!slug) throw new BadRequestException('pluginSlug 必填');
-    if (deviceId.length < 8) throw new BadRequestException('deviceId 不合法');
+    // device_id 会参与「令牌与设备是否同源」的判定，属于身份字段：越界一律拒绝，不做截断。
+    if (deviceId.length < 8 || deviceId.length > DEVICE_ID_MAX) {
+      throw new BadRequestException(
+        `deviceId 不合法：长度需在 8-${DEVICE_ID_MAX} 之间`,
+      );
+    }
+    // deviceName / platform 只用于账户页与授权页展示。历史上完全不校验 → 可写入几 MB 的记录
+    // （受全局限流约束，影响有限）。这里截断而不是拒绝：它们可能来自 user-agent 之类的自由文本。
+    const deviceName = clip(input.deviceName, DEVICE_NAME_MAX);
+    const platform = clip(input.platform, PLATFORM_MAX);
 
     const plugin = await this.pluginRepo.findOne({
       where: { slug, status: 'active' },
@@ -90,8 +134,8 @@ export class PluginsAuthService {
           poll_secret_hash: hashSecret(pollSecret),
           plugin_id: plugin.id,
           device_id: deviceId,
-          device_name: input.deviceName?.trim() || null,
-          platform: input.platform?.trim() || null,
+          device_name: deviceName,
+          platform,
           status: 'pending',
           expires_at: expiresAt,
         }),
@@ -114,6 +158,9 @@ export class PluginsAuthService {
   /**
    * 轮询授权结果。必须同时提供 code 与 poll_secret。
    * 状态非终态时一律返回 200（客户端据此继续轮询），不做 404 —— 避免用状态码区分「码不存在」。
+   *
+   * 计数规则见 MAX_POLL_ATTEMPTS：**只有凭据不匹配才计数**，合法轮询不计。
+   * 于是「合法用户的轮询上限」= 授权码 TTL（10 分钟 / 3 秒 ≈ 200 次），不再有 2 分钟硬伤。
    */
   async poll(code: string, pollSecret: string) {
     const c = String(code || '').trim();
@@ -123,15 +170,21 @@ export class PluginsAuthService {
     const req = await this.reqRepo.findOne({ where: { code: c } });
     if (!req) return { status: 'expired' as const };
 
-    // 凭据不符：不区分「码对凭据错」与「码不存在」，统一 expired
+    // 凭据不符：不区分「码对凭据错」与「码不存在」，统一 expired。
+    // 这是唯一会写入 attempts 的分支 —— 它代表「有人拿着 code 在猜 poll_secret」。
     if (!safeEqualHex(req.poll_secret_hash, hashSecret(s))) {
+      await this.reqRepo.increment({ id: req.id }, 'attempts', 1);
       return { status: 'expired' as const };
     }
 
-    if (req.attempts >= MAX_POLL_ATTEMPTS || req.expires_at.getTime() < Date.now()) {
+    // 被暴力试探过的码整条作废（如 code 已泄露给第三方）。
+    // 合法轮询不计数，永远撞不到这条。
+    if (req.attempts >= MAX_POLL_ATTEMPTS) {
       return { status: 'expired' as const };
     }
-    await this.reqRepo.increment({ id: req.id }, 'attempts', 1);
+    if (req.expires_at.getTime() < Date.now()) {
+      return { status: 'expired' as const };
+    }
 
     if (req.status === 'denied') {
       return { status: 'denied' as const, reason: req.deny_reason || undefined };
@@ -171,6 +224,8 @@ export class PluginsAuthService {
 
     const token = genDeviceToken();
     device.token_hash = hashSecret(token);
+    // 绝对有效期起点：每次签发都刷新（重新授权 = 新令牌 = 新的 90 天）
+    device.token_issued_at = new Date();
     device.last_seen_at = new Date();
     await this.deviceRepo.save(device);
 
@@ -227,6 +282,23 @@ export class PluginsAuthService {
       return { valid: false as const, code: 'REAUTH' };
     }
 
+    /**
+     * 令牌绝对有效期。超龄 → REAUTH（而不是 SUBSCRIPTION_EXPIRED）。
+     *
+     * 两类失效在插件端的处理是相反的：REAUTH 会清掉本地令牌，SUBSCRIPTION_EXPIRED 会保留
+     * —— 所以这里必须用 REAUTH，否则插件会以为「订阅没了」，把用户的续费状态也一起清掉。
+     * token_issued_at 为 NULL 的行（老数据 / 迁移前就存在的记录）不拦，避免上线即误伤。
+     */
+    if (device.token_issued_at) {
+      const issuedAt = new Date(device.token_issued_at).getTime();
+      if (Number.isFinite(issuedAt) && Date.now() - issuedAt > TOKEN_MAX_AGE_MS) {
+        this.logger.warn(
+          `设备令牌已超过 ${Math.round(TOKEN_MAX_AGE_MS / 86400000)} 天，要求重新授权 device=${device.device_id.slice(0, 8)}…`,
+        );
+        return { valid: false as const, code: 'REAUTH' };
+      }
+    }
+
     const sub = await this.subRepo.findOne({
       where: { user_id: device.user_id, plugin_id: device.plugin_id },
     });
@@ -258,13 +330,23 @@ export class PluginsAuthService {
 
   // ─────────────────────────── 网页侧（需登录） ───────────────────────────
 
-  /** 授权页用：展示是哪个插件在请求、当前已授权几台、该用户是否已订阅 */
+  /**
+   * 授权页用：展示是哪个插件在请求、当前已授权几台、该用户是否已订阅。
+   *
+   * ★ 必须返回 `code` 与 `created_at`：设备码流程（RFC 8628）的固有风险是**钓鱼** ——
+   *   攻击者在自己机器上发起授权拿到 code，把链接发给受害者，受害者一点「确认」，
+   *   攻击者那台机器就拿到令牌。行业标准缓解手段就是「授权页展示用户可核对的信息」：
+   *   授权码（插件端会显示同一个码，两边可比对）+ 请求发起时间（判断「这是我刚点的吗」）。
+   *
+   * ★ 「不存在」与「已过期」返回**同一个结果**：不同的响应会让这个接口变成
+   *   8 位码的存在性探测器（枚举码即可确认「此刻是否有人正在授权、设备叫什么」）。
+   */
   async pending(userId: string, code: string) {
     const c = String(code || '').trim();
-    if (!c) throw new BadRequestException('缺少 code');
+    // 注意：这里不再对空 code 抛 400 —— 空值同样走统一结果，保持响应形态唯一。
+    if (!c) return { status: 'expired' as const };
     const req = await this.reqRepo.findOne({ where: { code: c } });
-    if (!req) throw new NotFoundException('授权请求不存在或已过期');
-    if (req.expires_at.getTime() < Date.now()) {
+    if (!req || req.expires_at.getTime() < Date.now()) {
       return { status: 'expired' as const };
     }
 
@@ -282,9 +364,14 @@ export class PluginsAuthService {
     return {
       status: req.status,
       deny_reason: req.deny_reason || undefined,
+      /** 供用户与插件端显示的授权码（比对用；本身不是凭据，拿它换不到令牌） */
+      code: req.code,
+      /** 发起时间：用户据此判断「是不是我刚才点的那一下」 */
+      created_at: req.created_at ? new Date(req.created_at).toISOString() : undefined,
       plugin: plugin
         ? { slug: plugin.slug, name: plugin.name, tagline: plugin.tagline }
         : undefined,
+      // 设备名由发起方自填、接口未认证 —— 页面上必须标注「仅供参考」，不能当事实展示。
       device_name: req.device_name,
       platform: req.platform,
       subscribed,
@@ -302,14 +389,25 @@ export class PluginsAuthService {
    */
   async approve(userId: string, code: string, action: 'approve' | 'deny') {
     const c = String(code || '').trim();
-    if (!c) throw new BadRequestException('缺少 code');
-    const req = await this.reqRepo.findOne({ where: { code: c } });
-    if (!req) throw new NotFoundException('授权请求不存在或已过期');
-    if (req.expires_at.getTime() < Date.now()) {
-      throw new BadRequestException('授权请求已过期，请在插件里重新发起');
+    const req = c ? await this.reqRepo.findOne({ where: { code: c } }) : null;
+    // 「不存在」与「已过期」用同一状态码 + 同一措辞：不让本接口变成 8 位码的存在性探测器
+    if (!req || req.expires_at.getTime() < Date.now()) {
+      throw new BadRequestException('授权请求不存在或已过期，请在插件里重新发起');
     }
     if (req.status === 'approved') {
       return { ok: true, status: 'approved', already: true };
+    }
+    if (req.status === 'denied') {
+      // ★ 「拒绝」是终态。旧实现只对 approved 短路，于是被拒的请求还能再被批准 ——
+      //   用户先点「拒绝」再点「确认」等于没拒绝过，语义上「拒绝」就不成立了。
+      //   要重新授权，从插件重新发起即可（新 code，10 分钟内有效）。
+      return {
+        ok: false,
+        status: 'denied',
+        already: true,
+        reason: req.deny_reason || 'USER_DENIED',
+        message: '本次授权已被拒绝。如需继续使用，请在插件里重新发起授权。',
+      };
     }
 
     const deny = async (reason: string, message: string) => {
@@ -347,43 +445,79 @@ export class PluginsAuthService {
       );
     }
 
-    // 设备上限：以 start 阶段记录的 device_id 为准（不信网页传参）
     const max = plugin.max_activations ?? 2;
-    const existing = await this.deviceRepo.findOne({
-      where: {
-        user_id: userId,
-        plugin_id: plugin.id,
-        device_id: req.device_id,
-      },
-    });
-    const used = await this.countActiveDevices(userId, plugin.id);
 
-    if (existing && !existing.revoked_at) {
-      // 该设备已授权过：直接放行（重复确认是幂等的），顺手补一下设备名
-      if (req.device_name) existing.device_name = req.device_name;
-      if (req.platform) existing.platform = req.platform;
-      await this.deviceRepo.save(existing);
-    } else {
+    /**
+     * 设备上限：以 start 阶段记录的 device_id 为准（不信网页传参）。
+     *
+     * ⚠️ 「查活跃数 → 判断 → 写设备行」必须是**原子**的。旧实现是 check-then-act：
+     *    两台新机器同时点确认，各自读到 used = max-1，然后都写入 → 活跃数顶到 max+1。
+     *    互斥量选 plugin_subscriptions 上 (user_id, plugin_id) 的那一行：它唯一存在，
+     *    而设备数变更本来就只发生在这个「用户 × 插件」范围内，锁它粒度刚好。
+     */
+    const conflict = await this.subRepo.manager.transaction(async (m) => {
+      const subRepo = m.getRepository(PluginSubscription);
+      const devRepo = m.getRepository(PluginDevice);
+
+      const locked = await subRepo.findOne({
+        where: { user_id: userId, plugin_id: plugin.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      // 锁内才是真相：拿到锁后重新确认订阅（前面那次检查只是为了文案更具体）
+      if (!locked || locked.status !== 'active') {
+        return {
+          reason: 'NO_SUBSCRIPTION',
+          message: `你还没有订阅「${plugin.name}」，请先在插件市场完成订阅`,
+        };
+      }
+      if (locked.expires_at.getTime() <= Date.now()) {
+        return {
+          reason: 'EXPIRED_SUBSCRIPTION',
+          message: `「${plugin.name}」订阅已于 ${locked.expires_at.toLocaleDateString('zh-CN')} 到期，请续费后再授权`,
+        };
+      }
+
+      const existing = await devRepo.findOne({
+        where: {
+          user_id: userId,
+          plugin_id: plugin.id,
+          device_id: req.device_id,
+        },
+      });
+      const used = await devRepo.count({
+        where: { user_id: userId, plugin_id: plugin.id, revoked_at: null },
+      });
+
+      if (existing && !existing.revoked_at) {
+        // 该设备已授权过：直接放行（重复确认是幂等的），顺手补一下设备名
+        if (req.device_name) existing.device_name = req.device_name;
+        if (req.platform) existing.platform = req.platform;
+        await devRepo.save(existing);
+        return null;
+      }
+
       // 走到这里有两种情况：全新设备，或「曾被吊销的同一台设备重新授权」。
       // **两者都会净增一个活跃名额**，所以上限检查必须放在这之前 ——
       // 漏掉这条会出现绕过：吊销 A → 在别的机器授权占满 → A 再来授权，
       // 复用旧行把活跃数顶到 max 之上（曾实测可复现）。
       if (used >= max) {
-        return deny(
-          'ACTIVATION_LIMIT',
-          `「${plugin.name}」最多授权 ${max} 台设备，当前已用满。请到「我的订阅」解绑一台后重试`,
-        );
+        return {
+          reason: 'ACTIVATION_LIMIT',
+          message: `「${plugin.name}」最多授权 ${max} 台设备，当前已用满。请到「我的订阅」解绑一台后重试`,
+        };
       }
+
       if (existing) {
         // 复用该行（唯一索引 (user_id, plugin_id, device_id) 保证不会出现重复行）
         existing.revoked_at = null;
         existing.token_hash = null; // 待 poll 阶段签发新令牌
+        existing.token_issued_at = null; // 新令牌的绝对有效期从签发时刻重新起算
         if (req.device_name) existing.device_name = req.device_name;
         if (req.platform) existing.platform = req.platform;
-        await this.deviceRepo.save(existing);
+        await devRepo.save(existing);
       } else {
-        await this.deviceRepo.save(
-          this.deviceRepo.create({
+        await devRepo.save(
+          devRepo.create({
             user_id: userId,
             plugin_id: plugin.id,
             device_id: req.device_id,
@@ -393,7 +527,10 @@ export class PluginsAuthService {
           }),
         );
       }
-    }
+      return null;
+    });
+
+    if (conflict) return deny(conflict.reason, conflict.message);
 
     req.status = 'approved';
     req.user_id = userId;
@@ -439,7 +576,8 @@ export class PluginsAuthService {
     if (!d) throw new NotFoundException('未找到该设备授权记录');
     if (d.revoked_at) return { ok: true, already: true };
     d.revoked_at = new Date();
-    d.token_hash = null; // 立刻失效，不等 token 过期（本来也没有过期时间）
+    d.token_hash = null; // 立刻失效，不等 token 过期（绝对有效期只是天花板，不是唯一防线）
+    d.token_issued_at = null;
     await this.deviceRepo.save(d);
     return { ok: true };
   }
@@ -448,7 +586,7 @@ export class PluginsAuthService {
   async revokeAllDevices(userId: string, pluginId: string) {
     await this.deviceRepo.update(
       { user_id: userId, plugin_id: pluginId, revoked_at: null },
-      { revoked_at: new Date(), token_hash: null },
+      { revoked_at: new Date(), token_hash: null, token_issued_at: null },
     );
     return { ok: true };
   }

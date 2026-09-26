@@ -422,10 +422,24 @@ export class PluginsService {
     return sub;
   }
 
-  /** 后台：精确修改某条订阅的到期时间 / 状态 */
-  async adminUpdateSubscription(subId: string, body: any): Promise<PluginSubscription> {
+  /**
+   * 后台：精确修改某条订阅的到期时间 / 状态。
+   *
+   * ⚠️ 必须校验「这条订阅属于路由上的那个插件」。旧实现只用 `sid` 定位，路由里的 `id`
+   * 完全没参与 —— 于是拿 A 插件的 id 去改 B 插件的订阅，操作会成功，但审计日志用 `id`
+   * 作 target_id，**日志会记成「改了 A」**。没有横向提权（接口本身是管理员限定），
+   * 但审计不可信 = 出事时查不出是谁动的。宁可直接拒绝。
+   */
+  async adminUpdateSubscription(
+    pluginId: string,
+    subId: string,
+    body: any,
+  ): Promise<PluginSubscription> {
     const sub = await this.subRepo.findOne({ where: { id: subId } });
     if (!sub) throw new NotFoundException('订阅记录不存在');
+    if (sub.plugin_id !== pluginId) {
+      throw new BadRequestException('该订阅不属于当前插件，请刷新后重试');
+    }
 
     if (body?.expires_at !== undefined && body?.expires_at !== null && body?.expires_at !== '') {
       const { expiresAt } = this.parseExpiryInput({ expires_at: body.expires_at });

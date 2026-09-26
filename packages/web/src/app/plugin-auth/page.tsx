@@ -7,6 +7,10 @@ import useTranslation from '../../hooks/useTranslation';
 interface PendingResp {
   status: 'pending' | 'approved' | 'denied' | 'expired';
   deny_reason?: string;
+  /** 授权码：与插件端显示的同一个码，用于人工比对（本身不是凭据） */
+  code?: string;
+  /** 请求发起时间（ISO）：用户据此判断「是不是我刚才点的那一下」 */
+  created_at?: string;
   plugin?: { slug: string; name: string; tagline?: string | null };
   device_name?: string | null;
   platform?: string | null;
@@ -14,6 +18,19 @@ interface PendingResp {
   subscription_expires_at?: string;
   devices_used: number;
   max_devices: number;
+}
+
+/** 8 位授权码按 4+4 展示，便于与插件端逐位比对 */
+function fmtCode(code: string): string {
+  const c = String(code || '');
+  return c.length === 8 ? `${c.slice(0, 4)} ${c.slice(4)}` : c;
+}
+
+/** 本地时间展示（与页面上订阅到期时间的展示口径一致） */
+function fmtTime(iso?: string): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '—' : d.toLocaleString('zh-CN');
 }
 
 interface ApproveResp {
@@ -160,6 +177,7 @@ export default function PluginAuthPage() {
 
   const expired = info?.status === 'expired';
   const already = info?.status === 'approved';
+  const denied = info?.status === 'denied';
 
   return (
     <div className="max-w-lg mx-auto px-4 py-16">
@@ -184,7 +202,15 @@ export default function PluginAuthPage() {
         </div>
       )}
 
-      {!error && !expired && !already && info && (
+      {/* 已拒绝是终态：不能再回退成「批准」，只能从插件重新发起 */}
+      {!error && denied && (
+        <div className="text-sm text-neutral-700 bg-neutral-50 border border-neutral-200 rounded-lg px-4 py-3 text-center">
+          {t('plugins.authDenied')}
+          {t('plugins.authDeniedRestart')}
+        </div>
+      )}
+
+      {!error && !expired && !already && !denied && info && (
         <div className="bg-white border border-neutral-200 rounded-xl p-5">
           <div className="text-center mb-4">
             <div className="font-semibold text-neutral-900">
@@ -195,6 +221,26 @@ export default function PluginAuthPage() {
             )}
           </div>
 
+          {/*
+            授权码 + 发起时间：设备码流程（RFC 8628）唯一的钓鱼拦截手段。
+            攻击者可以在自己机器上发起授权、把链接发给别人诱导点击确认；用户能核对的
+            只有「这个码跟我插件里显示的一样吗」和「这条请求是我刚才发起的吗」——
+            没有这两样，页面对用户而言就是「莫名其妙让我点确认」。
+          */}
+          {info.code && (
+            <div className="mb-4 rounded-lg bg-neutral-50 border border-neutral-200 px-4 py-3 text-center">
+              <div className="text-[11px] text-neutral-400 mb-1">
+                {t('plugins.authCodeLabel')}
+              </div>
+              <div className="font-mono text-2xl font-bold tracking-[0.2em] text-neutral-900">
+                {fmtCode(info.code)}
+              </div>
+              <div className="text-[11px] leading-relaxed text-neutral-400 mt-2">
+                {t('plugins.authCodeHint')}
+              </div>
+            </div>
+          )}
+
           <dl className="text-xs space-y-2 border-t border-neutral-100 pt-4">
             <div className="flex justify-between gap-3">
               <dt className="text-neutral-400">{t('plugins.authDevice')}</dt>
@@ -202,6 +248,14 @@ export default function PluginAuthPage() {
                 {info.device_name || t('plugins.unknownDevice')}
                 {info.platform ? ` · ${info.platform}` : ''}
               </dd>
+            </div>
+            {/* 设备名由发起方自填、接口未认证 —— 必须标注「仅供参考」，不能当事实展示 */}
+            <div className="text-right text-[11px] text-neutral-400">
+              {t('plugins.authDeviceHint')}
+            </div>
+            <div className="flex justify-between gap-3">
+              <dt className="text-neutral-400">{t('plugins.authRequestedAt')}</dt>
+              <dd className="text-neutral-700">{fmtTime(info.created_at)}</dd>
             </div>
             <div className="flex justify-between gap-3">
               <dt className="text-neutral-400">{t('plugins.authDevicesUsed')}</dt>
