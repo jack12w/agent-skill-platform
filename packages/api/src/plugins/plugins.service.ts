@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Plugin, PluginSubscription } from './plugin.entity';
+import { User } from '../auth/user.entity';
 import { PluginDevice } from './plugin-auth.entity';
 import { OrdersService } from '../payments/orders.service';
 import { OssService } from '../storage/oss.service';
@@ -252,6 +253,176 @@ export class PluginsService {
     }
     await this.pluginRepo.remove(plugin);
     return { ok: true };
+  }
+
+  /* ==================== 后台：订阅管理 ==================== */
+
+  /** 订阅状态白名单（与实体注释 active/expired/cancelled 逐字一致） */
+  private static readonly SUB_STATUSES: readonly string[] = ['active', 'expired', 'cancelled'];
+
+  /** 单个订阅最长时长上限（天）—— 防止手滑把 30 打成 30000 变成永久授权 */
+  private static readonly MAX_SUB_DAYS = 3650;
+
+  /**
+   * 解析到期时间参数：
+   *   · 显式给 `expires_at` → 用它（**覆盖**语义）
+   *   · 只给 `days` → 由调用方按「顺延基点 + N 天」算（**顺延**语义）
+   *
+   * 纯日期串（YYYY-MM-DD）按**东八区当天 23:59:59**解释 —— 否则 new Date('2026-12-31')
+   * 落到 UTC 00:00，在北京时间当天 08:00 就失效了，用户会看到「选到 31 号却提前一天过期」。
+   */
+  private parseExpiryInput(body: any): { expiresAt: Date | null; days: number } {
+    let expiresAt: Date | null = null;
+    const raw = body?.expires_at;
+    if (raw !== undefined && raw !== null && raw !== '') {
+      const s = String(raw).trim();
+      const d = /^\d{4}-\d{2}-\d{2}$/.test(s)
+        ? new Date(`${s}T23:59:59+08:00`)
+        : new Date(s);
+      if (Number.isNaN(d.getTime())) throw new BadRequestException('到期时间格式不正确');
+      expiresAt = d;
+    }
+
+    const days = Math.floor(Number(body?.days));
+    if (!expiresAt) {
+      if (!Number.isFinite(days) || days <= 0) {
+        throw new BadRequestException('请提供天数（days）或到期时间（expires_at）');
+      }
+      if (days > PluginsService.MAX_SUB_DAYS) {
+        throw new BadRequestException(`天数上限 ${PluginsService.MAX_SUB_DAYS} 天`);
+      }
+    }
+    return { expiresAt, days: Number.isFinite(days) && days > 0 ? days : 0 };
+  }
+
+  /**
+   * 后台：某插件的订阅列表（join users 取邮箱/昵称）。
+   *
+   * 用 `manager.getRepository(User)` 而不是构造函数注入 —— 注入就要往
+   * plugins.module.ts 的 ENTITIES 里加 User，漏一处就是 api 502（本项目踩过）。
+   */
+  async adminListSubscriptions(pluginId: string, q: any) {
+    await this.adminGet(pluginId); // 插件不存在 → 直接 404
+
+    const page = Math.max(1, Math.floor(Number(q?.page) || 1));
+    const size = Math.min(100, Math.max(1, Math.floor(Number(q?.size) || 20)));
+    const search = String(q?.search ?? '').trim();
+    const status = String(q?.status ?? '').trim();
+
+    // 把过滤条件抽成函数：items 与 total 必须走**完全相同**的 where，否则分页数会对不上
+    const applyFilters = (qb: any) => {
+      qb.where('s.plugin_id = :pluginId', { pluginId });
+      if (status) qb.andWhere('s.status = :status', { status });
+      if (search) qb.andWhere('(u.email ILIKE :kw OR u.name ILIKE :kw)', { kw: `%${search}%` });
+      return qb;
+    };
+
+    const items = await applyFilters(
+      this.subRepo.createQueryBuilder('s').leftJoin(User, 'u', 'u.id = s.user_id'),
+    )
+      .select([
+        's.id AS id',
+        's.user_id AS user_id',
+        's.plugin_id AS plugin_id',
+        's.plan AS plan',
+        's.status AS status',
+        's.price_cents AS price_cents',
+        's.started_at AS started_at',
+        's.expires_at AS expires_at',
+        's.order_id AS order_id',
+        'u.email AS user_email',
+        'u.name AS user_name',
+      ])
+      .orderBy('s.expires_at', 'DESC')
+      .offset((page - 1) * size)
+      .limit(size)
+      .getRawMany();
+
+    const total = await applyFilters(
+      this.subRepo.createQueryBuilder('s').leftJoin(User, 'u', 'u.id = s.user_id'),
+    ).getCount();
+
+    return { items, total, page, size };
+  }
+
+  /**
+   * 后台：手动添加 / 续期订阅。
+   *
+   * 语义与付费路径（orders.fulfillPluginSubscription）**刻意保持一致**：
+   *   已有生效中的订阅 → 顺延；否则从现在起算。
+   * 差别只在「不产生订单」：新建时 order_id=null、price_cents=0，天然与付费记录可区分，
+   * **因此不需要加列、不需要跑迁移**。
+   *
+   * 已存在的记录**不覆盖 order_id / price_cents / started_at** —— 如果这本来是一笔
+   * 付费订阅，手动续期只该延长它的有效期，不该抹掉它的财务溯源。
+   */
+  async adminAddSubscription(pluginId: string, body: any): Promise<PluginSubscription> {
+    await this.adminGet(pluginId);
+
+    const userId = String(body?.user_id ?? '').trim();
+    if (!userId) throw new BadRequestException('请选择要授权的用户');
+
+    const user = await this.subRepo.manager.getRepository(User).findOne({ where: { id: userId } });
+    if (!user) throw new BadRequestException('用户不存在');
+
+    const { expiresAt, days } = this.parseExpiryInput(body);
+    const DAY = 86400_000;
+    const now = Date.now();
+
+    const existing = await this.subRepo.findOne({
+      where: { user_id: userId, plugin_id: pluginId },
+    });
+
+    if (existing) {
+      const stillActive = existing.status === 'active' && existing.expires_at.getTime() > now;
+      if (expiresAt) {
+        existing.expires_at = expiresAt;
+      } else {
+        // 顺延基点：还生效就从原到期日往后加，已失效就从现在起算
+        const base = stillActive ? existing.expires_at.getTime() : now;
+        existing.expires_at = new Date(base + days * DAY);
+      }
+      existing.status = 'active';
+      await this.subRepo.save(existing);
+      return existing;
+    }
+
+    // ⚠️ 这里**不要**给对象加 `as any`：TypeORM 的 create() 有「数组」重载，
+    //    传 any 会让 TS 命中数组签名，返回类型变成 PluginSubscription[]（本轮踩到）。
+    //    order_id 刻意不传 → 落库为 NULL，这就是「非付费」的天然标记。
+    const sub = this.subRepo.create({
+      user_id: userId,
+      plugin_id: pluginId,
+      plan: 'manual',
+      price_cents: 0,
+      status: 'active',
+      started_at: new Date(),
+      expires_at: expiresAt ?? new Date(now + days * DAY),
+    });
+    await this.subRepo.save(sub);
+    return sub;
+  }
+
+  /** 后台：精确修改某条订阅的到期时间 / 状态 */
+  async adminUpdateSubscription(subId: string, body: any): Promise<PluginSubscription> {
+    const sub = await this.subRepo.findOne({ where: { id: subId } });
+    if (!sub) throw new NotFoundException('订阅记录不存在');
+
+    if (body?.expires_at !== undefined && body?.expires_at !== null && body?.expires_at !== '') {
+      const { expiresAt } = this.parseExpiryInput({ expires_at: body.expires_at });
+      sub.expires_at = expiresAt as Date;
+    }
+    if (body?.status !== undefined) {
+      const s = String(body.status);
+      if (!PluginsService.SUB_STATUSES.includes(s)) {
+        throw new BadRequestException(
+          `状态只能是 ${PluginsService.SUB_STATUSES.join(' / ')}`,
+        );
+      }
+      sub.status = s;
+    }
+    await this.subRepo.save(sub);
+    return sub;
   }
 
   /** 价格归一化：非负整数（分），非法值归 0 */

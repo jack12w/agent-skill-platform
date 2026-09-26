@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   Request,
   UseInterceptors,
@@ -32,12 +33,15 @@ const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 /**
  * 插件后台上架管理（需登录 + 管理员）。路由前缀 /api/admin/plugins：
- *   GET    /           列表（含下架）
- *   GET    /:id        详情
- *   POST   /upload     上传安装包到 OSS（multipart: file + slug + filename）
- *   POST   /           新增
- *   PATCH  /:id        编辑（部分字段）
- *   DELETE /:id        删除（有订阅记录时 409，建议改为下架）
+ *   GET    /                          列表（含下架）
+ *   GET    /:id                       详情
+ *   POST   /upload                    上传安装包到 OSS（multipart: file + slug + filename）
+ *   GET    /:id/subscriptions         订阅列表（join users）
+ *   POST   /:id/subscriptions         手动添加 / 续期
+ *   PATCH  /:id/subscriptions/:sid    改到期时间 / 状态
+ *   POST   /                          新增
+ *   PATCH  /:id                       编辑（部分字段）
+ *   DELETE /:id                       删除（有订阅记录时 409，建议改为下架）
  *
  * 审计日志用全局 DataSource 写 admin_logs（不注入 AdminService：
  * AdminService 仅由 AppModule 提供且未导出，跨模块注入会 DI 崩溃）。
@@ -54,6 +58,15 @@ export class PluginsAdminController {
 
   private uid(req: Request): string {
     return (req as any).user?.sub;
+  }
+
+  /** 审计日志用的时间格式化：Date → ISO，其它原样字符串化（避免 undefined 拼进日志） */
+  private fmt(v: any): string {
+    try {
+      return v instanceof Date ? v.toISOString() : String(v ?? '');
+    } catch {
+      return '';
+    }
   }
 
   /** 写审计日志（尽力而为，异常吞掉） */
@@ -134,6 +147,49 @@ export class PluginsAdminController {
       download_filename: safeName,
       size: file.size,
     };
+  }
+
+  /* ---------------- 订阅管理 ---------------- */
+
+  /**
+   * 某插件的订阅列表（join users 取邮箱/昵称）。
+   * 路由是两段（:id/subscriptions），与一段的 `@Get(':id')` 不会互相截胡；
+   * 按项目约定仍把更具体的路由写在前面。
+   */
+  @Get(':id/subscriptions')
+  listSubscriptions(@Param('id') id: string, @Query() q: any) {
+    return this.svc.adminListSubscriptions(id, q);
+  }
+
+  /** 手动添加 / 续期订阅（days=顺延天数，或 expires_at=直接指定） */
+  @Post(':id/subscriptions')
+  async addSubscription(@Param('id') id: string, @Body() body: any, @Request() req: Request) {
+    const sub = await this.svc.adminAddSubscription(id, body);
+    await this.log(
+      this.uid(req),
+      'add_plugin_subscription',
+      id,
+      `Granted subscription to user ${sub.user_id} until ${this.fmt(sub.expires_at)}`,
+    );
+    return sub;
+  }
+
+  /** 精确改到期时间 / 改状态 */
+  @Patch(':id/subscriptions/:sid')
+  async updateSubscription(
+    @Param('id') id: string,
+    @Param('sid') sid: string,
+    @Body() body: any,
+    @Request() req: Request,
+  ) {
+    const sub = await this.svc.adminUpdateSubscription(sid, body);
+    await this.log(
+      this.uid(req),
+      'update_plugin_subscription',
+      id,
+      `Updated subscription ${sid}: status=${sub.status} expires_at=${this.fmt(sub.expires_at)}`,
+    );
+    return sub;
   }
 
   @Get()

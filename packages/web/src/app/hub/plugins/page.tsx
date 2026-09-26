@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import useTranslation from '../../../hooks/useTranslation';
 import Modal from '../../components/Modal';
+import SubscriptionsPanel from './SubscriptionsPanel';
 
 interface PluginItem {
   id: string;
@@ -101,6 +102,8 @@ export default function HubPluginsPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [uploading, setUploading] = useState(false);
   const [uploadErr, setUploadErr] = useState('');
+  /** 顶部 tab：插件管理 / 订阅管理（订阅面板复用同一份插件列表，不再重复请求） */
+  const [tab, setTab] = useState<'plugins' | 'subs'>('plugins');
 
   const fetchData = useCallback(async () => {
     const token = getToken();
@@ -310,6 +313,36 @@ export default function HubPluginsPage() {
       <h1 className="text-xl font-bold text-neutral-900 mb-1">{t('admin.plugins')}</h1>
       <p className="text-sm text-neutral-500">{t('admin.pluginsDesc')}</p>
 
+      {/* Tab 切换 */}
+      <div className="flex items-center gap-1 mt-4 border-b border-neutral-200">
+        {(
+          [
+            ['plugins', t('admin.tabPlugins')],
+            ['subs', t('admin.tabSubscriptions')],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            className={`px-3 py-2 text-sm -mb-px border-b-2 ${
+              tab === k
+                ? 'border-brand-600 text-brand-700 font-medium'
+                : 'border-transparent text-neutral-500 hover:text-neutral-800'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'subs' && (
+        <div className="mt-4">
+          <SubscriptionsPanel plugins={items} />
+        </div>
+      )}
+
+      {tab === 'plugins' && (
+        <>
       <div className="flex items-center gap-3 my-4">
         <button
           onClick={openCreate}
@@ -670,6 +703,8 @@ export default function HubPluginsPage() {
             </div>
           </div>
         </Modal>
+      )}
+        </>
       )}
     </div>
   );
