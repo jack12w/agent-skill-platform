@@ -79,28 +79,6 @@ export default function SubFormModal({ mode, pluginId, sub, onClose, onSaved }: 
     return () => clearTimeout(timer);
   }, [userQuery, isEdit]);
 
-  /**
-   * 提交后这条订阅实际会落在哪个时刻 —— 用来判断「选了生效中但其实已经过期」。
-   * 新增按天数时必然在未来，按到期日/编辑时按当天 23:59 算。
-   */
-  const effectiveExpiryMs = (): number | null => {
-    if (isEdit) {
-      if (!day) return null;
-      return new Date(dayToCnEndOfDay(day)).getTime();
-    }
-    if (expiryMode === 'date') {
-      if (!pickDate) return null;
-      return new Date(dayToCnEndOfDay(pickDate)).getTime();
-    }
-    const d = Math.floor(Number(days));
-    if (!Number.isFinite(d) || d <= 0) return null;
-    return Date.now() + d * 86400_000;
-  };
-
-  // 选了生效中、到期时间却在过去 → 用户实际仍不可用，必须明确提示而不是让它悄悄不生效
-  const expiryMs = effectiveExpiryMs();
-  const activeButPast = status === 'active' && expiryMs !== null && expiryMs <= Date.now();
-
   const submit = async () => {
     setErr('');
     if (!pluginId) return;
@@ -338,10 +316,6 @@ export default function SubFormModal({ mode, pluginId, sub, onClose, onSaved }: 
               ))}
             </select>
           </label>
-
-          {activeButPast && (
-            <p className="text-[11px] text-amber-600">{t('admin.subActivePastHint')}</p>
-          )}
 
           <p className="text-[11px] text-amber-600">{t('admin.subDelayHint')}</p>
 

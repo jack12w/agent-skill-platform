@@ -439,7 +439,6 @@ const zh = {
     subSourcePaid: '付费',
     subSourceManual: '手动',
     subNoSubs: '该插件暂无订阅记录',
-    subActivePastHint: '当前状态为「生效中」，但到期时间已过，用户实际仍不可用 —— 请同时把到期时间延后。',
     subPastDue: '已过期待同步',
     subLoadFailed: '加载订阅失败，请重试',
     subActionFailed: '操作失败，请重试',

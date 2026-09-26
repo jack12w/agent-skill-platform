@@ -439,7 +439,6 @@ const en = {
     subSourcePaid: 'Paid',
     subSourceManual: 'Manual',
     subNoSubs: 'No subscriptions yet',
-    subActivePastHint: 'Status is Active but the expiry date has passed, so the user still cannot use the plugin — please extend the expiry as well.',
     subPastDue: 'Past due',
     subLoadFailed: 'Failed to load subscriptions, please retry',
     subActionFailed: 'Action failed, please retry',
