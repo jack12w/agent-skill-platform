@@ -41,3 +41,56 @@ export function safeEqualHex(a: string, b: string): boolean {
   if (ba.length !== bb.length) return false;
   return timingSafeEqual(ba, bb);
 }
+
+/* ==================== 订阅权益判定 ====================
+ * 放在 util 而不是某个 service 里：付费发放（orders.fulfillPluginSubscription）、
+ * 后台加订阅（plugins.adminAddSubscription）、设备授权四处（plugins-auth）都要用，
+ * 放 service 会导致 service 之间互相 import。
+ */
+
+/**
+ * 订阅是否处于「有权使用」状态。**权益判定的唯一入口** —— 所有判定点必须都走这里，
+ * 否则会出现「插件照常能用，但想在新设备上授权却被拒」这种自相矛盾的状态。
+ *
+ * 判定 = 状态允许 且 未到期：
+ *  · `active` / `cancelled` 且 expires_at > now → **有权**。
+ *    ⚠️ `cancelled` 是「到期不再续费」的标记，**不是立即失效**（2026-09-26 语义修正）。
+ *    旧实现把 cancelled 直接判成失效，等于用户点一下「取消订阅」就当场销毁已付费的
+ *    剩余天数、且不退款 —— 而前端 cancelConfirm 的文案一直承诺的是「本期仍可使用」，
+ *    实现与自己写的文案对着干。现在两边对齐。
+ *  · `expired` 一律无权，**即使 expires_at 还在未来** —— 这是保留 status 判定的唯一
+ *    理由：只按时间判定的话，后台就失去了强制终止某个订阅的能力。
+ *
+ * 纯函数 + 可注入时间，便于单测与变异对照（见 outputs/verify-plugin-auth.cjs 的 H12）。
+ */
+export function isSubscriptionEntitled(
+  sub:
+    | { status?: string | null; expires_at?: Date | string | number | null }
+    | null
+    | undefined,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!sub || !sub.expires_at) return false;
+  const st = String(sub.status || '');
+  if (st !== 'active' && st !== 'cancelled') return false;
+  const exp =
+    sub.expires_at instanceof Date
+      ? sub.expires_at.getTime()
+      : new Date(sub.expires_at).getTime();
+  return Number.isFinite(exp) && exp > nowMs;
+}
+
+/**
+ * 订阅失效的成因：`expired` = 单纯到期；`terminated` = 未到期却被判无权
+ * （即 `status = 'expired'`，后台强制终止）。用于给用户准确的文案 ——
+ * 让被强制终止的用户以为自己只是过期了，客服就得解释第二遍。
+ */
+export function subFailReason(sub: {
+  expires_at?: Date | string | number | null;
+}): 'expired' | 'terminated' {
+  const v = sub?.expires_at;
+  if (!v) return 'terminated';
+  const exp = v instanceof Date ? v.getTime() : new Date(v).getTime();
+  return Number.isFinite(exp) && exp <= Date.now() ? 'expired' : 'terminated';
+}
+

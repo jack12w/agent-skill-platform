@@ -887,9 +887,19 @@ const zh = {
     cancel: '取消订阅',
     cancelConfirm: '确定取消该插件的订阅吗？取消后当前订阅期内仍可使用，到期后自动失效（不退款）。',
     cancelled: '已取消',
+    /* 「取消订阅」= 到期不再续费，**不是立即失效**（2026-09-26 语义修正，与后端
+       isSubscriptionEntitled 一致）。所以这里要把它说清楚，别让用户以为自己被断供了。 */
+    cancelledUntil: '到期不再续费',
+    cancelledHint: '已取消自动续费，权益保留至 {date}；期间点「续费」可继续顺延。',
+    cancelDone: '已设置到期不再续费，权益保留至 {date}。',
+    cancelFailed: '取消失败，请检查网络后重试（当前订阅状态未变）。',
     expired: '已过期',
     active: '生效中',
     myTitle: '我的插件订阅',
+    /* 账号设置页的 tab 文案（比 myTitle 短，指向「插件设备」）。
+       2026-09-26：tab 单独一个 key —— 之前 tab 与页面 h1 共用 myTitle，
+       改名会连带页面标题一起变。 */
+    navLabel: '插件设备',
     myHint: '管理你已订阅的插件与已授权设备，可随时取消。',
     descLabel: '功能',
     renew: '续费',

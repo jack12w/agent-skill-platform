@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import { Plugin, PluginSubscription } from './plugin.entity';
 import { User } from '../auth/user.entity';
 import { PluginDevice } from './plugin-auth.entity';
+import { isSubscriptionEntitled } from './plugin-auth.util';
 import { OrdersService } from '../payments/orders.service';
 import { OssService } from '../storage/oss.service';
 
@@ -105,13 +106,21 @@ export class PluginsService {
     return { url };
   }
 
-  /** 取消订阅（仅标记，不退款；包月到期满自动失效） */
+  /**
+   * 取消订阅 = **标记「到期不再续费」**，不是立即失效，也不退款。
+   *
+   * 2026-09-26 语义修正：`cancelled` 只是「不再续费」的标记，权益判定统一走
+   * `isSubscriptionEntitled`（active / cancelled 且未到期 → 仍有权）。在此之前
+   * 权益判定里写的是 `status !== 'active'`，于是用户点一下取消就当场销毁了已付费的
+   * 剩余天数 —— 而前端 cancelConfirm 的文案一直承诺「本期仍可使用」，实现与文案对着干。
+   * 本方法本身无需改动（只翻标记），改动在权益判定侧。
+   */
   async cancel(userId: string, pluginId: string) {
     const sub = await this.subRepo.findOne({
       where: { user_id: userId, plugin_id: pluginId },
     });
     if (!sub) throw new NotFoundException('未找到订阅记录');
-    if (sub.status !== 'active') return sub;
+    if (sub.status === 'cancelled') return sub;   // 幂等：重复点不再写库
     sub.status = 'cancelled';
     return this.subRepo.save(sub);
   }
@@ -393,7 +402,9 @@ export class PluginsService {
     });
 
     if (existing) {
-      const stillActive = existing.status === 'active' && existing.expires_at.getTime() > now;
+      // 顺延基点：仍有权（active / cancelled 且未到期）就从原到期日往后加，已失效才从现在起算。
+      // 与 orders.fulfillPluginSubscription 用同一个判据，避免两条路径对同一个用户给出不同到期日。
+      const stillActive = isSubscriptionEntitled(existing, now);
       if (expiresAt) {
         existing.expires_at = expiresAt;
       } else {

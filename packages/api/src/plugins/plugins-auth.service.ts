@@ -15,6 +15,8 @@ import {
   genDeviceToken,
   genPollSecret,
   hashSecret,
+  isSubscriptionEntitled,
+  subFailReason,
   safeEqualHex,
 } from './plugin-auth.util';
 
@@ -302,12 +304,14 @@ export class PluginsAuthService {
     const sub = await this.subRepo.findOne({
       where: { user_id: device.user_id, plugin_id: device.plugin_id },
     });
-    if (!sub || sub.status !== 'active' || sub.expires_at.getTime() <= Date.now()) {
+    if (!isSubscriptionEntitled(sub)) {
       return {
         valid: false as const,
         code: 'SUBSCRIPTION_EXPIRED',
         status: sub?.status,
-        expires_at: sub?.expires_at?.toISOString(),
+        expires_at: sub?.expires_at
+          ? new Date(sub.expires_at).toISOString()
+          : undefined,
       };
     }
 
@@ -358,8 +362,9 @@ export class PluginsAuthService {
           where: { user_id: userId, plugin_id: plugin.id },
         })
       : null;
-    const subscribed =
-      !!sub && sub.status === 'active' && sub.expires_at.getTime() > Date.now();
+    // 「已订阅」标记供授权页分流用：cancelled 但未到期同样算已订阅（否则用户明明还能用，
+    // 授权页却引导他去「重新订阅」）
+    const subscribed = isSubscriptionEntitled(sub);
 
     return {
       status: req.status,
@@ -432,16 +437,20 @@ export class PluginsAuthService {
     const sub = await this.subRepo.findOne({
       where: { user_id: userId, plugin_id: plugin.id },
     });
-    if (!sub || sub.status !== 'active') {
+    if (!sub) {
       return deny(
         'NO_SUBSCRIPTION',
         `你还没有订阅「${plugin.name}」，请先在插件市场完成订阅`,
       );
     }
-    if (sub.expires_at.getTime() <= Date.now()) {
+    // cancelled 但未到期 → 有权（见 isSubscriptionEntitled）；这里只剩「已到期」与
+    // 「后台强制终止」两种成因，文案要分开，别让被终止的用户以为自己只是过期了。
+    if (!isSubscriptionEntitled(sub)) {
       return deny(
         'EXPIRED_SUBSCRIPTION',
-        `「${plugin.name}」订阅已于 ${sub.expires_at.toLocaleDateString('zh-CN')} 到期，请续费后再授权`,
+        subFailReason(sub) === 'expired'
+          ? `「${plugin.name}」订阅已于 ${new Date(sub.expires_at).toLocaleDateString('zh-CN')} 到期，请续费后再授权`
+          : `「${plugin.name}」的订阅已失效，请重新订阅后再授权`,
       );
     }
 
@@ -464,16 +473,19 @@ export class PluginsAuthService {
         lock: { mode: 'pessimistic_write' },
       });
       // 锁内才是真相：拿到锁后重新确认订阅（前面那次检查只是为了文案更具体）
-      if (!locked || locked.status !== 'active') {
+      if (!locked) {
         return {
           reason: 'NO_SUBSCRIPTION',
           message: `你还没有订阅「${plugin.name}」，请先在插件市场完成订阅`,
         };
       }
-      if (locked.expires_at.getTime() <= Date.now()) {
+      if (!isSubscriptionEntitled(locked)) {
         return {
           reason: 'EXPIRED_SUBSCRIPTION',
-          message: `「${plugin.name}」订阅已于 ${locked.expires_at.toLocaleDateString('zh-CN')} 到期，请续费后再授权`,
+          message:
+            subFailReason(locked) === 'expired'
+              ? `「${plugin.name}」订阅已于 ${new Date(locked.expires_at).toLocaleDateString('zh-CN')} 到期，请续费后再授权`
+              : `「${plugin.name}」的订阅已失效，请重新订阅后再授权`,
         };
       }
 

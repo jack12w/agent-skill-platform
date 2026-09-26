@@ -53,6 +53,7 @@ export default function MyPluginsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [payInfo, setPayInfo] = useState<{ id: string; name?: string; price: number } | null>(null);
 
   // 设备面板：按插件懒加载，展开时才请求
@@ -130,9 +131,17 @@ export default function MyPluginsPage() {
         method: 'POST',
         headers: authHeaders(),
       });
-      if (res.ok) load();
+      // ⚠️ 失败必须说出来。旧实现失败时静默 —— 用户点了「取消订阅」什么也没发生，
+      //    以为已经退订（下个月被扣费就是投诉）。
+      if (res.ok) {
+        const sub = subs.find((x) => x.plugin_id === pluginId);
+        setNotice(t('plugins.cancelDone', { date: fmtDate(sub?.expires_at) }));
+        load();
+      } else {
+        setNotice(t('plugins.cancelFailed'));
+      }
     } catch {
-      /* 静默 */
+      setNotice(t('plugins.cancelFailed'));
     } finally {
       setBusyId(null);
     }
@@ -170,17 +179,30 @@ export default function MyPluginsPage() {
     }
   };
 
+  /**
+   * 权益判定。**必须与后端 `isSubscriptionEntitled`（plugin-auth.util.ts）逐条对齐**：
+   * active / cancelled 且未到期 → 有权；expired → 无权（即使 expires_at 在未来，
+   * 那是后台强制终止的语义，前端不能把它显示成「还能用」）。
+   *
+   * 2026-09-26 修正：旧判定写死 `status === 'active'`，于是「取消订阅」一按，
+   * 页面上设备面板、剩余天数全部消失，看起来像被断供了 —— 而权益其实还在。
+   */
+  const isEntitled = (s: MySub) =>
+    (s.status === 'active' || s.status === 'cancelled') &&
+    new Date(s.expires_at).getTime() > Date.now();
+
   const statusLabel = (s: MySub) => {
-    if (s.status === 'active' && new Date(s.expires_at).getTime() > Date.now())
-      return t('plugins.active');
-    if (s.status === 'cancelled') return t('plugins.cancelled');
+    if (s.status === 'cancelled') return isEntitled(s) ? t('plugins.cancelledUntil') : t('plugins.expired');
+    if (isEntitled(s)) return t('plugins.active');
     return t('plugins.expired');
   };
   const statusColor = (s: MySub) => {
-    if (s.status === 'active' && new Date(s.expires_at).getTime() > Date.now())
-      return 'bg-green-50 text-green-700 border-green-200';
-    if (s.status === 'cancelled')
-      return 'bg-neutral-100 text-neutral-500 border-neutral-200';
+    if (s.status === 'cancelled') {
+      return isEntitled(s)
+        ? 'bg-amber-50 text-amber-700 border-amber-200'
+        : 'bg-neutral-100 text-neutral-500 border-neutral-200';
+    }
+    if (isEntitled(s)) return 'bg-green-50 text-green-700 border-green-200';
     return 'bg-amber-50 text-amber-700 border-amber-200';
   };
 
@@ -198,6 +220,19 @@ export default function MyPluginsPage() {
           <span>{error}</span>
           <button onClick={load} className="shrink-0 underline">
             {t('plugins.retry')}
+          </button>
+        </div>
+      )}
+
+      {notice && (
+        <div className="mb-4 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center justify-between gap-3">
+          <span>{notice}</span>
+          <button
+            onClick={() => setNotice(null)}
+            className="shrink-0 text-lg leading-none text-amber-500 hover:text-amber-700"
+            aria-label="close"
+          >
+            ×
           </button>
         </div>
       )}
@@ -222,7 +257,8 @@ export default function MyPluginsPage() {
         <div className="space-y-3">
           {subs.map((s) => {
             const p = plugins[s.plugin_id];
-            const valid = s.status === 'active' && new Date(s.expires_at).getTime() > Date.now();
+            const valid = isEntitled(s);
+            const cancelled = s.status === 'cancelled';
             const dd = deviceData[s.plugin_id];
             const open = deviceOpen === s.plugin_id;
             return (
@@ -244,6 +280,13 @@ export default function MyPluginsPage() {
                     {statusLabel(s)}
                   </span>
                 </div>
+
+                {/* 取消后权益仍在 → 必须明说，否则用户会以为自己被断供了（甚至来问退款） */}
+                {cancelled && valid && (
+                  <p className="mt-2 text-[11px] leading-relaxed text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    {t('plugins.cancelledHint', { date: fmtDate(s.expires_at) })}
+                  </p>
+                )}
 
                 {valid && (
                   <div className="mt-3 rounded-lg bg-neutral-50 border border-neutral-100 p-3">
@@ -347,7 +390,9 @@ export default function MyPluginsPage() {
                   >
                     {valid ? t('plugins.renew') : t('plugins.resubscribe')}
                   </button>
-                  {valid && (
+                  {/* cancelled 后不再显示「取消订阅」：再点一次毫无意义，只会让用户
+                      以为上次没生效。想恢复就点「续费」（会顺延，不吞剩余天数）。 */}
+                  {s.status === 'active' && valid && (
                     <button
                       onClick={() => handleCancel(s.plugin_id)}
                       disabled={busyId === s.plugin_id}

@@ -111,7 +111,12 @@ export default function PluginsPage() {
   const isActive = (p: Plugin): MySub | null => {
     const s = subs[p.id];
     if (!s) return null;
-    return s.status === 'active' && new Date(s.expires_at).getTime() > Date.now() ? s : null;
+    // 与后端 isSubscriptionEntitled 对齐：cancelled（到期不再续费）但未到期 → 仍算已订阅，
+    // 否则取消过的用户会在市场页看到「订阅」按钮，点进去重复付费。
+    // expired 状态即便 expires_at 在未来也无权（后台强制终止）。
+    return s.status !== 'expired' && new Date(s.expires_at).getTime() > Date.now()
+      ? s
+      : null;
   };
 
   const handleDownload = async (p: Plugin) => {

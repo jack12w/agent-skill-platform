@@ -13,6 +13,7 @@ import {
 import { Skill } from '../skills/skill.entity';
 import { Plugin, PluginSubscription } from '../plugins/plugin.entity';
 import { effectivePluginPrice } from '../plugins/plugin-pricing.util';
+import { isSubscriptionEntitled } from '../plugins/plugin-auth.util';
 import { User } from '../auth/user.entity';
 import { Team } from '../teams/team.entity';
 import { WechatPayService } from './wechat-pay.service';
@@ -461,9 +462,12 @@ export class OrdersService implements OnModuleInit {
 
   /**
    * 授予/顺延插件订阅（包月 30 天）。
-   * 幂等：已存在且 active 且未过期 → 在现有 expires_at 基础上 +30 天；
-   * 已存在但 cancelled/expired → 重新激活（started_at=now, expires_at=now+30d）；
-   * 不存在 → 新建。
+   * 幂等：**仍有权**（active / cancelled 且未到期）→ 在现有 expires_at 基础上 +30 天；
+   * 已到期或被终止 → 重新激活（started_at=now, expires_at=now+30d）；不存在 → 新建。
+   *
+   * ⚠️ 顺延判据必须是 `isSubscriptionEntitled`，**不能写 `status === 'active'`**：
+   *    cancelled（「到期不再续费」）的用户续费时，剩余天数还应当被保留 ——
+   *    旧写法会走 else 分支把到期日重置成 now+30d，等于把他没用的十几天直接吞掉。
    * deliver 仅在 markPaymentPaid 原子抢占成功后调用，故本方法单笔支付只跑一次。
    */
   private async fulfillPluginSubscription(
@@ -478,7 +482,7 @@ export class OrdersService implements OnModuleInit {
       where: { user_id: userId, plugin_id: pluginId },
     });
     if (existing) {
-      if (existing.status === 'active' && existing.expires_at.getTime() > now) {
+      if (isSubscriptionEntitled(existing, now)) {
         existing.expires_at = new Date(existing.expires_at.getTime() + MONTH);
       } else {
         existing.status = 'active';
