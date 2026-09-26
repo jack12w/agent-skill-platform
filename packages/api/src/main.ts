@@ -7,6 +7,7 @@ import { AppModule } from './app.module';
 import { RateLimitGuard } from './common/rate-limit.guard';
 import { CacheInterceptor } from './common/cache.interceptor';
 import { SystemMetricsService } from './common/system-metrics.service';
+import { parseCorsOrigin } from './common/cors.util';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -22,11 +23,23 @@ async function bootstrap() {
   app.use(compression());
 
   // ── CORS（生产环境限制域名） ──────────────
+  // 未配置该项 → 放行所有来源。
+  // ⚠️ 不要走「先按逗号 split、再用 `|| '*'` 兜底」的老路：环境变量若被设成**空字符串**
+  //    （`.env.production` 写了键但没填值 + compose 有映射），split 出来是 `['']`，
+  //    非空数组是真值 → `||` 兜底失效 → 变成一份谁都不匹配的空白名单 →
+  //    一个 CORS 头都不返回，全站跨源请求一起挂。解析细则与实测记录见 common/cors.util.ts。
+  const corsOrigin = parseCorsOrigin(process.env.CORS_ORIGIN);
   app.enableCors({
-    origin: process.env.CORS_ORIGIN?.split(',') || '*',
+    origin: corsOrigin,
     methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     maxAge: 86400,
   });
+  // 启动即打印，避免「白名单到底有没有生效」靠猜（生产环境最怕静默配置错误）
+  if (Array.isArray(corsOrigin)) {
+    console.log(`🌐 CORS: 白名单模式（${corsOrigin.length} 个来源）→ ${corsOrigin.join(', ')}`);
+  } else {
+    console.log('🌐 CORS: 放行所有来源（未配置 CORS_ORIGIN）');
+  }
 
   // ── 全局限流：每真实客户端 IP 每分钟 120 次（Redis 跨进程共享计数） ────
   // 守卫内部已做：① X-Forwarded-For 取真实客户端 IP；② 拿不到真实 IP（反代/网桥）时回退全局大桶（2000/min），
