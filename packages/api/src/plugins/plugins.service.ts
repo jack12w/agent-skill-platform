@@ -11,6 +11,16 @@ import { PluginDevice } from './plugin-auth.entity';
 import { OrdersService } from '../payments/orders.service';
 import { OssService } from '../storage/oss.service';
 
+/**
+ * 公开接口（未登录可访问）允许看到的插件字段。
+ *
+ * 剥离 `download_key` / `download_filename`：前者是 OSS 对象 key，本身不是下载
+ * 凭证（下载一律走 GET /plugins/:id/download 由服务端签名），但泄露它等于把文件
+ * 组织方式交出去 —— 一旦桶策略被误改为公开读，就变成免费分发通道。
+ * 后台接口（admin/plugins）走 adminList/adminGet，不经过本类型，字段照旧返回。
+ */
+export type PublicPlugin = Omit<Plugin, 'download_key' | 'download_filename'>;
+
 @Injectable()
 export class PluginsService {
   constructor(
@@ -23,16 +33,31 @@ export class PluginsService {
     private readonly oss: OssService,
   ) {}
 
+  /**
+   * 剥离公开接口不该出现的字段。改这里前先确认前端没在读被剥掉的字段
+   * （下载链接在网页端由 GET /plugins/:id/download 现取）。
+   */
+  private stripPublic(p: Plugin): PublicPlugin {
+    const rest: any = { ...p };
+    delete rest.download_key;
+    delete rest.download_filename;
+    return rest as PublicPlugin;
+  }
+
   /** 公开列表（上架中，按排序） */
-  async list(): Promise<Plugin[]> {
-    return this.pluginRepo.find({
+  async list(): Promise<PublicPlugin[]> {
+    const rows = await this.pluginRepo.find({
       where: { status: 'active' },
       order: { sort_order: 'ASC', created_at: 'ASC' },
     });
+    return rows.map((p) => this.stripPublic(p));
   }
 
-  async getBySlug(slug: string): Promise<Plugin | null> {
-    return this.pluginRepo.findOne({ where: { slug, status: 'active' } });
+  async getBySlug(slug: string): Promise<PublicPlugin | null> {
+    const p = await this.pluginRepo.findOne({
+      where: { slug, status: 'active' },
+    });
+    return p ? this.stripPublic(p) : null;
   }
 
   /** 我的订阅（纯订阅记录，插件详情由前端用 /plugins 列表合并） */
