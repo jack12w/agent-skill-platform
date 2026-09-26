@@ -337,16 +337,12 @@ export default function SubFormModal({ mode, pluginId, sub, onClose, onSaved }: 
                 </option>
               ))}
             </select>
-            <span className="block mt-1 text-[11px] text-neutral-400">
-              {t('admin.subStatusHint')}
-            </span>
           </label>
 
           {activeButPast && (
             <p className="text-[11px] text-amber-600">{t('admin.subActivePastHint')}</p>
           )}
 
-          <p className="text-[11px] text-neutral-400">{t('admin.subAddHint')}</p>
           <p className="text-[11px] text-amber-600">{t('admin.subDelayHint')}</p>
 
           {err && <div className="text-xs text-red-600">{err}</div>}
