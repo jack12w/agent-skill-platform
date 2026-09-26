@@ -7,8 +7,10 @@ import useTranslation from '../../hooks/useTranslation';
 interface Props {
   pluginId: string;
   pluginName?: string;
-  /** 月价（分） */
+  /** 实付月价（分） */
   priceCents: number;
+  /** 划线原价（分）；促销中才传，其余情况留空 */
+  listCents?: number;
   onClose: () => void;
   /** 支付成功回调 */
   onPaid: () => void;
@@ -29,6 +31,7 @@ export default function PluginCheckoutModal({
   pluginId,
   pluginName,
   priceCents,
+  listCents,
   onClose,
   onPaid,
 }: Props) {
@@ -164,7 +167,12 @@ export default function PluginCheckoutModal({
 
             <div className="flex items-baseline justify-between mb-4">
               <span className="text-sm text-neutral-500">{t('pay.amount')}</span>
-              <span className="text-2xl font-bold text-brand-700">¥{yuan(amount)}</span>
+              <span className="flex items-baseline gap-2">
+                {!!listCents && listCents > amount && (
+                  <span className="text-sm text-neutral-400 line-through">¥{yuan(listCents)}</span>
+                )}
+                <span className="text-2xl font-bold text-brand-700">¥{yuan(amount)}</span>
+              </span>
             </div>
 
             {err && (

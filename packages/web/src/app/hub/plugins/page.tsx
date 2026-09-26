@@ -12,6 +12,9 @@ interface PluginItem {
   icon_url: string | null;
   category: string;
   price_monthly_cents: number;
+  list_price_monthly_cents: number | null;
+  promo_ends_at: string | null;
+  features: string[] | null;
   currency: string;
   status: string;
   sort_order: number;
@@ -30,6 +33,9 @@ interface FormState {
   description: string;
   icon_url: string;
   priceYuan: string;
+  listPriceYuan: string;
+  promoEndsAt: string;
+  featuresText: string;
   sort_order: string;
   max_activations: string;
   status: string;
@@ -45,12 +51,33 @@ const EMPTY_FORM: FormState = {
   description: '',
   icon_url: '',
   priceYuan: '',
+  listPriceYuan: '',
+  promoEndsAt: '',
+  featuresText: '',
   sort_order: '0',
   max_activations: '2',
   status: 'active',
   download_key: '',
   download_filename: '',
 };
+
+/** ISO → 本地 datetime-local 输入值（YYYY-MM-DDTHH:mm） */
+function toLocalInput(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** 元字符串 → 分；空/非法 → null（而不是 0，避免把「不设置」写成 ¥0） */
+function yuanToCentsOrNull(v: string): number | null {
+  const s = (v || '').trim();
+  if (!s) return null;
+  const n = Number(s);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
 
 function getToken() {
   try {
@@ -111,6 +138,11 @@ export default function HubPluginsPage() {
       description: p.description || '',
       icon_url: p.icon_url || '',
       priceYuan: p.price_monthly_cents ? String(p.price_monthly_cents / 100) : '',
+      listPriceYuan: p.list_price_monthly_cents
+        ? String(p.list_price_monthly_cents / 100)
+        : '',
+      promoEndsAt: toLocalInput(p.promo_ends_at),
+      featuresText: (p.features || []).join('\n'),
       sort_order: String(p.sort_order ?? 0),
       max_activations: String(p.max_activations ?? 2),
       status: p.status || 'active',
@@ -135,6 +167,15 @@ export default function HubPluginsPage() {
       description: form.description.trim() || null,
       icon_url: form.icon_url.trim() || null,
       price_monthly_cents: Math.max(0, Math.round(Number(form.priceYuan || 0) * 100)),
+      // 原价空值必须传 null（传 0 会被当成「原价 ¥0」，虽然后端会过滤，但语义要干净）
+      list_price_monthly_cents: yuanToCentsOrNull(form.listPriceYuan),
+      promo_ends_at: form.promoEndsAt
+        ? new Date(form.promoEndsAt).toISOString()
+        : null,
+      features: form.featuresText
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean),
       sort_order: Number(form.sort_order) || 0,
       max_activations: Math.max(1, Math.round(Number(form.max_activations) || 2)),
       status: form.status,
@@ -258,7 +299,21 @@ export default function HubPluginsPage() {
                     <code className="text-xs">{p.slug}</code>
                   </td>
                   <td className="px-4 py-3 text-neutral-600 hidden lg:table-cell">{p.category}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">{fmtPrice(p.price_monthly_cents)}</td>
+                  <td className="px-4 py-3 text-right tabular-nums">
+                    {!!p.list_price_monthly_cents &&
+                      p.list_price_monthly_cents > p.price_monthly_cents && (
+                        <span className="mr-1.5 text-xs text-neutral-400 line-through">
+                          {fmtPrice(p.list_price_monthly_cents)}
+                        </span>
+                      )}
+                    <span className="font-medium">{fmtPrice(p.price_monthly_cents)}</span>
+                    {!!p.promo_ends_at &&
+                      new Date(p.promo_ends_at).getTime() <= Date.now() && (
+                        <div className="text-[11px] text-amber-600">
+                          {t('admin.promoExpired')}
+                        </div>
+                      )}
+                  </td>
                   <td className="px-4 py-3 text-center text-neutral-500 hidden sm:table-cell">{p.sort_order}</td>
                   <td className="px-4 py-3 text-center text-neutral-500 hidden lg:table-cell">
                     {p.max_activations ?? 2}
@@ -357,10 +412,40 @@ export default function HubPluginsPage() {
                     type="number"
                     min="0"
                     step="0.01"
-                    placeholder="99"
+                    placeholder="9.9"
                     value={form.priceYuan}
                     onChange={(e) => setForm({ ...form, priceYuan: e.target.value })}
                   />
+                  <span className="block mt-1 text-[11px] text-neutral-400">
+                    {t('admin.fieldPriceHint')}
+                  </span>
+                </label>
+                <label className="block">
+                  <span className="text-xs text-neutral-500">{t('admin.fieldListPrice')}</span>
+                  <input
+                    className={field}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="39.9"
+                    value={form.listPriceYuan}
+                    onChange={(e) => setForm({ ...form, listPriceYuan: e.target.value })}
+                  />
+                  <span className="block mt-1 text-[11px] text-neutral-400">
+                    {t('admin.fieldListPriceHint')}
+                  </span>
+                </label>
+                <label className="block">
+                  <span className="text-xs text-neutral-500">{t('admin.fieldPromoEndsAt')}</span>
+                  <input
+                    className={field}
+                    type="datetime-local"
+                    value={form.promoEndsAt}
+                    onChange={(e) => setForm({ ...form, promoEndsAt: e.target.value })}
+                  />
+                  <span className="block mt-1 text-[11px] text-neutral-400">
+                    {t('admin.fieldPromoEndsAtHint')}
+                  </span>
                 </label>
                 <label className="block">
                   <span className="text-xs text-neutral-500">{t('admin.fieldOrder')}</span>
@@ -414,6 +499,19 @@ export default function HubPluginsPage() {
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
                 />
+              </label>
+
+              <label className="block">
+                <span className="text-xs text-neutral-500">{t('admin.fieldFeatures')}</span>
+                <textarea
+                  className={`${field} h-24 resize-y`}
+                  placeholder={t('admin.fieldFeaturesPlaceholder')}
+                  value={form.featuresText}
+                  onChange={(e) => setForm({ ...form, featuresText: e.target.value })}
+                />
+                <span className="block mt-1 text-[11px] text-neutral-400">
+                  {t('admin.fieldFeaturesHint')}
+                </span>
               </label>
 
               <label className="block">

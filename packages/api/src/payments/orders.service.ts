@@ -12,6 +12,7 @@ import {
 } from './payments.entity';
 import { Skill } from '../skills/skill.entity';
 import { Plugin, PluginSubscription } from '../plugins/plugin.entity';
+import { effectivePluginPrice } from '../plugins/plugin-pricing.util';
 import { User } from '../auth/user.entity';
 import { Team } from '../teams/team.entity';
 import { WechatPayService } from './wechat-pay.service';
@@ -196,7 +197,9 @@ export class OrdersService implements OnModuleInit {
       if (!plugin || plugin.status !== 'active') {
         throw new BadRequestException('插件不存在或未上架');
       }
-      total = Number(plugin.price_monthly_cents);
+      // 实付价一律服务端计算（促销中取促销价；促销已结束回落到划线原价）。
+      // 前端不传价，也无法影响这里的金额。
+      total = effectivePluginPrice(plugin);
       if (!total || total <= 0) throw new BadRequestException('插件定价异常');
       description = `插件订阅:${plugin.name}`;
       item = {

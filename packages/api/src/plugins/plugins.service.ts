@@ -129,6 +129,11 @@ export class PluginsService {
       icon_url: body?.icon_url ?? null,
       category: (body?.category || '通用').trim() || '通用',
       price_monthly_cents: this.normalizePrice(body?.price_monthly_cents),
+      list_price_monthly_cents: this.normalizeListPrice(
+        body?.list_price_monthly_cents,
+      ),
+      promo_ends_at: this.normalizePromoEnds(body?.promo_ends_at),
+      features: this.normalizeFeatures(body?.features),
       currency: body?.currency || 'CNY',
       status: body?.status === 'hidden' ? 'hidden' : 'active',
       sort_order: Number(body?.sort_order) || 0,
@@ -175,6 +180,17 @@ export class PluginsService {
     if (body?.price_monthly_cents !== undefined) {
       plugin.price_monthly_cents = this.normalizePrice(body.price_monthly_cents);
     }
+    if (body?.list_price_monthly_cents !== undefined) {
+      plugin.list_price_monthly_cents = this.normalizeListPrice(
+        body.list_price_monthly_cents,
+      );
+    }
+    if (body?.promo_ends_at !== undefined) {
+      plugin.promo_ends_at = this.normalizePromoEnds(body.promo_ends_at);
+    }
+    if (body?.features !== undefined) {
+      plugin.features = this.normalizeFeatures(body.features);
+    }
     if (body?.owner_team_id !== undefined) plugin.owner_team_id = body.owner_team_id || null;
 
     if (body?.slug !== undefined) {
@@ -218,6 +234,40 @@ export class PluginsService {
     const n = Math.round(Number(v));
     if (!Number.isFinite(n) || n < 0) return 0;
     return n;
+  }
+
+  /**
+   * 划线原价归一化。空串 / null / 非法 / 负数 → null（表示不展示划线价）。
+   * 与实付价的价格关系（必须更高）不在这里校验：后台允许先填原价再改促销价。
+   */
+  private normalizeListPrice(v: any): number | null {
+    if (v === null || v === undefined || v === '') return null;
+    const n = Math.round(Number(v));
+    if (!Number.isFinite(n) || n < 0) return null;
+    return n;
+  }
+
+  /** 促销截止时间归一化。空串 / 非法日期 → null（静态促销，不自动回价） */
+  private normalizePromoEnds(v: any): Date | null {
+    if (v === null || v === undefined || v === '') return null;
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return null;
+    return d;
+  }
+
+  /** 功能点归一化：字符串数组，去空、去重（保序）、限 20 条 / 每条 200 字 */
+  private normalizeFeatures(v: any): string[] | null {
+    if (v === null || v === undefined || v === '') return null;
+    const arr = Array.isArray(v) ? v : String(v).split(/\r?\n/);
+    const out: string[] = [];
+    for (const raw of arr) {
+      const s = String(raw ?? '').trim();
+      if (!s) continue;
+      const clipped = s.slice(0, 200);
+      if (!out.includes(clipped)) out.push(clipped);
+      if (out.length >= 20) break;
+    }
+    return out.length ? out : null;
   }
 
   /**

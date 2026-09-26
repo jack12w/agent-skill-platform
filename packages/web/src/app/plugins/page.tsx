@@ -13,7 +13,14 @@ interface Plugin {
   description?: string | null;
   icon_url?: string | null;
   category: string;
+  /** 实付月价（分） */
   price_monthly_cents: number;
+  /** 划线原价（分）；null = 不展示划线价 */
+  list_price_monthly_cents?: number | null;
+  /** 促销截止；null = 促销静态生效（不自动回价） */
+  promo_ends_at?: string | null;
+  /** 商品含的功能点 */
+  features?: string[] | null;
   status: string;
   download_key?: string | null;
 }
@@ -141,6 +148,25 @@ export default function PluginsPage() {
     return Number.isInteger(v) ? String(v) : v.toFixed(2);
   };
 
+  // ── 促销价判定（必须与服务端 plugin-pricing.util.ts 完全一致）──
+  // 服务端下单走 effectivePluginPrice()，这里只负责展示；两处规则同为：
+  // promo_ends_at 为空 → 促销静态生效；已过期 → 回落到划线原价。
+  const promoActive = (p: Plugin) => {
+    if (!p.promo_ends_at) return true;
+    const ts = new Date(p.promo_ends_at).getTime();
+    return !Number.isFinite(ts) ? true : ts > Date.now();
+  };
+  const payCents = (p: Plugin) => {
+    const promo = Number(p.price_monthly_cents || 0);
+    if (promoActive(p)) return promo;
+    const list = Number(p.list_price_monthly_cents || 0);
+    return list > 0 ? list : promo;
+  };
+  const strikeCents = (p: Plugin) => {
+    const list = Number(p.list_price_monthly_cents || 0);
+    return list > payCents(p) && promoActive(p) ? list : 0;
+  };
+
   return (
     <div className="min-h-screen bg-neutral-50">
       {/* Hero */}
@@ -189,10 +215,15 @@ export default function PluginsPage() {
             {visible.map((p) => {
               const sub = isActive(p);
               const emoji = p.icon_url ? null : EMOJI[p.category] || '🧩';
-              const features = (p.description || '')
-                .split(/[；;]/)
-                .map((s) => s.trim())
-                .filter(Boolean);
+              // 优先用商品自带的功能点；老数据没填时退回按「；」拆 description
+              const features =
+                p.features && p.features.length > 0
+                  ? p.features
+                  : (p.description || '')
+                      .split(/[；;]/)
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+              const strike = strikeCents(p);
               return (
                 <div
                   key={p.id}
@@ -241,9 +272,21 @@ export default function PluginsPage() {
 
                   <div className="mt-5 flex items-end justify-between">
                     <div>
-                      <span className="text-2xl font-extrabold text-neutral-900">¥{yuan(p.price_monthly_cents)}</span>
+                      {!!strike && (
+                        <span className="mr-2 text-sm text-neutral-400 line-through">
+                          ¥{yuan(strike)}
+                        </span>
+                      )}
+                      <span className="text-2xl font-extrabold text-neutral-900">
+                        ¥{yuan(payCents(p))}
+                      </span>
                       <span className="text-sm text-neutral-400 ml-1">{t('plugins.perMonth')}</span>
                     </div>
+                    {!!strike && (
+                      <span className="rounded-md bg-red-50 border border-red-200 px-2 py-0.5 text-[11px] font-semibold text-red-600 whitespace-nowrap">
+                        {t('plugins.promoBadge')}
+                      </span>
+                    )}
                   </div>
 
                   <div className="mt-4 flex gap-3">
@@ -288,7 +331,16 @@ export default function PluginsPage() {
         <PluginCheckoutModal
           pluginId={payId}
           pluginName={plugins.find((p) => p.id === payId)?.name}
-          priceCents={plugins.find((p) => p.id === payId)?.price_monthly_cents || 0}
+          priceCents={
+            plugins.find((p) => p.id === payId)
+              ? payCents(plugins.find((p) => p.id === payId)!)
+              : 0
+          }
+          listCents={
+            plugins.find((p) => p.id === payId)
+              ? strikeCents(plugins.find((p) => p.id === payId)!)
+              : 0
+          }
           onClose={() => setPayId(null)}
           onPaid={onPaid}
         />
