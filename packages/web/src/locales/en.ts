@@ -917,6 +917,16 @@ const en = {
     revoke: 'Unbind',
     revoking: 'Unbinding…',
     revokeConfirm: 'Unbind this device? The plugin on it will need to be authorized again.',
+    rename: 'Rename',
+    renameSave: 'Save',
+    renameCancel: 'Cancel',
+    saving: 'Saving…',
+    renamePlaceholder: 'Name this device, e.g. “Office desktop”',
+    renameDone: 'Device renamed to “{name}”',
+    renameFailed: 'Rename failed, please try again',
+    nameCustomBadge: 'Custom',
+    nameCustomHint:
+      'This name is yours; it will not be overwritten on re-authorization or renewal.',
     resetDevices: 'Unbind all',
     resetDevicesConfirm: 'Unbind all devices? Every device will need to be authorized again.',
 

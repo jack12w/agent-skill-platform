@@ -45,9 +45,18 @@ export class PluginDevice {
   @Column({ type: 'text', nullable: true })
   token_hash: string;
 
-  /** 客户端上报，用于账户页展示「Chrome · Windows」这类可识别信息 */
+  /** 客户端上报，用于账户页展示「Chrome · Windows」这类可识别信息；用户可自行改名 */
   @Column({ type: 'text', nullable: true })
   device_name: string;
+
+  /**
+   * 用户是否手动改过 device_name。
+   * true = 后续 approve 不得用客户端上报值覆盖（用户显式操作不得被流程静默回滚）。
+   *
+   * 迁移：migrations/0025_plugin_device_name_custom.sql（必须先在库上跑，否则查询会 500）。
+   */
+  @Column({ type: 'boolean', default: false })
+  name_custom: boolean;
 
   @Column({ type: 'text', nullable: true })
   platform: string;

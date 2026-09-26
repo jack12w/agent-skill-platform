@@ -24,6 +24,8 @@ interface MySub {
 interface DeviceRow {
   device_id: string;
   device_name?: string | null;
+  /** 用户是否手动改过名：true 时后端不会再被客户端上报值覆盖 */
+  name_custom?: boolean;
   platform?: string | null;
   last_seen_at?: string | null;
   created_at?: string | null;
@@ -63,6 +65,9 @@ export default function MyPluginsPage() {
   >({});
   const [deviceLoading, setDeviceLoading] = useState<string | null>(null);
   const [deviceBusy, setDeviceBusy] = useState<string | null>(null);
+  // 内联改名：一次只允许改一行（`${pluginId}:${deviceId}`），避免多点并发写同一张表
+  const [renameKey, setRenameKey] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const load = async () => {
     if (!getUserId()) {
@@ -144,6 +149,57 @@ export default function MyPluginsPage() {
       setNotice(t('plugins.cancelFailed'));
     } finally {
       setBusyId(null);
+    }
+  };
+
+  /**
+   * 设备改名。成功后**只更新这一行的本地状态**（不整块重拉）：
+   * 重拉会把整个设备面板刷成 loading、还会覆盖用户正在编辑的其他行。
+   * 失败必须说出来 —— 改名静默失败，用户会以为已经改好，下次登录看到旧名再改一次，
+   * 而「改了没生效」这件事本身没有任何可观测的地方。
+   */
+  const renameDevice = async (pluginId: string, deviceId: string, name: string) => {
+    const clean = name.trim();
+    if (!clean) return;
+    const key = `${pluginId}:${deviceId}`;
+    setDeviceBusy(key);
+    try {
+      const res = await fetch(
+        `/api/plugins/${pluginId}/devices/${encodeURIComponent(deviceId)}`,
+        {
+          method: 'PATCH',
+          headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ device_name: clean }),
+        },
+      );
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        const saved = data?.device_name || clean;
+        setDeviceData((prev) => {
+          const cur = prev[pluginId];
+          if (!cur) return prev;
+          return {
+            ...prev,
+            [pluginId]: {
+              ...cur,
+              devices: cur.devices.map((d) =>
+                d.device_id === deviceId
+                  ? { ...d, device_name: saved, name_custom: true }
+                  : d,
+              ),
+            },
+          };
+        });
+        setRenameKey(null);
+        setRenameValue('');
+        setNotice(t('plugins.renameDone', { name: saved }));
+      } else {
+        setNotice(t('plugins.renameFailed'));
+      }
+    } catch {
+      setNotice(t('plugins.renameFailed'));
+    } finally {
+      setDeviceBusy(null);
     }
   };
 
@@ -324,38 +380,110 @@ export default function MyPluginsPage() {
                           </div>
                         ) : (
                           <ul className="space-y-2">
-                            {dd.devices.map((d) => (
-                              <li
-                                key={d.device_id}
-                                className="flex items-center justify-between gap-3"
-                              >
-                                <div className="min-w-0">
-                                  <div className="text-xs text-neutral-800 truncate">
-                                    {d.device_name || t('plugins.unknownDevice')}
-                                    {d.platform ? (
-                                      <span className="text-neutral-400"> · {d.platform}</span>
-                                    ) : null}
-                                    {d.pending ? (
-                                      <span className="ml-1.5 text-[10px] text-amber-600 border border-amber-200 rounded px-1">
-                                        {t('plugins.devicePending')}
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                  <div className="text-[11px] text-neutral-400">
-                                    {t('plugins.lastSeen')} {fmtDate(d.last_seen_at)}
-                                  </div>
-                                </div>
-                                <button
-                                  onClick={() => revokeDevice(s.plugin_id, d.device_id)}
-                                  disabled={deviceBusy === `${s.plugin_id}:${d.device_id}`}
-                                  className="shrink-0 text-[11px] text-red-600 border border-red-200 rounded-md px-2 py-1 hover:bg-red-50 disabled:opacity-50"
+                            {dd.devices.map((d) => {
+                              const rowKey = `${s.plugin_id}:${d.device_id}`;
+                              const editing = renameKey === rowKey;
+                              const rowBusy = deviceBusy === rowKey;
+                              return (
+                                <li
+                                  key={d.device_id}
+                                  className="flex items-center justify-between gap-3"
                                 >
-                                  {deviceBusy === `${s.plugin_id}:${d.device_id}`
-                                    ? t('plugins.revoking')
-                                    : t('plugins.revoke')}
-                                </button>
-                              </li>
-                            ))}
+                                  <div className="min-w-0 flex-1">
+                                    {editing ? (
+                                      <input
+                                        autoFocus
+                                        value={renameValue}
+                                        maxLength={40}
+                                        onChange={(e) => setRenameValue(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            renameDevice(s.plugin_id, d.device_id, renameValue);
+                                          } else if (e.key === 'Escape') {
+                                            setRenameKey(null);
+                                            setRenameValue('');
+                                          }
+                                        }}
+                                        placeholder={t('plugins.renamePlaceholder')}
+                                        className="w-full text-xs text-neutral-800 border border-brand-300 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand-400"
+                                      />
+                                    ) : (
+                                      <>
+                                        <div className="text-xs text-neutral-800 truncate">
+                                          {d.device_name || t('plugins.unknownDevice')}
+                                          {d.platform ? (
+                                            <span className="text-neutral-400">
+                                              {' '}
+                                              · {d.platform}
+                                            </span>
+                                          ) : null}
+                                          {d.name_custom ? (
+                                            <span
+                                              title={t('plugins.nameCustomHint')}
+                                              className="ml-1.5 text-[10px] text-brand-600 border border-brand-200 rounded px-1"
+                                            >
+                                              {t('plugins.nameCustomBadge')}
+                                            </span>
+                                          ) : null}
+                                          {d.pending ? (
+                                            <span className="ml-1.5 text-[10px] text-amber-600 border border-amber-200 rounded px-1">
+                                              {t('plugins.devicePending')}
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                        <div className="text-[11px] text-neutral-400">
+                                          {t('plugins.lastSeen')} {fmtDate(d.last_seen_at)}
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                  <div className="shrink-0 flex items-center gap-1.5">
+                                    {editing ? (
+                                      <>
+                                        <button
+                                          onClick={() =>
+                                            renameDevice(s.plugin_id, d.device_id, renameValue)
+                                          }
+                                          disabled={rowBusy || !renameValue.trim()}
+                                          className="text-[11px] text-white bg-brand-600 rounded-md px-2 py-1 hover:bg-brand-700 disabled:opacity-50"
+                                        >
+                                          {rowBusy ? t('plugins.saving') : t('plugins.renameSave')}
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setRenameKey(null);
+                                            setRenameValue('');
+                                          }}
+                                          disabled={rowBusy}
+                                          className="text-[11px] text-neutral-500 border border-neutral-200 rounded-md px-2 py-1 hover:bg-neutral-100 disabled:opacity-50"
+                                        >
+                                          {t('plugins.renameCancel')}
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <button
+                                          onClick={() => {
+                                            setRenameKey(rowKey);
+                                            setRenameValue(d.device_name || '');
+                                          }}
+                                          className="text-[11px] text-brand-600 border border-brand-200 rounded-md px-2 py-1 hover:bg-brand-50"
+                                        >
+                                          {t('plugins.rename')}
+                                        </button>
+                                        <button
+                                          onClick={() => revokeDevice(s.plugin_id, d.device_id)}
+                                          disabled={rowBusy}
+                                          className="text-[11px] text-red-600 border border-red-200 rounded-md px-2 py-1 hover:bg-red-50 disabled:opacity-50"
+                                        >
+                                          {rowBusy ? t('plugins.revoking') : t('plugins.revoke')}
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                </li>
+                              );
+                            })}
                           </ul>
                         )}
 

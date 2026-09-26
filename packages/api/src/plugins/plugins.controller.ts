@@ -4,6 +4,7 @@ import {
   Post,
   HttpCode,
   Delete,
+  Patch,
   Param,
   Query,
   Body,
@@ -145,6 +146,21 @@ export class PluginsController {
     @Param('deviceId') deviceId: string,
   ) {
     return this.auth.revokeDevice(this.uid(req), id, deviceId);
+  }
+
+  /**
+   * 设备改名。改过名后打上 name_custom 标记，之后重新授权 / 续费都不会再被
+   * 客户端上报的名字覆盖（否则用户改的名字会被静默回滚）。
+   * 已吊销的设备返回 404（列表里也看不到它，允许改等于开放盲写）。
+   */
+  @Patch(':id/devices/:deviceId')
+  renameDevice(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Param('deviceId') deviceId: string,
+    @Body('device_name') deviceName: string,
+  ) {
+    return this.auth.renameDevice(this.uid(req), id, deviceId, deviceName);
   }
 
   /** 全清：换机/重装前的粗粒度操作 */

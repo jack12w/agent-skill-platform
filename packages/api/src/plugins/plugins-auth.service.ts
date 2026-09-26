@@ -502,7 +502,8 @@ export class PluginsAuthService {
 
       if (existing && !existing.revoked_at) {
         // 该设备已授权过：直接放行（重复确认是幂等的），顺手补一下设备名
-        if (req.device_name) existing.device_name = req.device_name;
+        // 用户改过名（name_custom）就不覆盖：显式操作不得被后续流程静默回滚
+        if (req.device_name && !existing.name_custom) existing.device_name = req.device_name;
         if (req.platform) existing.platform = req.platform;
         await devRepo.save(existing);
         return null;
@@ -524,7 +525,8 @@ export class PluginsAuthService {
         existing.revoked_at = null;
         existing.token_hash = null; // 待 poll 阶段签发新令牌
         existing.token_issued_at = null; // 新令牌的绝对有效期从签发时刻重新起算
-        if (req.device_name) existing.device_name = req.device_name;
+        // 用户改过名（name_custom）就不覆盖：显式操作不得被后续流程静默回滚
+        if (req.device_name && !existing.name_custom) existing.device_name = req.device_name;
         if (req.platform) existing.platform = req.platform;
         await devRepo.save(existing);
       } else {
@@ -570,6 +572,8 @@ export class PluginsAuthService {
       devices: devices.map((d) => ({
         device_id: d.device_id,
         device_name: d.device_name,
+        /** 用户是否手动改过名；前端据此提示「重新授权也不会被覆盖」 */
+        name_custom: !!d.name_custom,
         platform: d.platform,
         last_seen_at: d.last_seen_at,
         created_at: d.created_at,
@@ -601,6 +605,34 @@ export class PluginsAuthService {
       { revoked_at: new Date(), token_hash: null, token_issued_at: null },
     );
     return { ok: true };
+  }
+
+  /**
+   * 改名一台设备，并打上 name_custom 标记。
+   *
+   * 为什么需要 name_custom：device_name 是插件端自动上报的（`系统 · 浏览器 · 分辨率 · 时区`），
+   * 每次 approve 都会用新值覆盖。用户手动改过的名字如果不做标记，下一次重新授权/续费
+   * 就会被冲掉 —— 用户视角是「我起的名字自己变回去了」。标记为 true 后 approve 一律不覆盖。
+   *
+   * 与 revokeDevice 的差异（有意）：已吊销的行**不**允许改名，直接 404。
+   * 列表里看不到已吊销设备，允许改等于开放一个盲写的 id；「查不到就放行/就写」是反模式。
+   * 也不校验订阅状态：订阅到期后设备面板仍应可整理，改名无副作用。
+   */
+  async renameDevice(userId: string, pluginId: string, deviceId: string, name: unknown) {
+    const clean = clip(name, DEVICE_NAME_MAX);
+    // 空名不做「恢复默认」解释，直接拒：语义不明，且恢复默认需要回读客户端上报值 ——
+    // 那个值只在 approve 请求里出现，服务端没留底，做不到。
+    if (!clean) throw new BadRequestException('设备名不能为空');
+
+    const d = await this.deviceRepo.findOne({
+      where: { user_id: userId, plugin_id: pluginId, device_id: deviceId },
+    });
+    if (!d || d.revoked_at) throw new NotFoundException('未找到该设备授权记录');
+
+    d.device_name = clean;
+    d.name_custom = true;
+    await this.deviceRepo.save(d);
+    return { ok: true, device_id: d.device_id, device_name: d.device_name, name_custom: true };
   }
 
   // ─────────────────────────── 内部 ───────────────────────────
