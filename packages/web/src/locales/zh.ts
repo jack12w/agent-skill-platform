@@ -915,6 +915,7 @@ const zh = {
 
     activateHint: '在插件内点击「登录 / 激活」，网页确认后即自动完成授权，无需手抄任何密钥。',
     devicesUsed: '已授权 {n}/{max} 台设备',
+    devicesUsedLoading: '设备授权数加载中…',
     manageDevices: '管理设备',
     hideDevices: '收起',
     noDevices: '暂无已授权设备。在插件内点击「登录 / 激活」后会出现在这里。',
@@ -931,6 +932,14 @@ const zh = {
     renamePlaceholder: '给这台设备起个名字，如「办公室台式机」',
     renameDone: '设备名已改为「{name}」',
     renameFailed: '改名失败，请重试',
+    /* 2026-09-27：解绑链路以前是静默失败（点了页面不动），必须给状态码和下一步。
+       用户报「解绑没有任何效果」时，这行文案就是唯一的现场证据。 */
+    revokeFailed: '解绑失败（HTTP {code}），该设备仍处于已授权状态，请重试',
+    revokeDone: '已解绑该设备，这台设备上的插件需要重新授权后才能继续使用',
+    revokeGone: '这台设备已不在这份列表里（可能已被解绑或列表已过期），已为你刷新',
+    revokeAllDone: '已解绑全部设备，各设备都需要重新授权',
+    devicesLoadFailed: '设备列表加载失败（HTTP {code}），请稍后重试',
+    networkError: '网络错误',
     nameCustomBadge: '自定义',
     nameCustomHint: '名称已由你自定义，之后重新授权或续费都不会被覆盖。',
     resetDevices: '解绑全部',

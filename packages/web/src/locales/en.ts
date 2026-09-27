@@ -908,6 +908,7 @@ const en = {
 
     activateHint: 'Click “Log in / Activate” inside the plugin and confirm on the web page — authorization completes automatically, with no key to copy.',
     devicesUsed: '{n}/{max} devices authorized',
+    devicesUsedLoading: 'Loading authorized device count…',
     manageDevices: 'Manage devices',
     hideDevices: 'Hide',
     noDevices: 'No authorized devices yet. They appear here after you click “Log in / Activate” inside the plugin.',
@@ -924,6 +925,12 @@ const en = {
     renamePlaceholder: 'Name this device, e.g. “Office desktop”',
     renameDone: 'Device renamed to “{name}”',
     renameFailed: 'Rename failed, please try again',
+    revokeFailed: 'Unbind failed (HTTP {code}). The device is still authorized — please retry.',
+    revokeDone: 'Device unbound. The plugin on this device needs to be authorized again.',
+    revokeGone: 'That device is no longer in this list (already unbound, or the list was stale). Refreshed for you.',
+    revokeAllDone: 'All devices unbound. Every device needs to be authorized again.',
+    devicesLoadFailed: 'Failed to load devices (HTTP {code}). Please retry later.',
+    networkError: 'network error',
     nameCustomBadge: 'Custom',
     nameCustomHint:
       'This name is yours; it will not be overwritten on re-authorization or renewal.',

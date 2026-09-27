@@ -82,8 +82,15 @@ export default function MyPluginsPage() {
       ]);
       // 失败时保留旧数据，绝不用空数组覆盖（否则一次抖动会把列表清空）
       if (mineRes.ok) {
-        setSubs(await mineRes.json());
+        const mine: MySub[] = await mineRes.json();
+        setSubs(mine);
         setError(null);
+        /* 2026-09-27 预取设备数：设备数据以前是「展开面板才拉」，于是收起状态下
+         * 「已授权 N/M 台设备」只能显示兜底值 `?? 0` / `?? 2` —— 用户看到「0/2」，
+         * 点开却变成真实的「1/1」，第一反应是「数字不对/有 bug」。
+         * 这里对所有**权益仍有效**的订阅各拉一次（只读接口），让收起时也是真值；
+         * 失效订阅那块面板本来就不渲染，不请求。 */
+        preloadDevices(mine.filter((s) => isEntitled(s)).map((s) => s.plugin_id));
       } else {
         setError(t('plugins.loadFailed'));
       }
@@ -114,12 +121,37 @@ export default function MyPluginsPage() {
       if (res.ok) {
         const data = await res.json();
         setDeviceData((prev) => ({ ...prev, [pluginId]: data }));
+      } else {
+        // 拉取失败必须说出来：否则面板显示空态，用户会以为「设备被清空了」
+        setNotice(t('plugins.devicesLoadFailed', { code: res.status }));
       }
     } catch {
-      /* 静默：面板会显示已有数据或空态 */
+      setNotice(t('plugins.devicesLoadFailed', { code: t('plugins.networkError') }));
     } finally {
       setDeviceLoading(null);
     }
+  };
+
+  /**
+   * 预取设备数（收起状态下也要显示真值）。
+   *
+   * 与 loadDevices 的差异：**不碰 deviceLoading**。展开面板时才需要 loading 观感；
+   * 页面初始化时若把每个插件都置成 loading，会让「管理设备」点开一瞬间闪一下空态。
+   * 单个失败静默 —— 计数退回兜底值，展开时还有一次真实请求兜着。
+   */
+  const preloadDevices = async (pluginIds: string[]) => {
+    await Promise.all(
+      pluginIds.map(async (pluginId) => {
+        try {
+          const res = await fetch(`/api/plugins/${pluginId}/devices`, { headers: authHeaders() });
+          if (!res.ok) return;
+          const data = await res.json();
+          setDeviceData((prev) => ({ ...prev, [pluginId]: data }));
+        } catch {
+          /* 静默：展开时再拉 */
+        }
+      }),
+    );
   };
 
   const toggleDevices = async (pluginId: string) => {
@@ -203,6 +235,14 @@ export default function MyPluginsPage() {
     }
   };
 
+  /**
+   * 解绑一台设备。
+   *
+   * ⚠️ 2026-09-27：失败必须说出来。旧实现是 `if (res.ok) await loadDevices(...)`，
+   * 失败路径完全静默 —— 用户点了「解绑」，页面一动不动、没有任何提示，
+   * 既不知道是没解绑成功还是界面没刷新，插件那边也还持有有效令牌继续能用。
+   * 现在按 HTTP 状态码给可操作文案（与 cancel / rename 同一条约定）。
+   */
   const revokeDevice = async (pluginId: string, deviceId: string) => {
     if (!confirm(t('plugins.revokeConfirm'))) return;
     setDeviceBusy(`${pluginId}:${deviceId}`);
@@ -211,9 +251,18 @@ export default function MyPluginsPage() {
         `/api/plugins/${pluginId}/devices/${encodeURIComponent(deviceId)}`,
         { method: 'DELETE', headers: authHeaders() },
       );
-      if (res.ok) await loadDevices(pluginId);
+      if (res.ok) {
+        await loadDevices(pluginId);
+        setNotice(t('plugins.revokeDone'));
+      } else if (res.status === 404) {
+        // 常见于「这份记录已经不在库里了」：本地列表过期，刷新一次即为最新
+        await loadDevices(pluginId);
+        setNotice(t('plugins.revokeGone'));
+      } else {
+        setNotice(t('plugins.revokeFailed', { code: res.status }));
+      }
     } catch {
-      /* 静默 */
+      setNotice(t('plugins.revokeFailed', { code: t('plugins.networkError') }));
     } finally {
       setDeviceBusy(null);
     }
@@ -227,9 +276,14 @@ export default function MyPluginsPage() {
         method: 'POST',
         headers: authHeaders(),
       });
-      if (res.ok) await loadDevices(pluginId);
+      if (res.ok) {
+        await loadDevices(pluginId);
+        setNotice(t('plugins.revokeAllDone'));
+      } else {
+        setNotice(t('plugins.revokeFailed', { code: res.status }));
+      }
     } catch {
-      /* 静默 */
+      setNotice(t('plugins.revokeFailed', { code: t('plugins.networkError') }));
     } finally {
       setDeviceBusy(null);
     }
@@ -349,10 +403,15 @@ export default function MyPluginsPage() {
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="text-xs text-neutral-600">
-                          {t('plugins.devicesUsed', {
-                            n: dd?.devices?.length ?? 0,
-                            max: dd?.max_devices ?? 2,
-                          })}
+                          {/* 设备数没拿到之前**不要**写「0/2」——那是在陈述一个错误事实
+                              （明明有 1 台授权，却显示 0 台），用户会当成 bug 来报。
+                              改成「加载中」，拿到真值再落数。 */}
+                          {dd
+                            ? t('plugins.devicesUsed', {
+                                n: dd.devices?.length ?? 0,
+                                max: dd.max_devices,
+                              })
+                            : t('plugins.devicesUsedLoading')}
                         </div>
                         {!open && (
                           <p className="mt-1 text-[11px] leading-relaxed text-neutral-400">
