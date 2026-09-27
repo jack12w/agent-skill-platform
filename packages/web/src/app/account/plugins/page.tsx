@@ -48,6 +48,27 @@ function getUserId(): string | null {
   }
 }
 
+/**
+ * 账户页统一请求入口：自动带 token + **强制禁用 HTTP 缓存**。
+ *
+ * ⚠️ `cache: 'no-store'` 不是可选优化，是本页的正确性前提。
+ * 2026-09-27 生产实测：用户点「解绑设备」→ 服务端确实写入了 `revoked_at`
+ * （库里可查证），但页面计数与设备列表**纹丝不动**，用户看到的是
+ * 「已解绑该设备」的黄色提示 + 仍旧 `已授权 1/1 台设备`。
+ * 根因：`GET /plugins/:id/devices` 的响应没有任何 `Cache-Control`，
+ * 浏览器按**启发式缓存**复用了之前那份快照，`loadDevices()` 拿回的是解绑
+ * **之前**的数据 —— 用户视角就是「解绑无效 / 点了没反应」。
+ *
+ * 凡是「写操作之后要立刻读回」的接口（设备列表、我的订阅），一律不得读缓存。
+ */
+function apiFetch(url: string, init: RequestInit = {}) {
+  return fetch(url, {
+    cache: 'no-store',
+    ...init,
+    headers: { ...authHeaders(), ...((init.headers as Record<string, string>) || {}) },
+  });
+}
+
 export default function MyPluginsPage() {
   const { t } = useTranslation();
   const [subs, setSubs] = useState<MySub[]>([]);
@@ -77,8 +98,8 @@ export default function MyPluginsPage() {
     setLoading(true);
     try {
       const [mineRes, listRes] = await Promise.all([
-        fetch('/api/plugins/mine', { headers: authHeaders() }),
-        fetch('/api/plugins'),
+        apiFetch('/api/plugins/mine'),
+        apiFetch('/api/plugins'),
       ]);
       // 失败时保留旧数据，绝不用空数组覆盖（否则一次抖动会把列表清空）
       if (mineRes.ok) {
@@ -115,9 +136,7 @@ export default function MyPluginsPage() {
   const loadDevices = async (pluginId: string) => {
     setDeviceLoading(pluginId);
     try {
-      const res = await fetch(`/api/plugins/${pluginId}/devices`, {
-        headers: authHeaders(),
-      });
+      const res = await apiFetch(`/api/plugins/${pluginId}/devices`);
       if (res.ok) {
         const data = await res.json();
         setDeviceData((prev) => ({ ...prev, [pluginId]: data }));
@@ -143,7 +162,7 @@ export default function MyPluginsPage() {
     await Promise.all(
       pluginIds.map(async (pluginId) => {
         try {
-          const res = await fetch(`/api/plugins/${pluginId}/devices`, { headers: authHeaders() });
+          const res = await apiFetch(`/api/plugins/${pluginId}/devices`);
           if (!res.ok) return;
           const data = await res.json();
           setDeviceData((prev) => ({ ...prev, [pluginId]: data }));
@@ -164,9 +183,8 @@ export default function MyPluginsPage() {
     if (!confirm(t('plugins.cancelConfirm'))) return;
     setBusyId(pluginId);
     try {
-      const res = await fetch(`/api/plugins/${pluginId}/cancel`, {
+      const res = await apiFetch(`/api/plugins/${pluginId}/cancel`, {
         method: 'POST',
-        headers: authHeaders(),
       });
       // ⚠️ 失败必须说出来。旧实现失败时静默 —— 用户点了「取消订阅」什么也没发生，
       //    以为已经退订（下个月被扣费就是投诉）。
@@ -196,11 +214,11 @@ export default function MyPluginsPage() {
     const key = `${pluginId}:${deviceId}`;
     setDeviceBusy(key);
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/plugins/${pluginId}/devices/${encodeURIComponent(deviceId)}`,
         {
           method: 'PATCH',
-          headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ device_name: clean }),
         },
       );
@@ -247,9 +265,9 @@ export default function MyPluginsPage() {
     if (!confirm(t('plugins.revokeConfirm'))) return;
     setDeviceBusy(`${pluginId}:${deviceId}`);
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/plugins/${pluginId}/devices/${encodeURIComponent(deviceId)}`,
-        { method: 'DELETE', headers: authHeaders() },
+        { method: 'DELETE' },
       );
       if (res.ok) {
         await loadDevices(pluginId);
@@ -272,9 +290,8 @@ export default function MyPluginsPage() {
     if (!confirm(t('plugins.resetDevicesConfirm'))) return;
     setDeviceBusy(`${pluginId}:all`);
     try {
-      const res = await fetch(`/api/plugins/${pluginId}/reset-devices`, {
+      const res = await apiFetch(`/api/plugins/${pluginId}/reset-devices`, {
         method: 'POST',
-        headers: authHeaders(),
       });
       if (res.ok) {
         await loadDevices(pluginId);
