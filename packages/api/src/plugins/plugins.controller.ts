@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   Body,
+  Header,
   UseGuards,
   Req,
 } from '@nestjs/common';
@@ -28,6 +29,15 @@ import { PluginsAuthService } from './plugins-auth.service';
  * 7 天有效的账号凭证塞进插件，也让令牌权限天然收窄到「只能问权益」。
  *
  * 路由顺序：字面量路径（auth/*、entitlement、mine）必须声明在 :id/... 之前。
+ *
+ * ⚠️ **读接口必须带 `Cache-Control: no-store`**（`NO_STORE` 常量，2026-09-27 生产事故）：
+ * 这些接口返回的都是「用户刚做完写操作就要立刻读回」的实时状态（设备列表、
+ * 我的订阅、授权页进度）。响应不带该头时，浏览器按**启发式缓存**复用旧快照，
+ * 于是 `GET /plugins/:id/devices` 在解绑成功后仍返回解绑**之前**的数据 ——
+ * 用户看到「已解绑该设备」提示与「已授权 1/1 台设备」并存，判定为「解绑无效」，
+ * 而库里 `revoked_at` 其实早已写入。
+ *
+ * 注意：Nest 的 `@Header()` **不支持类级**（会报 TS1238），只能逐个方法标注。
  */
 @Controller('plugins')
 @UseGuards(AuthGuard)
@@ -112,6 +122,7 @@ export class PluginsController {
 
   /** 授权页读取请求详情：哪个插件、已授权几台、当前账号是否已订阅 */
   @Get('auth/pending')
+  @Header('Cache-Control', 'no-store')
   pending(@Req() req: Request, @Query('code') code: string) {
     return this.auth.pending(this.uid(req), code);
   }
@@ -129,12 +140,14 @@ export class PluginsController {
   // ─────────────────── 我的订阅 / 设备管理 ───────────────────
 
   @Get('mine')
+  @Header('Cache-Control', 'no-store')
   mine(@Req() req: Request) {
     return this.svc.mySubscriptions(this.uid(req));
   }
 
   /** 已授权设备列表（账户页展示 + 逐台吊销） */
   @Get(':id/devices')
+  @Header('Cache-Control', 'no-store')
   devices(@Req() req: Request, @Param('id') id: string) {
     return this.auth.listDevices(this.uid(req), id);
   }
@@ -175,6 +188,7 @@ export class PluginsController {
   }
 
   @Get(':id/download')
+  @Header('Cache-Control', 'no-store')
   download(@Req() req: Request, @Param('id') id: string) {
     return this.svc.signDownload(id);
   }

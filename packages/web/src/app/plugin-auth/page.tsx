@@ -96,9 +96,13 @@ export default function PluginAuthPage() {
       return;
     }
     try {
+      /* ⚠️ `cache: 'no-store'` 必须加。本页顶部的「已授权 N/M 台设备」要反映用户
+       * 刚刚在「我的订阅」里做的解绑，而响应没有 Cache-Control 时浏览器会按启发式
+       * 规则复用旧快照 —— 于是「解绑成功 → 打开授权页仍显示已用满」，
+       * 用户完全无法自证（2026-09-27 生产现场：库里 revoked_at 已写入，页面却是旧值）。 */
       const res = await fetch(
         `/api/plugins/auth/pending?code=${encodeURIComponent(code)}`,
-        { headers: authHeaders() },
+        { headers: authHeaders(), cache: 'no-store' },
       );
       if (!res.ok) {
         setError(t('plugins.authNotFound'));
