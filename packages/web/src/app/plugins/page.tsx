@@ -172,72 +172,262 @@ export default function PluginsPage() {
     return list > payCents(p) && promoActive(p) ? list : 0;
   };
 
+  /* Hero / 结尾 CTA 的主角插件：优先取已订阅的那一个，否则取第一款。
+     没有上架插件时 primary 为 null，所有 CTA 自动隐藏（不再渲染空按钮）。 */
+  const primary = useMemo(() => {
+    if (!plugins.length) return null;
+    return plugins.find((p) => isActive(p)) || plugins[0];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plugins, subs]);
+
+  const catBar = (
+    <div className="flex flex-wrap gap-2 my-8">
+      {categories.map((c) => (
+        <button
+          key={c}
+          onClick={() => setCat(c)}
+          className={`rounded-full px-4 py-1.5 text-sm border transition ${
+            cat === c
+              ? 'bg-brand-600 text-white border-brand-600'
+              : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-100'
+          }`}
+        >
+          {c === 'all' ? t('plugins.allFilter') : c}
+        </button>
+      ))}
+    </div>
+  );
+
+  const fields = [
+    [t('plugins.page.f1Name'), t('plugins.page.f1Desc')],
+    [t('plugins.page.f2Name'), t('plugins.page.f2Desc')],
+    [t('plugins.page.f3Name'), t('plugins.page.f3Desc')],
+    [t('plugins.page.f4Name'), t('plugins.page.f4Desc')],
+    [t('plugins.page.f5Name'), t('plugins.page.f5Desc')],
+    [t('plugins.page.f6Name'), t('plugins.page.f6Desc')],
+    [t('plugins.page.f7Name'), t('plugins.page.f7Desc')],
+    [t('plugins.page.f8Name'), t('plugins.page.f8Desc')],
+  ];
+
+  const faqs = [
+    [t('plugins.page.q1q'), t('plugins.page.q1a')],
+    [t('plugins.page.q2q'), t('plugins.page.q2a')],
+    [t('plugins.page.q3q'), t('plugins.page.q3a')],
+    [t('plugins.page.q4q'), t('plugins.page.q4a')],
+    [t('plugins.page.q5q'), t('plugins.page.q5a')],
+  ];
+
+  const ovBars = [
+    {
+      name: t('plugins.page.ov1Name'),
+      desc: t('plugins.page.ov1Desc'),
+      pts: [t('plugins.page.ov1p1'), t('plugins.page.ov1p2'), t('plugins.page.ov1p3')],
+    },
+    {
+      name: t('plugins.page.ov2Name'),
+      desc: t('plugins.page.ov2Desc'),
+      pts: [t('plugins.page.ov2p1'), t('plugins.page.ov2p2'), t('plugins.page.ov2p3')],
+    },
+    {
+      name: t('plugins.page.ov3Name'),
+      desc: t('plugins.page.ov3Desc'),
+      pts: [t('plugins.page.ov3p1'), t('plugins.page.ov3p2'), t('plugins.page.ov3p3')],
+    },
+  ];
+
   return (
     <div className="min-h-screen bg-neutral-50">
-      {/* Hero */}
-      <div className="bg-gradient-to-b from-brand-50 to-neutral-50">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-14 text-center">
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-neutral-900">
-            {t('plugins.title')}
-          </h1>
-          <p className="mt-3 text-sm sm:text-base text-neutral-500 max-w-2xl mx-auto">
-            {t('plugins.subtitle')}
-          </p>
-          <div className="mt-5 inline-block rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-brand-700 border border-brand-100">
-            🚀 {t('plugins.heroBadge', { n: plugins.length })}
+      {/* ==================== Hero ==================== */}
+      <section className="bg-gradient-to-b from-brand-50 to-neutral-50">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-14 sm:py-20 text-center">
+          <div className="inline-block rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-brand-700 border border-brand-100">
+            {t('plugins.page.badge')}
           </div>
-        </div>
-      </div>
+          <h1 className="mt-5 text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-neutral-900">
+            {t('plugins.page.title')}
+          </h1>
+          <p className="mt-4 text-sm sm:text-base text-neutral-600 max-w-3xl mx-auto leading-relaxed">
+            {t('plugins.page.subtitle')}
+          </p>
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-20">
-        {/* 分类条 */}
-        <div className="flex flex-wrap gap-2 my-8">
-          {categories.map((c) => (
-            <button
-              key={c}
-              onClick={() => setCat(c)}
-              className={`rounded-full px-4 py-1.5 text-sm border transition ${
-                cat === c
-                  ? 'bg-brand-600 text-white border-brand-600'
-                  : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-100'
-              }`}
-            >
-              {c === 'all' ? t('plugins.allFilter') : c}
-            </button>
-          ))}
-        </div>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            {[t('plugins.page.tag1'), t('plugins.page.tag2'), t('plugins.page.tag3'), t('plugins.page.tag4')].map((x) => (
+              <span key={x} className="rounded-full bg-white/80 border border-neutral-200 px-3 py-1 text-xs text-neutral-600">
+                {x}
+              </span>
+            ))}
+          </div>
 
-        {err && (
-          <div className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{err}</div>
-        )}
-
-        {loading ? (
-          <div className="py-20 text-center text-sm text-neutral-400">{t('plugins.loading')}</div>
-        ) : visible.length === 0 ? (
-          <div className="py-20 text-center text-sm text-neutral-400">{t('home.noData')}</div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {visible.map((p) => {
-              const sub = isActive(p);
-              const emoji = p.icon_url ? null : EMOJI[p.category] || '🧩';
-              // 优先用商品自带的功能点；老数据没填时退回按「；」拆 description
-              const features =
-                p.features && p.features.length > 0
-                  ? p.features
-                  : (p.description || '')
-                      .split(/[；;]/)
-                      .map((s) => s.trim())
-                      .filter(Boolean);
-              const strike = strikeCents(p);
-              return (
-                <div
-                  key={p.id}
-                  className={`flex flex-col bg-white rounded-2xl border p-6 transition hover:shadow-lg ${
-                    sub ? 'border-green-200' : 'border-neutral-200'
-                  }`}
+          {primary && (
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              {isActive(primary) ? (
+                <Link
+                  href="/account/plugins"
+                  className="rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white hover:bg-brand-700 shadow-brand"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-brand-50 flex items-center justify-center text-2xl">
+                  {t('plugins.page.heroManage')}
+                </Link>
+              ) : (
+                <button
+                  onClick={() => setPayId(primary.id)}
+                  className="rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white hover:bg-brand-700 shadow-brand"
+                >
+                  {t('plugins.page.heroSubscribe')}
+                </button>
+              )}
+              <button
+                onClick={() => handleDownload(primary)}
+                className="rounded-xl border border-neutral-300 bg-white px-6 py-3 text-sm font-semibold text-neutral-700 hover:border-brand-400 hover:text-brand-600"
+              >
+                {t('plugins.page.heroDownload')}
+              </button>
+            </div>
+          )}
+
+          <p className="mt-4 text-xs text-neutral-400">{t('plugins.page.heroNote')}</p>
+        </div>
+      </section>
+
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-20">
+
+        {/* ==================== 能力总览 ==================== */}
+        <section className="mt-10">
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-neutral-900 tracking-tight">
+            {t('plugins.page.ovTitle')}
+          </h2>
+          <p className="mt-3 text-sm sm:text-base text-neutral-600 leading-relaxed">
+            {t('plugins.page.ovLead')}
+          </p>
+
+          <div className="mt-8 grid gap-5 md:grid-cols-3">
+            {ovBars.map((b, i) => (
+              <div key={b.name} className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-card">
+                <div className="text-xs font-bold text-brand-600">0{i + 1}</div>
+                <h3 className="mt-2 text-lg font-bold text-neutral-900">{b.name}</h3>
+                <p className="mt-2 text-sm text-neutral-600 leading-relaxed">{b.desc}</p>
+                <ul className="mt-4 space-y-2 text-sm text-neutral-600">
+                  {b.pts.map((p) => (
+                    <li key={p} className="flex gap-2">
+                      <span className="text-brand-600 font-bold">✓</span>
+                      <span>{p}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ==================== 采集字段 ==================== */}
+        <section className="mt-16">
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-neutral-900 tracking-tight">
+            {t('plugins.page.fTitle')}
+          </h2>
+          <p className="mt-3 text-sm sm:text-base text-neutral-600 leading-relaxed">
+            {t('plugins.page.fLead')}
+          </p>
+
+          <div className="mt-8 overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+            <table className="w-full text-left text-sm">
+              <tbody>
+                {fields.map(([n, d], i) => (
+                  <tr key={n} className={i % 2 ? 'bg-neutral-50' : 'bg-white'}>
+                    <td className="w-1/3 px-5 py-3.5 font-semibold text-neutral-900 border-b border-neutral-100">
+                      {n}
+                    </td>
+                    <td className="px-5 py-3.5 text-neutral-600 border-b border-neutral-100">{d}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* ==================== 订阅前后差别 ==================== */}
+        <section className="mt-16">
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-neutral-900 tracking-tight">
+            {t('plugins.page.gTitle')}
+          </h2>
+          <p className="mt-3 text-sm sm:text-base text-neutral-600 leading-relaxed">
+            {t('plugins.page.gLead')}
+          </p>
+
+          <div className="mt-8 grid gap-5 md:grid-cols-2">
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-card">
+              <h3 className="text-base font-bold text-neutral-900">{t('plugins.page.gFreeTitle')}</h3>
+              <ul className="mt-4 space-y-2 text-sm text-neutral-600">
+                {[
+                  t('plugins.page.gFree1'),
+                  t('plugins.page.gFree2'),
+                  t('plugins.page.gFree3'),
+                ].map((x) => (
+                  <li key={x} className="flex gap-2">
+                    <span className="text-neutral-400 font-bold">·</span>
+                    <span>{x}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="bg-brand-50/60 rounded-2xl border border-brand-200 p-6">
+              <h3 className="text-base font-bold text-brand-900">{t('plugins.page.gPaidTitle')}</h3>
+              <ul className="mt-4 space-y-2 text-sm text-neutral-700">
+                {[
+                  t('plugins.page.gPaid1'),
+                  t('plugins.page.gPaid2'),
+                  t('plugins.page.gPaid3'),
+                  t('plugins.page.gPaid4'),
+                ].map((x) => (
+                  <li key={x} className="flex gap-2">
+                    <span className="text-brand-600 font-bold">✓</span>
+                    <span>{x}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        {/* ==================== 价格与订阅（功能按钮保留在这里） ==================== */}
+        <section className="mt-16">
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-neutral-900 tracking-tight">
+            {t('plugins.page.pTitle')}
+          </h2>
+          <p className="mt-3 text-sm text-neutral-600 leading-relaxed">
+            {t('plugins.page.pLead')}
+          </p>
+
+          {catBar}
+
+          {err && (
+            <div className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{err}</div>
+          )}
+
+          {loading ? (
+            <div className="py-16 text-center text-sm text-neutral-400">{t('plugins.loading')}</div>
+          ) : visible.length === 0 ? (
+            <div className="py-16 text-center text-sm text-neutral-400">{t('home.noData')}</div>
+          ) : (
+            <div className="space-y-4">
+              {visible.map((p) => {
+                const sub = isActive(p);
+                const emoji = p.icon_url ? null : EMOJI[p.category] || '🧩';
+                // 优先用商品自带的功能点；老数据没填时退回按「；」拆 description
+                const features =
+                  p.features && p.features.length > 0
+                    ? p.features
+                    : (p.description || '')
+                        .split(/[；;]/)
+                        .map((s) => s.trim())
+                        .filter(Boolean);
+                const strike = strikeCents(p);
+                return (
+                  <div
+                    key={p.id}
+                    className={`flex flex-col md:flex-row gap-5 items-start bg-white rounded-2xl border p-6 transition hover:shadow-lg ${
+                      sub ? 'border-green-200' : 'border-neutral-200'
+                    }`}
+                  >
+                    <div className="w-12 h-12 shrink-0 rounded-xl bg-brand-50 flex items-center justify-center text-2xl">
                       {p.icon_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={p.icon_url} alt={p.name} className="w-12 h-12 rounded-xl object-cover" />
@@ -245,91 +435,157 @@ export default function PluginsPage() {
                         <span>{emoji}</span>
                       )}
                     </div>
-                    <div className="min-w-0">
-                      <div className="font-bold text-neutral-900 truncate">{p.name}</div>
-                      <div className="text-xs text-neutral-400">{p.category}</div>
-                    </div>
-                  </div>
 
-                  {sub ? (
-                    <div className="mt-4 inline-flex items-center gap-1.5 self-start rounded-lg bg-green-50 border border-green-200 px-2.5 py-1 text-xs font-semibold text-green-700">
-                      ✓ {t('plugins.subscribed')} · {t('plugins.validUntil')}{' '}
-                      {new Date(sub.expires_at).toLocaleDateString('zh-CN')}
-                    </div>
-                  ) : (
-                    p.tagline && <p className="mt-4 text-sm text-neutral-500">{p.tagline}</p>
-                  )}
-
-                  <div className="mt-3 flex-1">
-                    {features.length > 0 ? (
-                      <ul className="space-y-1.5 text-sm text-neutral-600">
-                        {features.map((f, i) => (
-                          <li key={i} className="flex gap-2">
-                            <span className="text-brand-600 font-bold">✓</span>
-                            <span>{f}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-sm text-neutral-600">{p.description}</p>
-                    )}
-                  </div>
-
-                  <div className="mt-5 flex items-end justify-between">
-                    <div>
-                      {!!strike && (
-                        <span className="mr-2 text-sm text-neutral-400 line-through">
-                          ¥{yuan(strike)}
-                        </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-bold text-neutral-900">{p.name}</h3>
+                        <span className="text-xs text-neutral-400">{p.category}</span>
+                        {sub && (
+                          <span className="rounded-lg bg-green-50 border border-green-200 px-2.5 py-0.5 text-[11px] font-semibold text-green-700">
+                            {t('plugins.subscribed')} · {t('plugins.validUntil')}{' '}
+                            {new Date(sub.expires_at).toLocaleDateString('zh-CN')}
+                          </span>
+                        )}
+                      </div>
+                      {p.tagline && <p className="mt-1.5 text-sm text-neutral-500">{p.tagline}</p>}
+                      {features.length > 0 && (
+                        <ul className="mt-3 space-y-1 text-sm text-neutral-600">
+                          {features.slice(0, 4).map((f, i) => (
+                            <li key={i} className="flex gap-2">
+                              <span className="text-brand-600 font-bold">✓</span>
+                              <span>{f}</span>
+                            </li>
+                          ))}
+                          {features.length > 4 && (
+                            <li className="text-xs text-neutral-400">
+                              {t('plugins.descLabel')} · {features.length}
+                            </li>
+                          )}
+                        </ul>
                       )}
-                      <span className="text-2xl font-extrabold text-neutral-900">
-                        ¥{yuan(payCents(p))}
-                      </span>
-                      <span className="text-sm text-neutral-400 ml-1">{t('plugins.perMonth')}</span>
                     </div>
-                    {!!strike && (
-                      <span className="rounded-md bg-red-50 border border-red-200 px-2 py-0.5 text-[11px] font-semibold text-red-600 whitespace-nowrap">
-                        {t('plugins.promoBadge')}
-                      </span>
-                    )}
-                  </div>
 
-                  <div className="mt-4 flex gap-3">
-                    <button
-                      onClick={() => handleDownload(p)}
-                      className="flex-1 rounded-lg border border-neutral-200 py-2.5 text-sm font-semibold text-neutral-700 bg-white hover:border-brand-400 hover:text-brand-600"
-                    >
-                      {t('plugins.download')}
-                    </button>
-                    {sub ? (
-                      <Link
-                        href="/account/plugins"
-                        className="flex-1 rounded-lg border border-neutral-200 py-2.5 text-sm font-semibold text-neutral-700 bg-white text-center hover:bg-neutral-50"
-                      >
-                        {t('plugins.manage')}
-                      </Link>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          if (!isAuthed()) {
-                            window.location.href = '/auth';
-                            return;
-                          }
-                          setPayId(p.id);
-                        }}
-                        className="flex-1 rounded-lg bg-brand-600 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
-                      >
-                        {t('plugins.subscribe')}
-                      </button>
-                    )}
+                    <div className="w-full md:w-56 shrink-0">
+                      <div className="flex items-end">
+                        {!!strike && (
+                          <span className="mr-2 text-sm text-neutral-400 line-through">
+                            ¥{yuan(strike)}
+                          </span>
+                        )}
+                        <span className="text-2xl font-extrabold text-neutral-900">
+                          ¥{yuan(payCents(p))}
+                        </span>
+                        <span className="text-sm text-neutral-400 ml-1">{t('plugins.perMonth')}</span>
+                      </div>
+                      {!!strike && (
+                        <div className="mt-1">
+                          <span className="rounded-md bg-red-50 border border-red-200 px-2 py-0.5 text-[11px] font-semibold text-red-600">
+                            {t('plugins.promoBadge')}
+                          </span>
+                        </div>
+                      )}
+                      <div className="mt-3 flex gap-3">
+                        <button
+                          onClick={() => handleDownload(p)}
+                          className="flex-1 rounded-lg border border-neutral-200 py-2.5 text-sm font-semibold text-neutral-700 bg-white hover:border-brand-400 hover:text-brand-600"
+                        >
+                          {t('plugins.download')}
+                        </button>
+                        {sub ? (
+                          <Link
+                            href="/account/plugins"
+                            className="flex-1 rounded-lg border border-neutral-200 py-2.5 text-sm font-semibold text-neutral-700 bg-white text-center hover:bg-neutral-50"
+                          >
+                            {t('plugins.manage')}
+                          </Link>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              if (!isAuthed()) {
+                                window.location.href = '/auth';
+                                return;
+                              }
+                              setPayId(p.id);
+                            }}
+                            className="flex-1 rounded-lg bg-brand-600 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
+                          >
+                            {t('plugins.subscribe')}
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
+                );
+              })}
+              <p className="text-xs text-neutral-400">{t('plugins.page.pNote')}</p>
+            </div>
+          )}
+        </section>
+
+        {/* ==================== 三步上手 ==================== */}
+        <section className="mt-16">
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-neutral-900 tracking-tight">
+            {t('plugins.page.sTitle')}
+          </h2>
+          <p className="mt-3 text-sm text-neutral-600 leading-relaxed">{t('plugins.page.sLead')}</p>
+
+          <div className="mt-8 grid gap-5 md:grid-cols-3">
+            {[
+              [t('plugins.page.s1Title'), t('plugins.page.s1Desc')],
+              [t('plugins.page.s2Title'), t('plugins.page.s2Desc')],
+              [t('plugins.page.s3Title'), t('plugins.page.s3Desc')],
+            ].map(([title, desc], i) => (
+              <div key={title} className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-card">
+                <div className="h-8 w-8 rounded-lg bg-brand-600 text-white text-sm font-bold flex items-center justify-center">
+                  {i + 1}
                 </div>
-              );
-            })}
+                <h3 className="mt-3 text-base font-bold text-neutral-900">{title}</h3>
+                <p className="mt-1.5 text-sm text-neutral-600 leading-relaxed">{desc}</p>
+              </div>
+            ))}
           </div>
-        )}
+        </section>
 
-        <p className="mt-10 text-center text-xs text-neutral-400">{t('plugins.freeDownloadTip')}</p>
+        {/* ==================== FAQ ==================== */}
+        <section className="mt-16">
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-neutral-900 tracking-tight">
+            {t('plugins.page.qTitle')}
+          </h2>
+          <div className="mt-8 divide-y divide-neutral-200 rounded-2xl border border-neutral-200 bg-white">
+            {faqs.map(([q, a]) => (
+              <details key={q} className="group px-5 py-4">
+                <summary className="cursor-pointer list-none text-sm sm:text-base font-semibold text-neutral-900 marker:hidden">
+                  <span className="mr-2 text-brand-600">Q</span>
+                  {q}
+                  <span className="float-right text-neutral-400 transition group-open:rotate-45">＋</span>
+                </summary>
+                <p className="mt-3 text-sm text-neutral-600 leading-relaxed">
+                  <span className="mr-2 font-semibold text-brand-600">A</span>
+                  {a}
+                </p>
+              </details>
+            ))}
+          </div>
+        </section>
+
+        {/* ==================== 结尾 CTA ==================== */}
+        <section className="mt-16 rounded-3xl bg-brand-600 px-6 py-12 text-center">
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+            {t('plugins.page.ctaTitle')}
+          </h2>
+          <p className="mt-3 text-sm text-brand-100">{t('plugins.page.ctaDesc')}</p>
+          {primary && (
+            <button
+              onClick={() => handleDownload(primary)}
+              className="mt-7 rounded-xl bg-white px-7 py-3 text-sm font-semibold text-brand-700 hover:bg-brand-50"
+            >
+              {t('plugins.page.ctaBtn')}
+            </button>
+          )}
+          <p className="mt-6 text-xs text-brand-100/70 leading-relaxed">
+            {t('plugins.page.disclaimer')}
+          </p>
+        </section>
       </div>
 
       {payId && (
