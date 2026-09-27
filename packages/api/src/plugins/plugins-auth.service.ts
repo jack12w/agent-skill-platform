@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { Plugin, PluginSubscription } from './plugin.entity';
 import { PluginAuthRequest, PluginDevice } from './plugin-auth.entity';
 import { User } from '../auth/user.entity';
@@ -498,7 +498,7 @@ export class PluginsAuthService {
         },
       });
       const used = await devRepo.count({
-        where: { user_id: userId, plugin_id: plugin.id, revoked_at: null },
+        where: { user_id: userId, plugin_id: plugin.id, revoked_at: IsNull() },
       });
 
       if (existing && !existing.revoked_at) {
@@ -565,7 +565,7 @@ export class PluginsAuthService {
 
   async listDevices(userId: string, pluginId: string) {
     const devices = await this.deviceRepo.find({
-      where: { user_id: userId, plugin_id: pluginId, revoked_at: null },
+      where: { user_id: userId, plugin_id: pluginId, revoked_at: IsNull() },
       order: { created_at: 'DESC' },
     });
     const plugin = await this.pluginRepo.findOne({ where: { id: pluginId } });
@@ -602,7 +602,7 @@ export class PluginsAuthService {
   /** 全清：换机/重装前的粗粒度操作，等价于逐台吊销 */
   async revokeAllDevices(userId: string, pluginId: string) {
     await this.deviceRepo.update(
-      { user_id: userId, plugin_id: pluginId, revoked_at: null },
+      { user_id: userId, plugin_id: pluginId, revoked_at: IsNull() },
       { revoked_at: new Date(), token_hash: null, token_issued_at: null },
     );
     return { ok: true };
@@ -640,7 +640,7 @@ export class PluginsAuthService {
 
   private countActiveDevices(userId: string, pluginId: string): Promise<number> {
     return this.deviceRepo.count({
-      where: { user_id: userId, plugin_id: pluginId, revoked_at: null },
+      where: { user_id: userId, plugin_id: pluginId, revoked_at: IsNull() },
     });
   }
 
