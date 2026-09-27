@@ -116,10 +116,11 @@ export class PluginsAuthService {
     const deviceName = clip(input.deviceName, DEVICE_NAME_MAX);
     const platform = clip(input.platform, PLATFORM_MAX);
 
+    /** 2026-09-27 修正：下架后仍允许已付费用户发起授权 / 重新授权。 */
     const plugin = await this.pluginRepo.findOne({
-      where: { slug, status: 'active' },
+      where: { slug },
     });
-    if (!plugin) throw new NotFoundException('插件不存在或未上架');
+    if (!plugin) throw new NotFoundException('插件不存在');
 
     const pollSecret = genPollSecret();
     const expiresAt = new Date(Date.now() + CODE_TTL_MS);

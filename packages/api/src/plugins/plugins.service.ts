@@ -86,9 +86,10 @@ export class PluginsService {
 
   /** 生成签名下载 URL（免费下载；复用 OSS 签名，不暴露桶路径与原始响应头） */
   async signDownload(pluginId: string) {
+    /** 2026-09-27 修正：下架后仍允许已购用户下载安装包。 */
     const plugin = await this.pluginRepo.findOne({ where: { id: pluginId } });
-    if (!plugin || plugin.status !== 'active') {
-      throw new NotFoundException('插件不存在或未上架');
+    if (!plugin) {
+      throw new NotFoundException('插件不存在');
     }
     if (!plugin.download_key) {
       throw new BadRequestException('该插件暂未配置下载文件');
