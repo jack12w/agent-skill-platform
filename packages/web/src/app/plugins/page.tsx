@@ -212,9 +212,7 @@ export default function PluginsPage() {
   const faqs = [
     [t('plugins.page.q1q'), t('plugins.page.q1a')],
     [t('plugins.page.q2q'), t('plugins.page.q2a')],
-    [t('plugins.page.q3q'), t('plugins.page.q3a')],
     [t('plugins.page.q4q'), t('plugins.page.q4a')],
-    [t('plugins.page.q5q'), t('plugins.page.q5a')],
   ];
 
   const ovBars = [
