@@ -466,19 +466,22 @@ export default function PluginsPage() {
                       )}
                     </div>
 
-                    <div className="w-full md:w-56 shrink-0">
-                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    {/* 价格列。2026-09-28：必须用 flex-nowrap 把「限时特惠」死死锁在同一行；
+                        flex-wrap 会导致价格字符串一宽（如 ¥39.90 → ¥9.90）标签就掉到下一行，
+                        造成不同插件卡片样式不一致。md:w-64 给宽字符/大数字留足余量。 */}
+                    <div className="w-full md:w-64 shrink-0">
+                      <div className="flex flex-nowrap items-baseline gap-x-1.5">
                         {!!strike && (
-                          <span className="text-sm text-neutral-400 line-through">
+                          <span className="text-sm text-neutral-400 line-through min-w-0">
                             ¥{yuan(strike)}
                           </span>
                         )}
-                        <span className="text-2xl font-extrabold text-neutral-900">
+                        <span className="text-2xl font-extrabold text-neutral-900 shrink-0">
                           ¥{yuan(payCents(p))}
                         </span>
-                        <span className="text-sm text-neutral-400">{t('plugins.perMonth')}</span>
+                        <span className="text-sm text-neutral-400 shrink-0">{t('plugins.perMonth')}</span>
                         {!!strike && (
-                          <span className="rounded-md bg-red-50 border border-red-200 px-2 py-0.5 text-[11px] font-semibold text-red-600">
+                          <span className="rounded-md bg-red-50 border border-red-200 px-1.5 py-0.5 text-[10px] font-semibold text-red-600 shrink-0 whitespace-nowrap">
                             {t('plugins.promoBadge')}
                           </span>
                         )}
