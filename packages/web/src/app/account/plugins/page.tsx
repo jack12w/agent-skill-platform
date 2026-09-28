@@ -69,6 +69,20 @@ function apiFetch(url: string, init: RequestInit = {}) {
   });
 }
 
+/**
+ * 「取消订阅」按钮的总开关。
+ *
+ * 2026-09-28 置 false（隐藏）：平台**目前没有自动续费功能**，这个按钮挂在月度订阅卡上，
+ * 看起来就像「关掉自动续费」的开关，用户会拿它当续费设置来解读，实际却只是一次
+ * `cancel()`（状态标成 cancelled + 权益保留到 expires_at）。既然没有自动续费可关，
+ * 留着这个入口只会制造误解。
+ *
+ * 置回 true 即恢复显示，不需要动 `handleCancel` 或后端 `cancel()`。
+ * 注意：隐藏后 `cancelled` 状态变得只能由后台/脚本写入，页面上的
+ * `cancelledHint`（「已停止续订，权益保留至 X」）与状态徽标仍会正常渲染。
+ */
+const SHOW_CANCEL_BUTTON = false;
+
 export default function MyPluginsPage() {
   const { t } = useTranslation();
   const [subs, setSubs] = useState<MySub[]>([]);
@@ -595,8 +609,9 @@ export default function MyPluginsPage() {
                     {valid ? t('plugins.renew') : t('plugins.resubscribe')}
                   </button>
                   {/* cancelled 后不再显示「取消订阅」：再点一次毫无意义，只会让用户
-                      以为上次没生效。想恢复就点「续费」（会顺延，不吞剩余天数）。 */}
-                  {s.status === 'active' && valid && (
+                      以为上次没生效。想恢复就点「续费」（会顺延，不吞剩余天数）。
+                      另外受 SHOW_CANCEL_BUTTON 总开关控制（见文件顶部说明），当前为隐藏。 */}
+                  {SHOW_CANCEL_BUTTON && s.status === 'active' && valid && (
                     <button
                       onClick={() => handleCancel(s.plugin_id)}
                       disabled={busyId === s.plugin_id}

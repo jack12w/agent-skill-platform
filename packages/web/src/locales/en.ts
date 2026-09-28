@@ -859,7 +859,8 @@ const en = {
     s4Title: '4. Refund Policy',
     s4Body: 'Digital goods are non-refundable once delivered, except for quality issues. For anomalies such as duplicate charges or not receiving the item, file a dispute in "My Orders" or contact support.',
     s5Title: '5. Subscription Period & Renewal',
-    s5Body: 'A membership is effective for the monthly / quarterly / yearly tier you choose, and the free-download benefit stops automatically at expiry. The platform does not auto-renew by default; to continue, re-subscribe after expiry.',
+    /* 2026-09-28: “does not auto-renew by default” implied an opt-in toggle. There is none. */
+    s5Body: 'A membership is effective for the monthly / quarterly / yearly tier you choose, and the free-download benefit stops automatically at expiry. There is no auto-renewal; to continue, re-subscribe after expiry.',
     s6Title: '6. Creator Earnings & Withdrawal',
     s6Body: 'A creator\'s one-time shares and membership fees, after commission deduction and the settlement hold, can be withdrawn to WeChat in "My Earnings"; the minimum withdrawal is set by the platform.',
     s7Title: '7. Liability & Disputes',
@@ -886,8 +887,9 @@ const en = {
     cancelConfirm: 'Cancel this plugin subscription? You can keep using it until the current period ends (no refund).',
     cancelled: 'Cancelled',
     cancelledUntil: 'Ends at period end',
-    cancelledHint: 'Auto-renewal is off; your access is kept until {date}. Click Renew to extend it.',
-    cancelDone: 'Set to end at period close; access kept until {date}.',
+    /* 2026-09-28：no auto-renewal exists, so “Auto-renewal is off” was inaccurate. */
+    cancelledHint: 'Renewal stopped; your access is kept until {date}. Click Renew to extend it.',
+    cancelDone: 'Renewal stopped; access kept until {date}.',
     cancelFailed: 'Cancel failed. Check your network and retry (your subscription is unchanged).',
     expired: 'Expired',
     active: 'Active',
@@ -989,13 +991,13 @@ const en = {
       ov1p3: 'Growth console / ranking: analyze best sellers and collect hot / best / top-ranking lists',
       ov2Name: 'RFQ lead mining',
       ov2Desc: 'Full capture of RFQ detail and list pages, exported for quotation plans and market-demand analysis.',
-      ov2p1: 'Real-time RFQ list capture, export straight into your follow-up sheet',
+      ov2p1: 'Real-time RFQ list capture, export straight into your follow-up sheet, then pick it up with [RFQ Market Analysis](https://skills.rehomi.com/skills/40226de1-fff7-4877-a519-be079ef74cae) and [RFQ Quoting](https://skills.rehomi.com/skills/2386401e-8444-4638-951b-228edcf71eb0)',
       ov2p2: 'Queue multiple keywords — one run after another',
       ov2p3: 'Failures are flagged automatically and can be re-run individually',
       ov3Name: 'Public-sea buyers + search sourcing',
       ov3Desc: 'Bulk-extract public-sea buyers and export CSV; use search-page readouts to aid sourcing decisions.',
       ov3p1: 'Public-sea page: reuses the page’s own internal API to pull the full set at once',
-      ov3p2: 'Public-sea page: field-level CSV export, ready to import into your CRM',
+      ov3p2: 'Public-sea page: field-level CSV export, ready to import into your CRM, then pick it up with [Public-Sea Customer Recall](https://skills.rehomi.com/skills/78454041-ed10-4140-9d40-0641d37f5440)',
       ov3p3: 'Search page: product count, supplier count and suggestion words, no login required',
 
       fTitle: 'What gets collected is what you export',
@@ -1030,7 +1032,10 @@ const en = {
       gPaid4: 'No local-cache limits on collected data, export any time',
 
       pTitle: 'Pricing & subscription',
-      pLead: 'Monthly, cancel any time from “My subscriptions”; access continues to the period end and then stops renewing.',
+      /* No auto-renew / periodic WeChat deduction is implemented. PluginSubscription only has
+         status + expires_at; after expiry it simply becomes expired. So we must not say “stops
+         renewing” — we say “manual renewal required”. */
+      pLead: 'Monthly purchase; after expiry you need to renew manually. Paid periods already used cannot be refunded.',
       pNote: 'Each plugin is priced separately; subscribing and downloading are independent.',
 
       sTitle: 'Three steps to start',
@@ -1043,10 +1048,13 @@ const en = {
       s3Desc: 'The work bar detects the page type for you; set the range, hit “Collect”, then export CSV / Excel.',
 
       qTitle: 'FAQ',
+      /* 与 zh 对齐：安装方法排第一。文案里含 [文字](url) 标记，渲染走 RichText。 */
+      q5q: 'How do I install the extension?',
+      q5a: 'Download the .zip from the “Download installer” button at the top and extract it to a folder. Then open chrome://extensions, tick “Developer mode” in the top-right corner, choose “Load unpacked” and select the extracted folder. Once installed, open any international-station page, click “Login” on the work bar and confirm the code on the web page to activate. If Chrome says the same extension already exists, uninstall the old one first.',
       q1q: 'Can I use it without a subscription?',
       q1a: 'Yes. Collecting on listing / growth / ranking / RFQ / public-sea pages works, and search-page readouts are free. Export, media download and detail-page metrics unlock after subscribing. Data you already collected is kept and can be exported later.',
       q2q: 'How does billing work, and can I cancel?',
-      q2a: 'Monthly, cancel any time. After cancelling you keep access until the current period ends and it stops auto-renewing; the current paid period is not refunded.',
+      q2a: 'Monthly purchase; after expiry you need to renew manually. Paid periods already used cannot be refunded.',
       q4q: 'Do I pay again on a new computer?',
       q4a: 'No. The subscription is tied to your account — log in and activate once on the new device to reuse it.',
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import useTranslation from '../../hooks/useTranslation';
 import PluginCheckoutModal from '../components/PluginCheckoutModal';
+import RichText from '../components/RichText';
 
 interface Plugin {
   id: string;
@@ -210,6 +211,8 @@ export default function PluginsPage() {
   ];
 
   const faqs = [
+    // 安装放第一（入门第一问）：见 locales/zh.ts 里 q5q 的注释
+    [t('plugins.page.q5q'), t('plugins.page.q5a')],
     [t('plugins.page.q1q'), t('plugins.page.q1a')],
     [t('plugins.page.q2q'), t('plugins.page.q2a')],
     [t('plugins.page.q4q'), t('plugins.page.q4a')],
@@ -307,7 +310,7 @@ export default function PluginsPage() {
                   {b.pts.map((p) => (
                     <li key={p} className="flex gap-2">
                       <span className="text-brand-600 font-bold">✓</span>
-                      <span>{p}</span>
+                      <span><RichText text={p} /></span>
                     </li>
                   ))}
                 </ul>
@@ -464,24 +467,22 @@ export default function PluginsPage() {
                     </div>
 
                     <div className="w-full md:w-56 shrink-0">
-                      <div className="flex items-end">
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                         {!!strike && (
-                          <span className="mr-2 text-sm text-neutral-400 line-through">
+                          <span className="text-sm text-neutral-400 line-through">
                             ¥{yuan(strike)}
                           </span>
                         )}
                         <span className="text-2xl font-extrabold text-neutral-900">
                           ¥{yuan(payCents(p))}
                         </span>
-                        <span className="text-sm text-neutral-400 ml-1">{t('plugins.perMonth')}</span>
-                      </div>
-                      {!!strike && (
-                        <div className="mt-1">
+                        <span className="text-sm text-neutral-400">{t('plugins.perMonth')}</span>
+                        {!!strike && (
                           <span className="rounded-md bg-red-50 border border-red-200 px-2 py-0.5 text-[11px] font-semibold text-red-600">
                             {t('plugins.promoBadge')}
                           </span>
-                        </div>
-                      )}
+                        )}
+                      </div>
                       <div className="mt-3 flex gap-3">
                         <button
                           onClick={() => handleDownload(p)}
@@ -559,7 +560,7 @@ export default function PluginsPage() {
                 </summary>
                 <p className="mt-3 text-sm text-neutral-600 leading-relaxed">
                   <span className="mr-2 font-semibold text-brand-600">A</span>
-                  {a}
+                  <RichText text={a} />
                 </p>
               </details>
             ))}
