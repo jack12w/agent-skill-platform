@@ -1035,7 +1035,7 @@ const en = {
       /* No auto-renew / periodic WeChat deduction is implemented. PluginSubscription only has
          status + expires_at; after expiry it simply becomes expired. So we must not say “stops
          renewing” — we say “manual renewal required”. */
-      pLead: 'Monthly purchase; after expiry you need to renew manually. Paid periods already used cannot be refunded.',
+      pLead: 'Monthly purchase; after expiry you need to renew manually. The current paid subscription cannot be cancelled.',
       pNote: 'Each plugin is priced separately; subscribing and downloading are independent.',
 
       sTitle: 'Three steps to start',
@@ -1054,7 +1054,7 @@ const en = {
       q1q: 'Can I use it without a subscription?',
       q1a: 'Yes. Collecting on listing / growth / ranking / RFQ / public-sea pages works, and search-page readouts are free. Export, media download and detail-page metrics unlock after subscribing. Data you already collected is kept and can be exported later.',
       q2q: 'How does billing work, and can I cancel?',
-      q2a: 'Monthly purchase; after expiry you need to renew manually. Paid periods already used cannot be refunded.',
+      q2a: 'Monthly purchase; after expiry you need to renew manually. The current paid subscription cannot be cancelled.',
       q4q: 'Do I pay again on a new computer?',
       q4a: 'No. The subscription is tied to your account — log in and activate once on the new device to reuse it.',
 
