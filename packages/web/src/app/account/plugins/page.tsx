@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import AccountNav from '../../components/AccountNav';
 import PluginCheckoutModal from '../../components/PluginCheckoutModal';
+import AiKeysPanel from './AiKeysPanel';
 import useTranslation from '../../../hooks/useTranslation';
 
 interface Plugin {
@@ -92,6 +93,9 @@ export default function MyPluginsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [payInfo, setPayInfo] = useState<{ id: string; name?: string; price: number } | null>(null);
+
+  // 子 TAB：我的插件订阅 | 密钥管理（T302：AI 取数密钥，AiKeysPanel 自包含）
+  const [view, setView] = useState<'subs' | 'keys'>('subs');
 
   // 设备面板：按插件懒加载，展开时才请求
   const [deviceOpen, setDeviceOpen] = useState<string | null>(null);
@@ -354,7 +358,29 @@ export default function MyPluginsPage() {
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
       <AccountNav />
       <h1 className="text-2xl font-bold mb-1">{t('plugins.myTitle')}</h1>
-      <p className="text-sm text-neutral-500 mb-6">{t('plugins.myHint')}</p>
+      <p className="text-sm text-neutral-500 mb-4">{t('plugins.myHint')}</p>
+
+      {/* 子 TAB（默认「我的插件订阅」，与改版前完全一致） */}
+      <div className="flex gap-1 mb-6 border-b border-neutral-200">
+        {(
+          [
+            ['subs', t('plugins.tabSubs')],
+            ['keys', t('plugins.tabKeys')],
+          ] as const
+        ).map(([v, text]) => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={`text-sm px-4 py-2 -mb-px border-b-2 transition-colors ${
+              view === v
+                ? 'border-brand-600 text-brand-600 font-semibold'
+                : 'border-transparent text-neutral-500 hover:text-neutral-800'
+            }`}
+          >
+            {text}
+          </button>
+        ))}
+      </div>
 
       {error && (
         <div className="mb-4 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center justify-between gap-3">
@@ -378,7 +404,8 @@ export default function MyPluginsPage() {
         </div>
       )}
 
-      {!getUserId() ? (
+      {view === 'subs' &&
+      (!getUserId() ? (
         <div className="text-sm text-neutral-400">
           {t('plugins.needLogin')}
           <Link href="/auth" className="text-brand-600 hover:underline">
@@ -625,7 +652,9 @@ export default function MyPluginsPage() {
             );
           })}
         </div>
-      )}
+      ))}
+
+      {view === 'keys' && <AiKeysPanel onNotice={setNotice} />}
 
       {payInfo && (
         <PluginCheckoutModal
