@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import useTranslation from '../../../hooks/useTranslation';
 import Modal from '../../components/Modal';
 import SubscriptionsPanel from './SubscriptionsPanel';
+import AiDataPanel from './AiDataPanel';
 
 interface PluginItem {
   id: string;
@@ -102,8 +103,8 @@ export default function HubPluginsPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [uploading, setUploading] = useState(false);
   const [uploadErr, setUploadErr] = useState('');
-  /** 顶部 tab：插件管理 / 订阅管理（订阅面板复用同一份插件列表，不再重复请求） */
-  const [tab, setTab] = useState<'plugins' | 'subs'>('plugins');
+  /** 顶部 tab：插件管理 / 订阅管理 / 插件数据（订阅面板复用同一份插件列表，不再重复请求） */
+  const [tab, setTab] = useState<'plugins' | 'subs' | 'data'>('plugins');
 
   const fetchData = useCallback(async () => {
     const token = getToken();
@@ -319,6 +320,7 @@ export default function HubPluginsPage() {
           [
             ['plugins', t('admin.tabPlugins')],
             ['subs', t('admin.tabSubscriptions')],
+            ['data', t('admin.tabData')],
           ] as const
         ).map(([k, label]) => (
           <button
@@ -334,6 +336,12 @@ export default function HubPluginsPage() {
           </button>
         ))}
       </div>
+
+      {tab === 'data' && (
+        <div className="mt-4">
+          <AiDataPanel />
+        </div>
+      )}
 
       {tab === 'subs' && (
         <div className="mt-4">
