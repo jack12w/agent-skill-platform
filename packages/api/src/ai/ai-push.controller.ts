@@ -56,7 +56,10 @@ const envelopeSchema = z
     source: z.string().max(32).optional().default(''),
     extVer: z.string().max(32).optional().default(''),
     range: z.number().int().min(1).max(366).optional().default(7),
-    collectedAt: z.string().min(1),
+    collectedAt: z
+      .string()
+      .min(1)
+      .refine((v) => !Number.isNaN(new Date(v).getTime()), { message: 'collectedAt 不是合法日期' }),
     dates: z
       .object({ s: z.string(), e: z.string() })
       .partial()
@@ -158,7 +161,20 @@ export class AiPushController {
       fail(400, { ok: false, code: 'UNKNOWN_TYPE', error: `type=${env.type} 未注册` });
     }
 
-    /* ⑥ count 与 records 对账 + 逐条键字段校验（visitors 严格；未冻结类型宽松） */
+    /* ⑥ 限流 5 次/时/user·type：按 push_log 全量计数（含失败），把推送风暴掐在落库前。
+       （复审 P1-2：必须放在逐条 records 校验之前——zod 循环最重可到 5000 条，
+        先限流再解析，畸形大 payload 烧不动 CPU） */
+    const recent = await this.dataSource.query(
+      `SELECT COUNT(*)::int AS n FROM ai_push_log
+       WHERE user_id = $1 AND type = $2 AND created_at > now() - interval '1 hour'`,
+      [device.user_id, env.type],
+    );
+    if ((recent[0]?.n ?? 0) >= PUSH_RATE_LIMIT_PER_HOUR) {
+      await this.log(device.user_id, device.plugin_id, 'rejected', env.type, bytes, 'RATE_LIMITED');
+      fail(429, { ok: false, code: 'RATE_LIMITED', error: '推送频率超限（5 次/小时/数据类型），请稍后重试' });
+    }
+
+    /* ⑦ count 与 records 对账 + 逐条键字段校验（visitors 严格；未冻结类型宽松） */
     if (env.count !== env.records.length) {
       await this.log(device.user_id, device.plugin_id, 'rejected', env.type, bytes, 'VALIDATION');
       fail(400, { ok: false, code: 'VALIDATION', error: `count=${env.count} 与 records.length=${env.records.length} 不一致` });
@@ -171,17 +187,6 @@ export class AiPushController {
         await this.log(device.user_id, device.plugin_id, 'rejected', env.type, bytes, 'VALIDATION');
         fail(400, { ok: false, code: 'VALIDATION', error: p });
       }
-    }
-
-    /* ⑦ 限流 5 次/时/user·type：按 push_log 全量计数（含失败），把推送风暴掐在落库前 */
-    const recent = await this.dataSource.query(
-      `SELECT COUNT(*)::int AS n FROM ai_push_log
-       WHERE user_id = $1 AND type = $2 AND created_at > now() - interval '1 hour'`,
-      [device.user_id, env.type],
-    );
-    if ((recent[0]?.n ?? 0) >= PUSH_RATE_LIMIT_PER_HOUR) {
-      await this.log(device.user_id, device.plugin_id, 'rejected', env.type, bytes, 'RATE_LIMITED');
-      fail(429, { ok: false, code: 'RATE_LIMITED', error: '推送频率超限（5 次/小时/数据类型），请稍后重试' });
     }
 
     /* ⑧ 原子幂等落库：ON CONFLICT DO NOTHING，命中唯一键 = 已存在 → deduped（绝不 409） */

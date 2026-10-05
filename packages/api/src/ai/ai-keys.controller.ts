@@ -5,6 +5,7 @@ import {
   Get,
   Header,
   HttpCode,
+  HttpException,
   Param,
   Post,
   Req,
@@ -33,6 +34,8 @@ import { AiApiKey } from './ai-api-key.entity';
  *   · 删除按 (id, user_id) 双条件，跨用户不可吊销他人密钥；重复删除幂等返回 ok。
  */
 const KEY_PREFIX = 'ai_sk_';
+/** 单用户有效密钥上限（复审 P1-1：防无限生成撑表/扩大凭据面） */
+const MAX_ACTIVE_KEYS = 10;
 
 @Controller('ai')
 @UseGuards(AuthGuard)
@@ -50,6 +53,15 @@ export class AiKeysController {
   @Header('Cache-Control', 'no-store')
   async create(@Req() req: Request, @Body() body: unknown) {
     const userId = this.uid(req);
+    const active = await this.keyRepo.count({
+      where: { user_id: userId, revoked_at: IsNull() as any },
+    });
+    if (active >= MAX_ACTIVE_KEYS) {
+      throw new HttpException(
+        { ok: false, code: 'KEY_LIMIT', error: `有效密钥最多 ${MAX_ACTIVE_KEYS} 个，请先吊销不用的密钥` },
+        400,
+      );
+    }
     const label = String((body as any)?.label || '').trim().slice(0, 64);
     const secret = KEY_PREFIX + crypto.randomBytes(18).toString('base64url');
     const hash = crypto.createHash('sha256').update(secret).digest('hex');
