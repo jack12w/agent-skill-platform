@@ -18,6 +18,10 @@ export class AiApiKey {
   @Column({ type: 'varchar', length: 64, default: '' })
   label: string;
 
+  /** 明文密钥的尾 4 位（0027）：界面掩码展示用 ai_sk_••••Ab3d；不含可猜出全文的信息 */
+  @Column({ type: 'varchar', length: 12, default: '' })
+  key_hint: string;
+
   @Column({ type: 'timestamptz', default: () => 'now()' })
   created_at: Date;
 
