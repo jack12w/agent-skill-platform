@@ -1,14 +1,21 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiAdminController } from './ai-admin.controller';
+import { AiPushController } from './ai-push.controller';
+import { Plugin, PluginSubscription } from '../plugins/plugin.entity';
+import { PluginDevice } from '../plugins/plugin-auth.entity';
 
 /**
  * AI 数据服务模块（方案 v2.1 §7/§10）。
  *
- * 首期只上管理看板聚合接口（只读）；push/query/keys 业务接口由 T105/T301 补入本模块。
- * DataSource 由 TypeOrmModule.forRoot 全局提供，此处直接注入即可；
- * 实体经 app.module 的 entities glob（所有 .entity.ts）自动注册。
+ * 已上线：管理看板聚合接口（T404，只读）+ push 推送接口（T105）。
+ * 待补：query/status/keys（T301）、MCP server（T303）。
+ * DataSource 由 TypeOrmModule.forRoot 全局提供；实体经 app.module 的 entities glob 自动注册。
+ * PluginDevice/PluginSubscription/Plugin 仓库用于 push 接口的令牌校验与订阅判定
+ * （复用 plugins 模块的 util 口径，但不注入 plugins 的 service —— 避免跨模块 DI 纠缠）。
  */
 @Module({
-  controllers: [AiAdminController],
+  imports: [TypeOrmModule.forFeature([Plugin, PluginSubscription, PluginDevice])],
+  controllers: [AiAdminController, AiPushController],
 })
 export class AiModule {}
