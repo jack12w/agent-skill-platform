@@ -1,4 +1,4 @@
-import { All, Controller, Header, Headers, HttpException, Query, Req, Res } from '@nestjs/common';
+import { All, Controller, Headers, HttpException, Query, Req, Res } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import * as crypto from 'node:crypto';
@@ -30,7 +30,7 @@ import { AiQueryService } from './ai-query.service';
  *   · 密钥只存 sha256（0026 同口径）；每个 ai_query 调用都过 service 全套校验
  *     （订阅 402 / 限流 60 次时 / usage_event 留痕），MCP 不是旁路，只是另一个入口；
  *   · tools/list 也要求有效密钥（不给公网开放工具枚举）；
- *   · 响应 no-store（9-27 HTTP 缓存事故纪律）。
+ *   · 响应 no-store 由 handler 显式 setHeader（@Res() 手写响应模式下 @Header 装饰器不保证生效）。
  */
 
 /** JSON-RPC 层错误（区别于业务 HttpException：直接以 error 帧回给客户端） */
@@ -116,13 +116,14 @@ export class AiMcpController {
   ) {}
 
   @All('mcp')
-  @Header('Cache-Control', 'no-store')
   async mcp(
     @Req() req: Request & { body?: unknown },
     @Res() res: Response,
     @Headers('authorization') auth: string,
     @Query('key') keyParam: string,
   ): Promise<void> {
+    /* no-store 显式设置（不用 @Header 装饰器：@Res() 手写响应模式下装饰器不保证生效） */
+    res.setHeader('Cache-Control', 'no-store');
     /* streamable HTTP 只走 POST；GET（SSE 探测）明确 405 */
     if (req.method !== 'POST') {
       res
@@ -135,12 +136,14 @@ export class AiMcpController {
     const m = /^Bearer\s+(ai_sk_[A-Za-z0-9_-]+)$/.exec(String(auth || '').trim());
     const secret = m ? m[1] : String(keyParam || '').trim();
     if (!/^ai_sk_[A-Za-z0-9_-]+$/.test(secret)) {
+      await this.audit401();
       res.status(401).json({ ok: false, code: 'UNAUTHORIZED' });
       return;
     }
     const hash = crypto.createHash('sha256').update(secret).digest('hex');
     const key = await this.keyRepo.findOne({ where: { key_hash: hash } });
     if (!key || key.revoked_at) {
+      await this.audit401();
       res.status(401).json({ ok: false, code: 'UNAUTHORIZED' });
       return;
     }
@@ -242,5 +245,19 @@ export class AiMcpController {
       id,
       ...(error ? { error } : { result }),
     });
+  }
+
+  /** MCP 层 401 留痕（尽力而为，失败不影响响应）。
+   *  ⚠️ ai_usage_event.user_id/type 为 NOT NULL（0026）——必须用哨兵值，插 NULL 会静默失败：
+   *  user_id 用 nil-uuid、type 用 '__unauth__'（REST 路径 service 里 usage(null,…) 同样受此限制）。 */
+  private async audit401(): Promise<void> {
+    try {
+      await this.dataSource.query(
+        `INSERT INTO ai_usage_event (user_id, api_key_id, type, range_days, rows_returned, status, code)
+         VALUES ('00000000-0000-0000-0000-000000000000', NULL, '__unauth__', NULL, 0, 'rejected', 'UNAUTHORIZED')`,
+      );
+    } catch (e) {
+      /* 留痕失败不影响主流程 */
+    }
   }
 }
