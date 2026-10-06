@@ -36,6 +36,11 @@ import { isSubscriptionEntitled } from '../plugins/plugin-auth.util';
  *   · vendor = 站点线（alibaba/1688），缺省 'alibaba'，与订阅判定用的 plugins.slug 解耦；
  *   · label 取自 ai_type_registry（管理后台维护），未注册 type → 400 UNKNOWN_TYPE。
  *
+ * 0029 语义（词级去重类型，注册表 dedupe_key 非空，如 search='keyword'）：
+ *   · 不分快照——返回该类型全部词的最新数据（每词一行，重复词已被 push 原地更新）；
+ *     collectedAt = 最近一次更新的词时间；每条 record 附 _updatedAt（该词自己的更新时间）；
+ *   · snapshotId 不适用 → 400；分页走 SQL LIMIT/OFFSET（词数可上万，不整表载入内存）。
+ *
  * 安全要点：
  *   · 密钥只存 sha256（0026 key_hash 唯一索引定位），吊销判空 IsNull()（禁裸 null where）；
  *   · usage_event 成功+失败全量留痕（status/code）——密钥被扫、权限试探事后可查，也是分账预留；
@@ -48,6 +53,8 @@ const AI_VENDOR_SLUG = 'alibaba-toolkit';
 const QUERY_MAX_PAGE_SIZE = 200;
 /** 全量模式保护：合并后 records 序列化体积上限（超限 413 提示分页） */
 const QUERY_MAX_FULL_BYTES = 8 * 1024 * 1024;
+/** 词级去重类型全量模式的行数上限（8MB 之外的内存护栏） */
+const QUERY_MAX_FULL_ROWS = 10000;
 
 function fail(status: number, body: Record<string, unknown>): never {
   throw new HttpException(body, status);
@@ -104,10 +111,10 @@ export class AiQueryController {
     }
     const userId = key.user_id;
 
-    /* ② type 注册表校验（label 一并取出；enabled 只拦推送，不拦查询） */
+    /* ② type 注册表校验（label / dedupe_key 一并取出；enabled 只拦推送，不拦查询） */
     const t = String(type || '').trim();
-    const regRows: Array<{ label: string }> = await this.dataSource.query(
-      `SELECT label FROM ai_type_registry WHERE type = $1`,
+    const regRows: Array<{ label: string; dedupe_key: string }> = await this.dataSource.query(
+      `SELECT label, dedupe_key FROM ai_type_registry WHERE type = $1`,
       [t],
     );
     if (!regRows[0]) {
@@ -170,7 +177,7 @@ export class AiQueryController {
       pageSizeNum = ps;
     }
 
-    /* ⑥ 定位逻辑快照：snapshotId（校验归属）或最新 collected_at；取整组批次行按 seq 排序 */
+    /* ⑥ 基础过滤条件（快照/词级两种模式共用）：user + type + vendor [+ range] */
     const conds = ['user_id = $1', 'type = $2', 'vendor_slug = $3'];
     const params: unknown[] = [userId, t, v];
     if (rangeNum !== null) {
@@ -178,6 +185,78 @@ export class AiQueryController {
       conds.push(`range_days = $${params.length}`);
     }
     const baseWhere = conds.join(' AND ');
+
+    /* ⑤b 词级去重类型（0029）：不分快照，返回全部词的最新数据（每 record 附 _updatedAt）。
+       分页在 SQL 层做（词数可上万，不整表载入内存）；全量模式仍有 8MB 保护。 */
+    if (regRows[0].dedupe_key) {
+      if (String(snapshotId || '').trim()) {
+        await this.usage(userId, key.id, t, rangeNum, 0, 'rejected', 'VALIDATION');
+        fail(400, {
+          ok: false,
+          code: 'VALIDATION',
+          error: `type=${t} 为按词去重类型，无快照概念，不支持 snapshotId（直接分页取全部词）`,
+        });
+      }
+      const cnt: Array<{ n: number }> = await this.dataSource.query(
+        `SELECT COUNT(*)::int AS n FROM ai_dataset WHERE ${baseWhere}`,
+        params,
+      );
+      const totalWords = cnt[0]?.n ?? 0;
+      if (!totalWords) {
+        await this.usage(userId, key.id, t, rangeNum, 0, 'rejected', 'NOT_FOUND');
+        fail(404, { ok: false, code: 'NOT_FOUND', error: `type=${t} 尚无数据（等插件推送后可查）` });
+      }
+      const latest: Array<{ collected_at: Date | string }> = await this.dataSource.query(
+        `SELECT MAX(collected_at) AS collected_at FROM ai_dataset WHERE ${baseWhere}`,
+        params,
+      );
+      const flatParams: unknown[] = [...params];
+      let flatSql = `SELECT collected_at, payload FROM ai_dataset WHERE ${baseWhere} ORDER BY collected_at DESC, id DESC`;
+      if (pageNum !== null) {
+        flatParams.push(pageSizeNum, (pageNum - 1) * pageSizeNum);
+        flatSql += ` LIMIT $${flatParams.length - 1} OFFSET $${flatParams.length}`;
+      } else {
+        flatParams.push(QUERY_MAX_FULL_ROWS);
+        flatSql += ` LIMIT $${flatParams.length}`;
+      }
+      const flatRows: Array<{ collected_at: Date | string; payload: { records?: unknown[] } }> =
+        await this.dataSource.query(flatSql, flatParams);
+      const records: unknown[] = flatRows.map((r) => {
+        const rec = Array.isArray(r.payload?.records) ? r.payload.records[0] : {};
+        return { ...(rec as Record<string, unknown>), _updatedAt: new Date(r.collected_at).toISOString() };
+      });
+      if (pageNum === null) {
+        const bytes = Buffer.byteLength(JSON.stringify(records));
+        if (bytes > QUERY_MAX_FULL_BYTES) {
+          await this.usage(userId, key.id, t, rangeNum, 0, 'rejected', 'PAYLOAD_TOO_LARGE');
+          fail(413, {
+            ok: false,
+            code: 'PAYLOAD_TOO_LARGE',
+            error: `全量返回 ${(bytes / 1024 / 1024).toFixed(1)}MB 超限，请改用 page/pageSize 分页`,
+          });
+        }
+      }
+      const rangeDaysFlat = rangeNum ?? 1;
+      await this.usage(userId, key.id, t, rangeDaysFlat, records.length, 'ok', '');
+      return {
+        ok: true,
+        schemaVer: 1,
+        type: t,
+        label,
+        vendor: v,
+        rangeDays: rangeDaysFlat,
+        collectedAt: latest[0]?.collected_at ? new Date(latest[0].collected_at).toISOString() : null,
+        dates: null,
+        count: totalWords,
+        total: records.length,
+        batchTotal: 1,
+        batches: 1,
+        ...(pageNum !== null ? { page: pageNum, pageSize: pageSizeNum } : {}),
+        records,
+      };
+    }
+
+    /* ⑥ 定位逻辑快照：snapshotId（校验归属）或最新 collected_at；取整组批次行按 seq 排序 */
     const sid = String(snapshotId || '').trim();
     let collectedAtStr: string;
     if (sid) {

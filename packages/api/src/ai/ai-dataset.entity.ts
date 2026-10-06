@@ -53,6 +53,14 @@ export class AiDataset {
   @Column({ type: 'integer', default: 1 })
   seq: number;
 
+  /**
+   * 记录级去重值（0029；仅去重类型非空，如 search 的关键词）：
+   * 非空时唯一索引 uq_ai_dataset_dedupe 生效，重复词 upsert 原地更新而非新增快照；
+   * NULL = 普通快照行（0028 唯一键语义）。
+   */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  dedupe_val: string | null;
+
   @Column({ type: 'jsonb' })
   payload: unknown;
 

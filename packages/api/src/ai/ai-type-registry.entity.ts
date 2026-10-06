@@ -28,6 +28,14 @@ export class AiTypeRegistry {
   @Column({ type: 'boolean', default: true })
   enabled: boolean;
 
+  /**
+   * 记录级去重键（0029）：非空 = 该类型按词 upsert——push 逐条记录取
+   * records[i][dedupe_key] 写 ai_dataset.dedupe_val，重复词原地更新（search='keyword'）；
+   * '' = 快照语义（默认）。
+   */
+  @Column({ type: 'varchar', length: 32, default: '' })
+  dedupe_key: string;
+
   @CreateDateColumn()
   created_at: Date;
 }

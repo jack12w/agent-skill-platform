@@ -16,6 +16,7 @@ interface TypeRow {
   label: string;
   strict: boolean;
   enabled: boolean;
+  dedupe_key: string;
   created_at: string | null;
   datasets: number;
   records: number;
@@ -56,6 +57,7 @@ export default function AiTypesPanel() {
   const [err, setErr] = useState('');
   const [newType, setNewType] = useState('');
   const [newLabel, setNewLabel] = useState('');
+  const [newDedupe, setNewDedupe] = useState('');
   const [busy, setBusy] = useState('');
 
   const load = useCallback(async () => {
@@ -99,11 +101,12 @@ export default function AiTypesPanel() {
       const res = await fetch('/api/admin/plugins/ai-data/types', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ type: ty, label: newLabel.trim() }),
+        body: JSON.stringify({ type: ty, label: newLabel.trim(), dedupeKey: newDedupe.trim() }),
       });
       if (!res.ok) throw new Error(await errText(res));
       setNewType('');
       setNewLabel('');
+      setNewDedupe('');
       await load();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -198,6 +201,12 @@ export default function AiTypesPanel() {
           value={newLabel}
           onChange={(e) => setNewLabel(e.target.value)}
         />
+        <input
+          className={`${field} w-40`}
+          placeholder={t('admin.aiTypeNewDedupe')}
+          value={newDedupe}
+          onChange={(e) => setNewDedupe(e.target.value)}
+        />
         <button
           onClick={add}
           disabled={busy === 'add' || !newType.trim()}
@@ -227,6 +236,7 @@ export default function AiTypesPanel() {
               <tr>
                 <th className={th}>{t('admin.aiTypeColType')}</th>
                 <th className={th}>{t('admin.aiTypeColLabel')}</th>
+                <th className={th}>{t('admin.aiTypeColDedupe')}</th>
                 <th className={th}>{t('admin.aiTypeColStrict')}</th>
                 <th className={th}>{t('admin.aiTypeColStatus')}</th>
                 <th className={th}>{t('admin.aiThDatasets')}</th>
@@ -242,6 +252,13 @@ export default function AiTypesPanel() {
                     <code className="text-xs">{r.type}</code>
                   </td>
                   <td className={td}>{r.label || '—'}</td>
+                  <td className={td}>
+                    {r.dedupe_key ? (
+                      <code className="text-xs text-brand-700">{r.dedupe_key}</code>
+                    ) : (
+                      <span className="text-neutral-300">—</span>
+                    )}
+                  </td>
                   <td className={td}>
                     {r.strict ? (
                       <span className="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700">

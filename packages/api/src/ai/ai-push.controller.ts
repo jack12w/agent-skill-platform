@@ -34,6 +34,9 @@ import { hashSecret, isSubscriptionEntitled } from '../plugins/plugin-auth.util'
  *     未注册 → 400；enabled=false → 400 TYPE_DISABLED（拒新推，历史可查）；
  *   · 分批推送：超 5000 条/5MB 由插件切片，信封带 seq（1 起）/batchTotal，同一 collectedAt 多行共存；
  *     唯一键 (user_id, vendor_slug, type, range_days, collected_at, seq)，同批重推 deduped；
+ *   · 词级去重类型（0029，注册表 dedupe_key 非空，如 search='keyword'）：不看 seq/collectedAt
+ *     快照语义——逐条记录取 records[i][dedupe_key] 作业务身份 upsert，重复词原地更新数据
+ *     （部分唯一索引 uq_ai_dataset_dedupe），响应 {accepted=新词数, updated=更新词数}；
  *   · vendorSlug = 站点线（alibaba/1688），由插件按页面 URL 主域推导；''/'alibaba-toolkit'（老值）
  *     服务端归一 'alibaba'，与订阅判定用的 plugins.slug 解耦；
  *   · 信封未知字段一律忽略（passthrough），插件先发版加字段、后端后升级互不掐死；
@@ -118,7 +121,7 @@ export class AiPushController {
   async push(
     @Headers('x-asc-token') rawToken: string,
     @Body() body: unknown,
-  ): Promise<{ ok: true; accepted: number; deduped: number }> {
+  ): Promise<{ ok: true; accepted: number; deduped: number; updated?: number }> {
     /* ① 令牌校验（设备令牌，与 entitlement 同口径：sha256 查找 + 吊销 + 90 天绝对有效期） */
     const token = String(rawToken || '').trim();
     if (!token) fail(401, { ok: false, code: 'REAUTH' });
@@ -173,10 +176,10 @@ export class AiPushController {
       await this.log(device.user_id, device.plugin_id, 'rejected', env.type, bytes, 'SCHEMA_TOO_NEW');
       fail(400, { ok: false, code: 'SCHEMA_TOO_NEW', error: `schemaVer=${env.schemaVer} 高于服务端已知值` });
     }
-    const regRows: Array<{ strict: boolean; enabled: boolean }> = await this.dataSource.query(
-      `SELECT strict, enabled FROM ai_type_registry WHERE type = $1`,
-      [env.type],
-    );
+    const regRows: Array<{ strict: boolean; enabled: boolean; dedupe_key: string }> =
+      await this.dataSource.query(`SELECT strict, enabled, dedupe_key FROM ai_type_registry WHERE type = $1`, [
+        env.type,
+      ]);
     const reg = regRows[0];
     if (!reg) {
       await this.log(device.user_id, device.plugin_id, 'rejected', env.type, bytes, 'UNKNOWN_TYPE');
@@ -216,9 +219,78 @@ export class AiPushController {
       }
     }
 
-    /* ⑧ 原子幂等落库：ON CONFLICT DO NOTHING，命中唯一键（含 seq）= 已存在 → deduped（绝不 409） */
+    /* ⑧ 落库：按注册表 dedupe_key 二分——
+       · 词级去重类型（0029，如 search）：逐条记录 upsert（重复词原地更新，不产生新快照）；
+       · 普通快照类型：ON CONFLICT DO NOTHING（命中 0028 唯一键 = 已存在 → deduped，绝不 409）。 */
     const collectedAt = new Date(env.collectedAt);
     const vendor = normalizeVendor(env.vendorSlug);
+
+    if (reg.dedupe_key) {
+      /* ⑧a 词级 upsert：records 必须每条都带去重键（缺失/空/超 200 字符 → 400，防止
+         键值互相吞并——dedupe_val 截断会把不同词合并成同一行）。单条 SQL 经
+         jsonb_array_elements 逐元素展开，一条往返完成全部 upsert；
+         RETURNING (xmax = 0) 区分 insert（新词）与 update（重复词）。 */
+      const dkey = String(reg.dedupe_key);
+      for (let i = 0; i < env.records.length; i++) {
+        const kv = (env.records[i] as Record<string, unknown>)[dkey];
+        if (typeof kv !== 'string' || !kv.trim()) {
+          await this.log(device.user_id, device.plugin_id, 'rejected', env.type, bytes, 'VALIDATION');
+          fail(400, {
+            ok: false,
+            code: 'VALIDATION',
+            error: `records[${i}] 缺失去重键字段 ${dkey}（该类型按词去重，每条记录必须携带）`,
+          });
+        }
+        if (kv.trim().length > 200) {
+          await this.log(device.user_id, device.plugin_id, 'rejected', env.type, bytes, 'VALIDATION');
+          fail(400, {
+            ok: false,
+            code: 'VALIDATION',
+            error: `records[${i}].${dkey} 超 200 字符（去重键上限）`,
+          });
+        }
+      }
+      const upsertRes: Array<{ inserted: boolean }> = await this.dataSource.query(
+        `INSERT INTO ai_dataset
+           (user_id, type, source, vendor_slug, ext_ver, range_days, collected_at, schema_ver, count, seq, dedupe_val, payload)
+         SELECT $1, $2, $3, $4, $5, $6, $7, $8::int, 1, 1,
+                left(d->>$9, 255),
+                jsonb_build_object(
+                  'schemaVer', $8::int, 'type', $2, 'vendorSlug', $4, 'source', $3, 'extVer', $5,
+                  'range', $6::int, 'collectedAt', $7, 'dates', null,
+                  'count', 1, 'seq', 1, 'batchTotal', 1,
+                  'records', jsonb_build_array(d)
+                )
+         FROM jsonb_array_elements($10::jsonb) AS d
+         ON CONFLICT (user_id, vendor_slug, type, dedupe_val) WHERE dedupe_val IS NOT NULL
+         DO UPDATE SET
+           payload = EXCLUDED.payload,
+           count = 1,
+           collected_at = EXCLUDED.collected_at,
+           source = EXCLUDED.source,
+           ext_ver = EXCLUDED.ext_ver,
+           schema_ver = EXCLUDED.schema_ver
+         RETURNING (xmax = 0) AS inserted`,
+        [
+          device.user_id,
+          env.type,
+          String(env.source || ''),
+          vendor,
+          String(env.extVer || ''),
+          env.range,
+          collectedAt.toISOString(),
+          env.schemaVer,
+          dkey,
+          JSON.stringify(env.records),
+        ],
+      );
+      const inserted = upsertRes.filter((r) => r.inserted).length;
+      const updated = upsertRes.length - inserted;
+      await this.log(device.user_id, device.plugin_id, 'ok', env.type, bytes, null);
+      return { ok: true, accepted: inserted, updated, deduped: 0 };
+    }
+
+    /* ⑧b 快照类型：原子幂等落库（原 0028 语义不变） */
     const inserted = await this.dataSource.query(
       `INSERT INTO ai_dataset
          (user_id, type, source, vendor_slug, ext_ver, range_days, collected_at, schema_ver, count, seq, payload)

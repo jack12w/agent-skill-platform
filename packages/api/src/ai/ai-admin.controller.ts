@@ -23,7 +23,7 @@ import { AdminGuard } from '../common/admin.guard';
  * 路由：
  *   GET    /api/admin/plugins/ai-data/overview          看板聚合（summary/pushers/consumers/storageByType/sourceSummary/typeLabels/disk）
  *   GET    /api/admin/plugins/ai-data/types             类型注册表列表（含各类型数据量统计）
- *   POST   /api/admin/plugins/ai-data/types             新增类型 {type, label}
+ *   POST   /api/admin/plugins/ai-data/types             新增类型 {type, label, dedupeKey?}（dedupeKey 非空 = 按词 upsert）
  *   PATCH  /api/admin/plugins/ai-data/types/:type       修改 {label?, enabled?}
  *   DELETE /api/admin/plugins/ai-data/types/:type       删除（有数据 409 拒，引导停用）
  *
@@ -56,8 +56,9 @@ function iso(v: unknown): string | null {
 /** 邮箱允许为空（微信用户），展示名兜底：邮箱 → 昵称 → 「用户 + uuid 前 8 位」 */
 const LABEL_EXPR = `COALESCE(NULLIF(u.email, ''), u.name, '用户 ' || LEFT(d.user_id::text, 8))`;
 
-/** 逻辑快照口径（分批后一行 ≠ 一份快照） */
-const SNAPSHOT_COUNT = `COUNT(DISTINCT (user_id, vendor_slug, type, range_days, collected_at))`;
+/** 逻辑快照口径（分批后一行 ≠ 一份快照；0029 词级去重行整类型每用户算 1 份） */
+const SNAP_EXPR = (p = '') =>
+  `COUNT(DISTINCT (${p}user_id, ${p}vendor_slug, ${p}type, CASE WHEN ${p}dedupe_val IS NOT NULL THEN '' ELSE ${p}range_days::text || '|' || ${p}collected_at::text END))`;
 
 const TYPE_FORMAT = /^[a-z][a-z_]{0,31}$/;
 
@@ -99,7 +100,7 @@ export class AiAdminController {
           SELECT
             (SELECT COUNT(DISTINCT user_id) FROM ai_dataset)::int AS push_users,
             (SELECT COUNT(DISTINCT user_id) FROM plugin_subscriptions)::int AS sub_users,
-            (SELECT ${SNAPSHOT_COUNT} FROM ai_dataset)::int AS datasets,
+            (SELECT ${SNAP_EXPR()} FROM ai_dataset)::int AS datasets,
             (SELECT COALESCE(SUM(count), 0) FROM ai_dataset)::bigint AS records,
             (SELECT COALESCE(SUM(pg_column_size(payload)), 0) FROM ai_dataset)::bigint AS payload_bytes,
             pg_total_relation_size('public.ai_dataset'::regclass)::bigint AS table_bytes
@@ -107,7 +108,7 @@ export class AiAdminController {
         this.dataSource.query(`
           SELECT d.user_id,
             ${LABEL_EXPR} AS label,
-            COUNT(DISTINCT (d.vendor_slug, d.type, d.range_days, d.collected_at))::int AS datasets,
+            ${SNAP_EXPR('d.')}::int AS datasets,
             COALESCE(SUM(d.count), 0)::int AS records,
             COALESCE(SUM(pg_column_size(d.payload)), 0)::bigint AS payload_bytes,
             MAX(d.collected_at) AS last_push_at,
@@ -147,7 +148,7 @@ export class AiAdminController {
         `),
         this.dataSource.query(`
           SELECT type, vendor_slug,
-            COUNT(DISTINCT (user_id, range_days, collected_at))::int AS datasets,
+            ${SNAP_EXPR()}::int AS datasets,
             COALESCE(SUM(count), 0)::int AS records,
             COALESCE(SUM(pg_column_size(payload)), 0)::bigint AS bytes
           FROM ai_dataset
@@ -264,14 +265,14 @@ export class AiAdminController {
   @Header('Cache-Control', 'no-store')
   async listTypes(): Promise<unknown> {
     const rows = await this.dataSource.query(`
-      SELECT r.type, r.label, r.strict, r.enabled, r.created_at,
+      SELECT r.type, r.label, r.strict, r.enabled, r.dedupe_key, r.created_at,
         COALESCE(s.datasets, 0)::int AS datasets,
         COALESCE(s.records, 0)::int AS records,
         COALESCE(s.bytes, 0)::bigint AS bytes
       FROM ai_type_registry r
       LEFT JOIN (
         SELECT type,
-          COUNT(DISTINCT (user_id, vendor_slug, range_days, collected_at))::int AS datasets,
+          ${SNAP_EXPR()}::int AS datasets,
           SUM(count)::int AS records,
           SUM(pg_column_size(payload))::bigint AS bytes
         FROM ai_dataset
@@ -286,6 +287,7 @@ export class AiAdminController {
         label: String(r.label ?? ''),
         strict: Boolean(r.strict),
         enabled: Boolean(r.enabled),
+        dedupe_key: String(r.dedupe_key ?? ''),
         created_at: iso(r.created_at),
         datasets: num(r.datasets),
         records: num(r.records),
@@ -296,25 +298,39 @@ export class AiAdminController {
 
   @Post('types')
   async createType(@Req() req: { user?: { sub?: string } }, @Body() body: unknown): Promise<unknown> {
-    const b = (body || {}) as { type?: unknown; label?: unknown };
+    const b = (body || {}) as { type?: unknown; label?: unknown; dedupeKey?: unknown };
     const type = String(b.type || '').trim();
     const label = String(b.label ?? '').trim().slice(0, 64);
+    /** 记录级去重键（0029）：记录字段名，如 keyword；空 = 快照语义 */
+    const dedupeKey = String(b.dedupeKey ?? '').trim();
     if (!TYPE_FORMAT.test(type)) {
       throw new HttpException(
         { ok: false, code: 'VALIDATION', error: 'type 须为 ^[a-z][a-z_]{0,31}$（小写字母开头，小写字母/数字/下划线）' },
         400,
       );
     }
-    try {
-      await this.dataSource.query(
-        `INSERT INTO ai_type_registry (type, label) VALUES ($1, $2)`,
-        [type, label || type],
+    if (dedupeKey && !/^[a-zA-Z][a-zA-Z0-9_]{0,31}$/.test(dedupeKey)) {
+      throw new HttpException(
+        { ok: false, code: 'VALIDATION', error: 'dedupeKey 须为记录字段名（字母开头，字母/数字/下划线，≤32 字符），留空 = 快照语义' },
+        400,
       );
+    }
+    try {
+      await this.dataSource.query(`INSERT INTO ai_type_registry (type, label, dedupe_key) VALUES ($1, $2, $3)`, [
+        type,
+        label || type,
+        dedupeKey,
+      ]);
     } catch (e) {
       throw new HttpException({ ok: false, code: 'TYPE_EXISTS', error: `type=${type} 已存在` }, 409);
     }
-    await this.logAction(req, 'create_ai_type', type, `Created ai type: ${type} (${label})`);
-    return { ok: true, type, label: label || type };
+    await this.logAction(
+      req,
+      'create_ai_type',
+      type,
+      `Created ai type: ${type} (${label})${dedupeKey ? ` dedupe_key=${dedupeKey}` : ''}`,
+    );
+    return { ok: true, type, label: label || type, dedupeKey };
   }
 
   @Patch('types/:type')
