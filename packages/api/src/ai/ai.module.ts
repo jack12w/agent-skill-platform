@@ -4,6 +4,8 @@ import { AiAdminController } from './ai-admin.controller';
 import { AiPushController } from './ai-push.controller';
 import { AiKeysController } from './ai-keys.controller';
 import { AiQueryController } from './ai-query.controller';
+import { AiMcpController } from './ai-mcp.controller';
+import { AiQueryService } from './ai-query.service';
 import { Plugin, PluginSubscription } from '../plugins/plugin.entity';
 import { PluginDevice } from '../plugins/plugin-auth.entity';
 import { AiApiKey } from './ai-api-key.entity';
@@ -12,14 +14,16 @@ import { AiApiKey } from './ai-api-key.entity';
  * AI 数据服务模块（方案 v2.1 §7/§10）。
  *
  * 已上线：管理看板聚合接口（T404，只读）+ push 推送接口（T105）
- *        + keys 密钥管理（T301，用户 JWT）+ query 取数（T301，ai_sk_ Bearer）。
- * 待补：MCP server（T303）。
+ *        + keys 密钥管理（T301，用户 JWT）+ query 取数（T301，ai_sk_ Bearer）
+ *        + MCP server（T303，2026-10-06：POST /api/ai/mcp streamable HTTP，
+ *          与 query 共用 AiQueryService —— 单一实现防漂移）。
  * DataSource 由 TypeOrmModule.forRoot 全局提供；实体经 app.module 的 entities glob 自动注册。
  * PluginDevice/PluginSubscription/Plugin 仓库用于 push/query 的令牌校验与订阅判定
  * （复用 plugins 模块的 util 口径，但不注入 plugins 的 service —— 避免跨模块 DI 纠缠）。
  */
 @Module({
   imports: [TypeOrmModule.forFeature([Plugin, PluginSubscription, PluginDevice, AiApiKey])],
-  controllers: [AiAdminController, AiPushController, AiKeysController, AiQueryController],
+  controllers: [AiAdminController, AiPushController, AiKeysController, AiQueryController, AiMcpController],
+  providers: [AiQueryService],
 })
 export class AiModule {}
