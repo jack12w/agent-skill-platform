@@ -5,6 +5,7 @@ import useTranslation from '../../../hooks/useTranslation';
 import Modal from '../../components/Modal';
 import SubscriptionsPanel from './SubscriptionsPanel';
 import AiDataPanel from './AiDataPanel';
+import AiTypesPanel from './AiTypesPanel';
 
 interface PluginItem {
   id: string;
@@ -105,6 +106,8 @@ export default function HubPluginsPage() {
   const [uploadErr, setUploadErr] = useState('');
   /** 顶部 tab：插件管理 / 订阅管理 / 插件数据（订阅面板复用同一份插件列表，不再重复请求） */
   const [tab, setTab] = useState<'plugins' | 'subs' | 'data'>('plugins');
+  /** 「插件数据」内子 tab：数据看板 / 类型注册表（计划 v2.4） */
+  const [dataTab, setDataTab] = useState<'board' | 'types'>('board');
 
   const fetchData = useCallback(async () => {
     const token = getToken();
@@ -339,7 +342,28 @@ export default function HubPluginsPage() {
 
       {tab === 'data' && (
         <div className="mt-4">
-          <AiDataPanel />
+          {/* 子 TAB：数据看板 | 类型注册表（右侧） */}
+          <div className="flex items-center gap-1 mb-4 border-b border-neutral-100">
+            {(
+              [
+                ['board', t('admin.aiSubTabBoard')],
+                ['types', t('admin.aiSubTabTypes')],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setDataTab(k)}
+                className={`px-3 py-1.5 text-sm -mb-px border-b-2 ${
+                  dataTab === k
+                    ? 'border-brand-600 text-brand-700 font-medium'
+                    : 'border-transparent text-neutral-500 hover:text-neutral-800'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {dataTab === 'types' ? <AiTypesPanel /> : <AiDataPanel />}
         </div>
       )}
 

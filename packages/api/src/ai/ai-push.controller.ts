@@ -10,12 +10,12 @@ import {
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { z } from 'zod';
-import { Plugin, PluginSubscription } from '../plugins/plugin.entity';
+import { PluginSubscription } from '../plugins/plugin.entity';
 import { PluginDevice } from '../plugins/plugin-auth.entity';
 import { hashSecret, isSubscriptionEntitled } from '../plugins/plugin-auth.util';
 
 /**
- * AI 数据服务 · push 接口（方案 v2.1 §7.2/§7.3，T105）。
+ * AI 数据服务 · push 接口（计划 v2.4 多类型扩展，0028）。
  *
  * 路由：POST /api/ai/data/push（公开端点，凭证 = X-ASC-Token 设备令牌，复用插件授权体系）
  *
@@ -25,34 +25,41 @@ import { hashSecret, isSubscriptionEntitled } from '../plugins/plugin-auth.util'
  *        多工作条/重试场景重复推送是常态，返回 409 会让客户端当失败反复重推）
  *   401 {ok:false, code:'REAUTH'}                              令牌无效/吊销/超龄（三态：令牌级权威失效）
  *   402 {ok:false, code:'MEMBER_REQUIRED', upgradeUrl}         订阅失效（订阅级失效 → 客户端保留令牌）
- *   400 {ok:false, code:'UNKNOWN_TYPE'|'SCHEMA_TOO_NEW'|'VALIDATION', error}
- *   413 {ok:false, code:'PAYLOAD_TOO_LARGE'}                   records > 5000 或 body > 5MB
- *   429 {ok:false, code:'RATE_LIMITED'}                        5 次/时/user·type
+ *   400 {ok:false, code:'UNKNOWN_TYPE'|'TYPE_DISABLED'|'SCHEMA_TOO_NEW'|'VALIDATION', error}
+ *   413 {ok:false, code:'PAYLOAD_TOO_LARGE'}                   单批 records > 5000 或 body > 5MB
+ *   429 {ok:false, code:'RATE_LIMITED'}                        30 次/时/user·type
  *
- * 设计要点：
- *   · 未知 type → 400 不入库；growth_risk/rfq_leads 契约未冻结前走**宽松校验**（records 为对象数组
- *     即可），避免插件先发版被后端硬拒后按终态丢弃；
+ * 设计要点（0028 起）：
+ *   · type 白名单 = ai_type_registry（管理后台「类型注册表」子 TAB 维护，无自动注册）：
+ *     未注册 → 400；enabled=false → 400 TYPE_DISABLED（拒新推，历史可查）；
+ *   · 分批推送：超 5000 条/5MB 由插件切片，信封带 seq（1 起）/batchTotal，同一 collectedAt 多行共存；
+ *     唯一键 (user_id, vendor_slug, type, range_days, collected_at, seq)，同批重推 deduped；
+ *   · vendorSlug = 站点线（alibaba/1688），由插件按页面 URL 主域推导；''/'alibaba-toolkit'（老值）
+ *     服务端归一 'alibaba'，与订阅判定用的 plugins.slug 解耦；
  *   · 信封未知字段一律忽略（passthrough），插件先发版加字段、后端后升级互不掐死；
- *   · 幂等：INSERT ... ON CONFLICT DO NOTHING 原子去重（唯一键 user_id+type+range_days+collected_at，
- *     禁 SELECT-then-INSERT 竞态写法）；唯一键刻意不含 source（手动/自动重推 = 同一份数据）；
- *   · 限流 5 次/时/user·type：按 push_log 全量计数（含失败），防风暴；
- *   · push_log 全量留痕（含失败与拒绝）；error 只存 code/摘要，**不存 payload 原文与任何凭证**；
+ *   · strict 契约：注册表 strict=true 且代码 schema map 有该 type 时逐条严校（当前仅 visitors）；
+ *   · 限流 30 次/时/user·type：分批 + 重试场景放宽（原 5 会误伤），仍可防风暴；
+ *   · push_log 全量留痕（含失败与拒绝）；error 只存 code/摘要，不存 payload 原文与任何凭证；
  *   · 判空一律 IsNull()，禁裸 null where（TypeORM 0.3 会静默丢弃）。
  */
 
 const PUSH_MAX_BYTES = 5 * 1024 * 1024;
 const PUSH_MAX_RECORDS = 5000;
-const PUSH_RATE_LIMIT_PER_HOUR = 5;
+const PUSH_RATE_LIMIT_PER_HOUR = 30;
 /** 90 天绝对有效期（与 plugins-auth.service.ts TOKEN_MAX_AGE_MS 同口径） */
 const TOKEN_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
-/** P1 已冻结契约的类型；其余已知类型走宽松校验（契约冻结前） */
-const STRICT_TYPES = new Set(['visitors']);
+/** 当前唯一插件线的缺省 vendor（站点线 slug，0028 起与 plugins.slug 解耦） */
+const DEFAULT_VENDOR = 'alibaba';
 
 const envelopeSchema = z
   .object({
     schemaVer: z.number().int().min(0),
     type: z.string().min(1).max(32),
-    vendorSlug: z.string().max(64).optional().default(''),
+    vendorSlug: z
+      .string()
+      .max(64)
+      .optional()
+      .default(DEFAULT_VENDOR),
     source: z.string().max(32).optional().default(''),
     extVer: z.string().max(32).optional().default(''),
     range: z.number().int().min(1).max(366).optional().default(7),
@@ -67,6 +74,8 @@ const envelopeSchema = z
       .optional(),
     count: z.number().int().min(0),
     records: z.array(z.record(z.unknown())).max(PUSH_MAX_RECORDS),
+    seq: z.number().int().min(1).optional().default(1),
+    batchTotal: z.number().int().min(1).optional().default(1),
   })
   .passthrough();
 
@@ -78,8 +87,18 @@ const visitorsRecordSchema = z
   })
   .passthrough();
 
-/** growth_risk / rfq_leads：契约未冻结（P2/P3），先宽松 —— 只要求是对象 */
+/** 契约已冻结类型的 schema map（key=type；注册表 strict=true 且此处有配置才严校） */
+const STRICT_SCHEMAS: Record<string, z.ZodTypeAny> = { visitors: visitorsRecordSchema };
+
+/** 未冻结类型宽松 —— 只要求是对象 */
 const lenientRecordSchema = z.record(z.unknown());
+
+/** vendor 归一：老插件传 plugins.slug 兜底（'alibaba-toolkit'）或缺省 '' → 站点线 'alibaba' */
+function normalizeVendor(v: string): string {
+  const s = String(v || '').trim();
+  if (!s || s === 'alibaba-toolkit') return DEFAULT_VENDOR;
+  return s;
+}
 
 function fail(status: number, body: Record<string, unknown>): never {
   throw new HttpException(body, status);
@@ -91,7 +110,6 @@ export class AiPushController {
     @InjectDataSource() private readonly dataSource: DataSource,
     @InjectRepository(PluginDevice) private readonly deviceRepo: Repository<PluginDevice>,
     @InjectRepository(PluginSubscription) private readonly subRepo: Repository<PluginSubscription>,
-    @InjectRepository(Plugin) private readonly pluginRepo: Repository<Plugin>,
   ) {}
 
   @Post('push')
@@ -133,7 +151,6 @@ export class AiPushController {
     }
 
     /* ③ 体积硬上限（先查原始 body 再解析级校验；全局 body parser 上限 10mb，此处业务红线 5MB） */
-    const plugin = await this.pluginRepo.findOne({ where: { id: device.plugin_id } });
     const bytes = body && typeof body === 'object' ? Buffer.byteLength(JSON.stringify(body)) : 0;
     if (bytes > PUSH_MAX_BYTES) {
       await this.log(device.user_id, device.plugin_id, 'rejected', null, bytes, 'PAYLOAD_TOO_LARGE');
@@ -151,19 +168,28 @@ export class AiPushController {
     }
     const env = parsed.data;
 
-    /* ⑤ schemaVer / type 注册表（未知 type → 400 不入库；一个 type 一份契约，互不拖累） */
+    /* ⑤ schemaVer / type 注册表（管理后台「类型注册表」维护；未注册/停用 → 400 不入库） */
     if (env.schemaVer > 1) {
       await this.log(device.user_id, device.plugin_id, 'rejected', env.type, bytes, 'SCHEMA_TOO_NEW');
       fail(400, { ok: false, code: 'SCHEMA_TOO_NEW', error: `schemaVer=${env.schemaVer} 高于服务端已知值` });
     }
-    if (!STRICT_TYPES.has(env.type) && !['growth_risk', 'rfq_leads'].includes(env.type)) {
+    const regRows: Array<{ strict: boolean; enabled: boolean }> = await this.dataSource.query(
+      `SELECT strict, enabled FROM ai_type_registry WHERE type = $1`,
+      [env.type],
+    );
+    const reg = regRows[0];
+    if (!reg) {
       await this.log(device.user_id, device.plugin_id, 'rejected', env.type, bytes, 'UNKNOWN_TYPE');
-      fail(400, { ok: false, code: 'UNKNOWN_TYPE', error: `type=${env.type} 未注册` });
+      fail(400, { ok: false, code: 'UNKNOWN_TYPE', error: `type=${env.type} 未注册（管理后台「类型注册表」登记后可推）` });
+    }
+    if (!reg.enabled) {
+      await this.log(device.user_id, device.plugin_id, 'rejected', env.type, bytes, 'TYPE_DISABLED');
+      fail(400, { ok: false, code: 'TYPE_DISABLED', error: `type=${env.type} 已停用（历史数据仍可查询）` });
     }
 
-    /* ⑥ 限流 5 次/时/user·type：按 push_log 全量计数（含失败），把推送风暴掐在落库前。
+    /* ⑥ 限流 30 次/时/user·type：按 push_log 全量计数（含失败），把推送风暴掐在落库前。
        （复审 P1-2：必须放在逐条 records 校验之前——zod 循环最重可到 5000 条，
-        先限流再解析，畸形大 payload 烧不动 CPU） */
+        先限流再解析，畸形大 payload 烧不动 CPU；0028 放宽到 30：分批 + 重试场景防误伤） */
     const recent = await this.dataSource.query(
       `SELECT COUNT(*)::int AS n FROM ai_push_log
        WHERE user_id = $1 AND type = $2 AND created_at > now() - interval '1 hour'`,
@@ -171,15 +197,16 @@ export class AiPushController {
     );
     if ((recent[0]?.n ?? 0) >= PUSH_RATE_LIMIT_PER_HOUR) {
       await this.log(device.user_id, device.plugin_id, 'rejected', env.type, bytes, 'RATE_LIMITED');
-      fail(429, { ok: false, code: 'RATE_LIMITED', error: '推送频率超限（5 次/小时/数据类型），请稍后重试' });
+      fail(429, { ok: false, code: 'RATE_LIMITED', error: '推送频率超限（30 次/小时/数据类型），请稍后重试' });
     }
 
-    /* ⑦ count 与 records 对账 + 逐条键字段校验（visitors 严格；未冻结类型宽松） */
+    /* ⑦ count 与 records 对账 + 逐条键字段校验（strict 类型严校；其余宽松） */
     if (env.count !== env.records.length) {
       await this.log(device.user_id, device.plugin_id, 'rejected', env.type, bytes, 'VALIDATION');
       fail(400, { ok: false, code: 'VALIDATION', error: `count=${env.count} 与 records.length=${env.records.length} 不一致` });
     }
-    const recSchema = STRICT_TYPES.has(env.type) ? visitorsRecordSchema : lenientRecordSchema;
+    const recSchema =
+      reg.strict && STRICT_SCHEMAS[env.type] ? STRICT_SCHEMAS[env.type] : lenientRecordSchema;
     for (let i = 0; i < env.records.length; i++) {
       const r = recSchema.safeParse(env.records[i]);
       if (!r.success) {
@@ -189,24 +216,26 @@ export class AiPushController {
       }
     }
 
-    /* ⑧ 原子幂等落库：ON CONFLICT DO NOTHING，命中唯一键 = 已存在 → deduped（绝不 409） */
+    /* ⑧ 原子幂等落库：ON CONFLICT DO NOTHING，命中唯一键（含 seq）= 已存在 → deduped（绝不 409） */
     const collectedAt = new Date(env.collectedAt);
+    const vendor = normalizeVendor(env.vendorSlug);
     const inserted = await this.dataSource.query(
       `INSERT INTO ai_dataset
-         (user_id, type, source, vendor_slug, ext_ver, range_days, collected_at, schema_ver, count, payload)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       ON CONFLICT (user_id, type, range_days, collected_at) DO NOTHING
+         (user_id, type, source, vendor_slug, ext_ver, range_days, collected_at, schema_ver, count, seq, payload)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT (user_id, vendor_slug, type, range_days, collected_at, seq) DO NOTHING
        RETURNING id`,
       [
         device.user_id,
         env.type,
         String(env.source || ''),
-        String(env.vendorSlug || plugin?.slug || ''),
+        vendor,
         String(env.extVer || ''),
         env.range,
         collectedAt.toISOString(),
         env.schemaVer,
         env.count,
+        env.seq,
         JSON.stringify(env),
       ],
     );

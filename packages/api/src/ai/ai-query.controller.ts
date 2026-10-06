@@ -7,39 +7,67 @@ import {
   Query,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, IsNull, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import * as crypto from 'node:crypto';
 import { Plugin, PluginSubscription } from '../plugins/plugin.entity';
 import { AiApiKey } from './ai-api-key.entity';
 import { isSubscriptionEntitled } from '../plugins/plugin-auth.util';
 
 /**
- * AI 数据服务 · query 取数接口（方案 v2.1 §7.4 / T301）—— Agent/MCP 用 ai_sk_ 密钥读数据。
+ * AI 数据服务 · query 取数接口（方案 v2.1 §7.4 / T301；计划 v2.4 多类型扩展，0028）。
  *
- * 路由：GET /api/ai/data/query?type=visitors&range=7
+ * 路由：GET /api/ai/data/query?type=visitors&range=7&vendor=alibaba&page=1&pageSize=50&snapshotId=12
  * 凭证：Authorization: Bearer ai_sk_…（**不走用户 JWT**——Agent 没有浏览器会话，密钥即身份）
  *
  * 响应契约：
- *   200 {ok:true, schemaVer, type, rangeDays, collectedAt, dates, count, records}
+ *   200 {ok:true, schemaVer, type, label, vendor, rangeDays, collectedAt, dates,
+ *        count, total, batchTotal, batches, records[, page, pageSize]}
+ *        —— page 省略时全量返回（向后兼容旧 MCP），带 page/pageSize 时为切片
  *   401 {ok:false, code:'UNAUTHORIZED'}                    密钥缺失/无效/已吊销
  *   402 {ok:false, code:'MEMBER_REQUIRED', upgradeUrl}     订阅失效（isSubscriptionEntitled 唯一口径）
  *   404 {ok:false, code:'NOT_FOUND'}                       该类型尚无数据（查不到 ≠ 失败）
+ *   413 {ok:false, code:'PAYLOAD_TOO_LARGE'}               全量合并 >8MB（提示改用分页）
  *   429 {ok:false, code:'RATE_LIMITED'}                    60 次/时/密钥
- *   400 {ok:false, code:'UNKNOWN_TYPE'}                    type 未注册
+ *   400 {ok:false, code:'UNKNOWN_TYPE'|'VALIDATION'}       type 未注册 / 参数不合法
+ *
+ * 0028 语义：
+ *   · 分批合并：同 (user, vendor, type, range, collected_at) 多行按 seq 合并为一个逻辑快照；
+ *     snapshotId = 该快照第一批次行主键 id（按其 collected_at 定位整组，校验属于本人）；
+ *   · vendor = 站点线（alibaba/1688），缺省 'alibaba'，与订阅判定用的 plugins.slug 解耦；
+ *   · label 取自 ai_type_registry（管理后台维护），未注册 type → 400 UNKNOWN_TYPE。
  *
  * 安全要点：
  *   · 密钥只存 sha256（0026 key_hash 唯一索引定位），吊销判空 IsNull()（禁裸 null where）；
  *   · usage_event 成功+失败全量留痕（status/code）——密钥被扫、权限试探事后可查，也是分账预留；
- *   · 跨用户绝无可能：数据集按密钥归属的 user_id 等值过滤，不提供任何跨账号参数；
+ *   · 跨用户绝无可能：数据集按密钥归属的 user_id 等值过滤，snapshotId 同样校验归属；
  *   · 只读，响应带 no-store（管理侧 9-27 HTTP 缓存事故的同款纪律）。
  */
-const QUERY_TYPES = ['visitors', 'growth_risk', 'rfq_leads'];
 const QUERY_RATE_LIMIT_PER_HOUR = 60;
-/** AI 服务绑定的插件线（vendor slug = plugins.slug；权益按它的订阅判） */
+/** AI 服务绑定的插件线（订阅权益按它的订阅判；与 ai_dataset.vendor_slug 站点线解耦） */
 const AI_VENDOR_SLUG = 'alibaba-toolkit';
+const QUERY_MAX_PAGE_SIZE = 200;
+/** 全量模式保护：合并后 records 序列化体积上限（超限 413 提示分页） */
+const QUERY_MAX_FULL_BYTES = 8 * 1024 * 1024;
 
 function fail(status: number, body: Record<string, unknown>): never {
   throw new HttpException(body, status);
+}
+
+/** vendor 归一（与 push 同口径）：缺省/'alibaba-toolkit'（老值）→ 'alibaba' */
+function normalizeVendor(v: string): string {
+  const s = String(v || '').trim();
+  if (!s || s === 'alibaba-toolkit') return 'alibaba';
+  if (!/^[a-z][a-z0-9_-]{0,31}$/.test(s)) return '__invalid__';
+  return s;
+}
+
+interface BatchRow {
+  schema_ver: number;
+  range_days: number;
+  collected_at: Date | string;
+  count: number;
+  seq: number;
+  payload: Record<string, unknown>;
 }
 
 @Controller('ai/data')
@@ -57,6 +85,10 @@ export class AiQueryController {
     @Headers('authorization') auth: string,
     @Query('type') type: string,
     @Query('range') range: string,
+    @Query('vendor') vendor: string,
+    @Query('page') page: string,
+    @Query('pageSize') pageSize: string,
+    @Query('snapshotId') snapshotId: string,
   ): Promise<unknown> {
     /* ① 密钥校验：Bearer ai_sk_… → sha256 定位（唯一索引），吊销/不存在一律 401（防枚举） */
     const m = /^Bearer\s+(ai_sk_[A-Za-z0-9_-]+)$/.exec(String(auth || '').trim());
@@ -72,12 +104,17 @@ export class AiQueryController {
     }
     const userId = key.user_id;
 
-    /* ② type 注册表校验 */
+    /* ② type 注册表校验（label 一并取出；enabled 只拦推送，不拦查询） */
     const t = String(type || '').trim();
-    if (!QUERY_TYPES.includes(t)) {
+    const regRows: Array<{ label: string }> = await this.dataSource.query(
+      `SELECT label FROM ai_type_registry WHERE type = $1`,
+      [t],
+    );
+    if (!regRows[0]) {
       await this.usage(userId, key.id, t || null, null, 0, 'rejected', 'UNKNOWN_TYPE');
       fail(400, { ok: false, code: 'UNKNOWN_TYPE', error: `type=${t || '(空)'} 未注册` });
     }
+    const label = String(regRows[0].label || t);
 
     /* ③ 订阅权益（订阅级失效 → 402 保留密钥，续费即恢复；isSubscriptionEntitled 唯一口径） */
     const plugin = await this.pluginRepo.findOne({ where: { slug: AI_VENDOR_SLUG } });
@@ -104,54 +141,134 @@ export class AiQueryController {
       fail(429, { ok: false, code: 'RATE_LIMITED', error: '查询频率超限（60 次/小时/密钥），请稍后重试' });
     }
 
-    /* ⑤ 最新数据集：按 user+type（可选 range）取 collected_at 最新一份；查不到 ≠ 失败 → 404 */
+    /* ⑤ vendor / range / 分页参数校验 */
+    const v = normalizeVendor(vendor);
+    if (v === '__invalid__') {
+      await this.usage(userId, key.id, t, null, 0, 'rejected', 'VALIDATION');
+      fail(400, { ok: false, code: 'VALIDATION', error: 'vendor 格式不合法（^[a-z][a-z0-9_-]{0,31}$）' });
+    }
     const rangeDays = String(range || '').trim();
-    const params: unknown[] = [userId, t];
-    let rangeSql = '';
+    let rangeNum: number | null = null;
     if (rangeDays) {
       const r = Number(rangeDays);
       if (!Number.isInteger(r) || r < 1 || r > 366) {
         await this.usage(userId, key.id, t, null, 0, 'rejected', 'VALIDATION');
         fail(400, { ok: false, code: 'VALIDATION', error: 'range 须为 1~366 的整数' });
       }
-      params.push(r);
-      rangeSql = ` AND range_days = $${params.length}`;
+      rangeNum = r;
     }
-    const rows: Array<{
-      schema_ver: number;
-      range_days: number;
-      collected_at: Date | string;
-      count: number;
-      payload: Record<string, unknown>;
-    }> = await this.dataSource.query(
-      `SELECT schema_ver, range_days, collected_at, count, payload
+    let pageNum: number | null = null;
+    let pageSizeNum = 0;
+    if (String(page || '').trim()) {
+      const p = Number(page);
+      const ps = String(pageSize || '').trim() ? Number(pageSize) : 50;
+      if (!Number.isInteger(p) || p < 1 || !Number.isInteger(ps) || ps < 1 || ps > QUERY_MAX_PAGE_SIZE) {
+        await this.usage(userId, key.id, t, rangeNum, 0, 'rejected', 'VALIDATION');
+        fail(400, { ok: false, code: 'VALIDATION', error: `page 须为 ≥1 整数，pageSize 须为 1~${QUERY_MAX_PAGE_SIZE} 整数` });
+      }
+      pageNum = p;
+      pageSizeNum = ps;
+    }
+
+    /* ⑥ 定位逻辑快照：snapshotId（校验归属）或最新 collected_at；取整组批次行按 seq 排序 */
+    const conds = ['user_id = $1', 'type = $2', 'vendor_slug = $3'];
+    const params: unknown[] = [userId, t, v];
+    if (rangeNum !== null) {
+      params.push(rangeNum);
+      conds.push(`range_days = $${params.length}`);
+    }
+    const baseWhere = conds.join(' AND ');
+    const sid = String(snapshotId || '').trim();
+    let collectedAtStr: string;
+    if (sid) {
+      const sidNum = Number(sid);
+      if (!Number.isInteger(sidNum) || sidNum < 1) {
+        await this.usage(userId, key.id, t, rangeNum, 0, 'rejected', 'VALIDATION');
+        fail(400, { ok: false, code: 'VALIDATION', error: 'snapshotId 须为正整数' });
+      }
+      const anchor: Array<{ user_id: string; collected_at: Date | string }> = await this.dataSource.query(
+        `SELECT user_id, collected_at FROM ai_dataset WHERE id = $1`,
+        [sidNum],
+      );
+      /* 归属校验：不存在或别人的快照一律 404（防枚举同一口径） */
+      if (!anchor[0] || anchor[0].user_id !== userId) {
+        await this.usage(userId, key.id, t, rangeNum, 0, 'rejected', 'NOT_FOUND');
+        fail(404, { ok: false, code: 'NOT_FOUND', error: 'snapshotId 不存在' });
+      }
+      collectedAtStr = new Date(anchor[0].collected_at).toISOString();
+      /* anchor 行自身可能不属于当前 vendor/type 过滤——定位以 collected_at 为准，组内再过滤 */
+    } else {
+      const latest: Array<{ collected_at: Date | string }> = await this.dataSource.query(
+        `SELECT MAX(collected_at) AS collected_at FROM ai_dataset WHERE ${baseWhere}`,
+        params,
+      );
+      if (!latest[0]?.collected_at) {
+        await this.usage(userId, key.id, t, rangeNum, 0, 'rejected', 'NOT_FOUND');
+        fail(404, { ok: false, code: 'NOT_FOUND', error: `type=${t} 尚无数据（等插件推送后可查）` });
+      }
+      collectedAtStr = new Date(latest[0].collected_at).toISOString();
+    }
+    params.push(collectedAtStr);
+    const rows: BatchRow[] = await this.dataSource.query(
+      `SELECT schema_ver, range_days, collected_at, count, seq, payload
        FROM ai_dataset
-       WHERE user_id = $1 AND type = $2${rangeSql}
-       ORDER BY collected_at DESC
-       LIMIT 1`,
+       WHERE ${baseWhere} AND collected_at = $${params.length}
+       ORDER BY seq ASC`,
       params,
     );
-    const row = rows[0];
-    if (!row) {
-      await this.usage(userId, key.id, t, rangeDays ? Number(rangeDays) : null, 0, 'rejected', 'NOT_FOUND');
+    if (!rows.length) {
+      await this.usage(userId, key.id, t, rangeNum, 0, 'rejected', 'NOT_FOUND');
       fail(404, { ok: false, code: 'NOT_FOUND', error: `type=${t} 尚无数据（等插件推送后可查）` });
     }
 
-    const payload = (row.payload || {}) as {
-      records?: unknown[];
-      dates?: unknown;
-    };
-    const records = Array.isArray(payload.records) ? payload.records : [];
-    await this.usage(userId, key.id, t, row.range_days, records.length, 'ok', '');
+    /* ⑦ 合并逻辑快照：records 按 seq 拼接；total = SUM(count)；批次不全时带提示字段 */
+    const records: unknown[] = [];
+    for (const row of rows) {
+      const payload = (row.payload || {}) as { records?: unknown[]; dates?: unknown };
+      if (Array.isArray(payload.records)) records.push(...payload.records);
+    }
+    const total = records.length;
+    const sumCount = rows.reduce((acc, r) => acc + (Number(r.count) || 0), 0);
+    const registeredBatchTotal = rows.reduce(
+      (acc, r) => Math.max(acc, Number((r.payload as { batchTotal?: number })?.batchTotal) || 0),
+      0,
+    );
+
+    /* ⑧ 分页切片 / 全量保护 */
+    let pageRecords = records;
+    let pageMeta: Record<string, number> = {};
+    if (pageNum !== null) {
+      const start = (pageNum - 1) * pageSizeNum;
+      pageRecords = records.slice(start, start + pageSizeNum);
+      pageMeta = { page: pageNum, pageSize: pageSizeNum };
+    } else {
+      const bytes = Buffer.byteLength(JSON.stringify(records));
+      if (bytes > QUERY_MAX_FULL_BYTES) {
+        await this.usage(userId, key.id, t, rows[0].range_days, 0, 'rejected', 'PAYLOAD_TOO_LARGE');
+        fail(413, {
+          ok: false,
+          code: 'PAYLOAD_TOO_LARGE',
+          error: `全量返回 ${(bytes / 1024 / 1024).toFixed(1)}MB 超限，请改用 page/pageSize 分页`,
+        });
+      }
+    }
+
+    await this.usage(userId, key.id, t, rows[0].range_days, pageRecords.length, 'ok', '');
     return {
       ok: true,
-      schemaVer: row.schema_ver,
+      schemaVer: Math.max(...rows.map((r) => Number(r.schema_ver) || 0)),
       type: t,
-      rangeDays: row.range_days,
-      collectedAt: new Date(row.collected_at).toISOString(),
-      dates: payload.dates ?? null,
-      count: row.count,
-      records,
+      label,
+      vendor: v,
+      rangeDays: rows[0].range_days,
+      collectedAt: collectedAtStr,
+      dates: (rows[0].payload as { dates?: unknown })?.dates ?? null,
+      count: sumCount,
+      total,
+      batchTotal: registeredBatchTotal || rows.length,
+      batches: rows.length,
+      ...pageMeta,
+      records: pageRecords,
     };
   }
 

@@ -4,11 +4,12 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import useTranslation from '../../../hooks/useTranslation';
 
 /**
- * 管理后台「插件数据」看板（AI 数据服务，方案 v2.1 §10）。
+ * 管理后台「插件数据」看板（AI 数据服务，方案 v2.1 §10；计划 v2.4 多类型扩展）。
  *
  * 只读面板：一个聚合接口出全部数据（GET /api/admin/plugins/ai-data/overview）。
  * 约定：管理员看板不脱敏邮箱；无明细下钻（排障走 psql）；
  * 请求必须 no-store（管理端读接口一律 no-store，防启发式缓存假象）。
+ * 0028：数据集口径 = 逻辑快照数；磁盘容量卡片（statfs 整盘）；来源/类型中文映射。
  */
 
 interface Summary {
@@ -18,6 +19,11 @@ interface Summary {
   records: number;
   payload_bytes: number;
   table_bytes: number;
+}
+
+interface DiskInfo {
+  total: number;
+  free: number;
 }
 
 interface PusherRow {
@@ -46,6 +52,7 @@ interface ConsumerRow {
 
 interface StorageRow {
   type: string;
+  vendor_slug: string;
   datasets: number;
   records: number;
   bytes: number;
@@ -59,10 +66,24 @@ interface SourceRow {
 
 interface Overview {
   summary: Summary;
+  disk: DiskInfo | null;
+  typeLabels: Record<string, string>;
   pushers: PusherRow[];
   consumers: ConsumerRow[];
   storageByType: StorageRow[];
   sourceSummary: SourceRow[];
+}
+
+/** 来源列中文映射（ai_dataset.source：auto=每日定时自动采集 / manual=手动点按钮） */
+const SOURCE_LABEL: Record<string, string> = {
+  auto: '自动采集',
+  manual: '手动采集',
+  unknown: '未知',
+  '': '未知',
+};
+
+function sourceLabel(s: string): string {
+  return SOURCE_LABEL[s] || s || '未知';
 }
 
 function getToken() {
@@ -133,6 +154,10 @@ export default function AiDataPanel() {
 
   const s = data?.summary;
   const maxBytes = Math.max(1, ...(data?.storageByType ?? []).map((r) => r.bytes));
+  const typeLabel = (ty: string): string => data?.typeLabels?.[ty] || ty;
+  const disk = data?.disk;
+  const diskUsed = disk ? disk.total - disk.free : 0;
+  const diskLow = disk ? disk.free / Math.max(1, disk.total) < 0.1 : false;
 
   return (
     <div>
@@ -155,7 +180,14 @@ export default function AiDataPanel() {
         <MetricCard
           label={t('admin.aiPayloadBytes')}
           value={s ? fmtBytes(s.payload_bytes) : '—'}
-          sub={s ? `${t('admin.aiTableBytes')} ${fmtBytes(s.table_bytes)}` : undefined}
+          sub={
+            disk
+              ? `${t('admin.aiTableBytes')} ${fmtBytes(s?.table_bytes ?? 0)} ｜ ${t('admin.aiDiskUsed')} ${fmtBytes(diskUsed)} / ${fmtBytes(disk.total)} · ${t('admin.aiDiskFree')} ${fmtBytes(disk.free)}`
+              : s
+                ? `${t('admin.aiTableBytes')} ${fmtBytes(s.table_bytes)}`
+                : undefined
+          }
+          tone={diskLow ? 'danger' : undefined}
         />
       </div>
 
@@ -185,7 +217,7 @@ export default function AiDataPanel() {
                   <td className={td}>{fmtInt(r.records)}</td>
                   <td className={td}>{fmtBytes(r.payload_bytes)}</td>
                   <td className={td}>{fmtTime(r.last_push_at)}</td>
-                  <td className={td}>{r.last_source || '—'}</td>
+                  <td className={td}>{sourceLabel(r.last_source)}</td>
                   <td className={td}>
                     <span className="text-green-700">{r.ok7} ok</span>
                     {r.fail7 > 0 && <span className="text-red-600"> · {r.fail7} fail</span>}
@@ -230,7 +262,7 @@ export default function AiDataPanel() {
                     {r.fail7 > 0 && <span className="text-red-600"> · {r.fail7} fail</span>}
                   </td>
                   <td className={td}>{fmtTime(r.last_query_at)}</td>
-                  <td className={td}>{r.top_type || '—'}</td>
+                  <td className={td}>{r.top_type ? typeLabel(r.top_type) : '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -246,8 +278,11 @@ export default function AiDataPanel() {
         ) : (
           <>
             {(data?.storageByType ?? []).map((r) => (
-              <div key={r.type} className="flex items-center gap-3 mb-2 last:mb-0">
-                <span className="text-sm text-neutral-700 w-28 shrink-0">{r.type}</span>
+              <div key={`${r.type}-${r.vendor_slug}`} className="flex items-center gap-3 mb-2 last:mb-0">
+                <span className="text-sm text-neutral-700 w-36 shrink-0">
+                  {typeLabel(r.type)}
+                  <span className="ml-1 text-[11px] text-neutral-400">{r.vendor_slug}</span>
+                </span>
                 <div className="flex-1 h-3.5 bg-neutral-100 rounded overflow-hidden">
                   <div
                     className="h-full bg-brand-600 rounded"
@@ -263,7 +298,7 @@ export default function AiDataPanel() {
               <p className="text-xs text-neutral-500 mt-3 pt-3 border-t border-neutral-100">
                 {t('admin.aiSourceSummary')}：
                 {data.sourceSummary
-                  .map((r) => `${r.source} ${fmtInt(r.datasets)} ${t('admin.aiThDatasets')} / ${fmtBytes(r.bytes)}`)
+                  .map((r) => `${sourceLabel(r.source)} ${fmtInt(r.datasets)} ${t('admin.aiThDatasets')} / ${fmtBytes(r.bytes)}`)
                   .join(' · ')}
               </p>
             )}
@@ -274,12 +309,24 @@ export default function AiDataPanel() {
   );
 }
 
-function MetricCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function MetricCard({
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: 'danger';
+}) {
   return (
-    <div className="bg-neutral-50 rounded-lg p-4">
+    <div className={`rounded-lg p-4 ${tone === 'danger' ? 'bg-red-50' : 'bg-neutral-50'}`}>
       <p className="text-xs text-neutral-500 mb-1">{label}</p>
       <p className="text-2xl font-medium text-neutral-900">{value}</p>
-      {sub && <p className="text-xs text-neutral-400 mt-1">{sub}</p>}
+      {sub && (
+        <p className={`text-xs mt-1 ${tone === 'danger' ? 'text-red-600' : 'text-neutral-400'}`}>{sub}</p>
+      )}
     </div>
   );
 }
