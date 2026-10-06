@@ -251,13 +251,18 @@ export class AiPushController {
         }
       }
       const upsertRes: Array<{ inserted: boolean }> = await this.dataSource.query(
+        /* ⚠️ 每个 $n 都必须显式 cast（2026-10-06 生产 500 教训）：
+           INSERT..SELECT 里 SELECT 列表的参数虽可从目标列推断，但同一参数在
+           jsonb_build_object(...) 里复用时——该函数参数是 any，无法推断类型——
+           PG 直接报 "could not determine data type of parameter $2"。
+           全部 cast 后不再依赖任何隐式推断。 */
         `INSERT INTO ai_dataset
            (user_id, type, source, vendor_slug, ext_ver, range_days, collected_at, schema_ver, count, seq, dedupe_val, payload)
-         SELECT $1, $2, $3, $4, $5, $6, $7, $8::int, 1, 1,
+         SELECT $1::uuid, $2::varchar, $3::varchar, $4::varchar, $5::varchar, $6::int, $7::timestamptz, $8::int, 1, 1,
                 left(d->>$9, 255),
                 jsonb_build_object(
-                  'schemaVer', $8::int, 'type', $2, 'vendorSlug', $4, 'source', $3, 'extVer', $5,
-                  'range', $6::int, 'collectedAt', $7, 'dates', null,
+                  'schemaVer', $8::int, 'type', $2::text, 'vendorSlug', $4::text, 'source', $3::text, 'extVer', $5::text,
+                  'range', $6::int, 'collectedAt', $7::text, 'dates', null,
                   'count', 1, 'seq', 1, 'batchTotal', 1,
                   'records', jsonb_build_array(d)
                 )
