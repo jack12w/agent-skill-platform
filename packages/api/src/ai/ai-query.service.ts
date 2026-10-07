@@ -160,8 +160,11 @@ export class AiQueryService {
     const baseWhere = conds.join(' AND ');
 
     /* ⑤b 词级去重类型（0029）：不分快照，返回全部词的最新数据（每 record 附 _updatedAt）。
-       分页在 SQL 层做（词数可上万，不整表载入内存）；全量模式仍有 8MB 保护。 */
+       分页在 SQL 层做（词数可上万，不整表载入内存）；全量模式仍有 8MB 保护。
+       ⚠️ 必须过滤 dedupe_val IS NOT NULL（0030 起 growth/公海/gold/rank 从快照切 upsert，
+       历史快照行 dedupe_val=NULL 与词级行同表共存——不过滤会把 280 条的旧快照首行当记录读出）。 */
     if (regRows[0].dedupe_key) {
+      const dedupeWhere = baseWhere + ' AND dedupe_val IS NOT NULL';
       if (String(snapshotId ?? '').trim()) {
         await this.usage(userId, key.id, t, rangeNum, 0, 'rejected', 'VALIDATION');
         fail(400, {
@@ -171,7 +174,7 @@ export class AiQueryService {
         });
       }
       const cnt: Array<{ n: number }> = await this.dataSource.query(
-        `SELECT COUNT(*)::int AS n FROM ai_dataset WHERE ${baseWhere}`,
+        `SELECT COUNT(*)::int AS n FROM ai_dataset WHERE ${dedupeWhere}`,
         params,
       );
       const totalWords = cnt[0]?.n ?? 0;
@@ -180,11 +183,11 @@ export class AiQueryService {
         fail(404, { ok: false, code: 'NOT_FOUND', error: `type=${t} 尚无数据（等插件推送后可查）` });
       }
       const latest: Array<{ collected_at: Date | string }> = await this.dataSource.query(
-        `SELECT MAX(collected_at) AS collected_at FROM ai_dataset WHERE ${baseWhere}`,
+        `SELECT MAX(collected_at) AS collected_at FROM ai_dataset WHERE ${dedupeWhere}`,
         params,
       );
       const flatParams: unknown[] = [...params];
-      let flatSql = `SELECT collected_at, payload FROM ai_dataset WHERE ${baseWhere} ORDER BY collected_at DESC, id DESC`;
+      let flatSql = `SELECT collected_at, payload FROM ai_dataset WHERE ${dedupeWhere} ORDER BY collected_at DESC, id DESC`;
       if (pageNum !== null) {
         flatParams.push(pageSizeNum, (pageNum - 1) * pageSizeNum);
         flatSql += ` LIMIT $${flatParams.length - 1} OFFSET $${flatParams.length}`;
