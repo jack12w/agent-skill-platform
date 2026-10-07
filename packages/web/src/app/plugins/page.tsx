@@ -216,6 +216,7 @@ export default function PluginsPage() {
     [t('plugins.page.q1q'), t('plugins.page.q1a')],
     [t('plugins.page.q2q'), t('plugins.page.q2a')],
     [t('plugins.page.q4q'), t('plugins.page.q4a')],
+    [t('plugins.page.q6q'), t('plugins.page.q6a')],
   ];
 
   const ovBars = [

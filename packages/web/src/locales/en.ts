@@ -1143,6 +1143,8 @@ const en = {
       q2a: 'Monthly purchase; after expiry you need to renew manually. The current paid subscription cannot be cancelled.',
       q4q: 'Do I pay again on a new computer?',
       q4a: 'No. The subscription is tied to your account — log in and activate once on the new device to reuse it.',
+      q6q: 'How can enterprise data be used by AI?',
+      q6a: 'Two steps: 1) Enable data push in each workbar\'s "Settings" (can be combined with auto-collect); 2) Generate a key under Account → My Plugins → Key Management, then add the MCP call method in your AI workspace (supports ACCIO WORK and WorkBuddy).',
 
       ctaTitle: 'Let the tool handle the next sourcing or store review',
       ctaDesc: 'Download the installer → log in on the page → hit Collect once; the export takes it from there.',
