@@ -9,6 +9,7 @@ import {
   getToken,
   isPast,
   statusBadgeClass,
+  tierBadgeClass,
   type SubRow,
 } from './subscriptions-shared';
 
@@ -208,6 +209,7 @@ export default function SubscriptionsPanel({ plugins }: { plugins: PluginOption[
               <tr>
                 <th className="px-4 py-3 text-left">{t('admin.subThUser')}</th>
                 <th className="px-4 py-3 text-center">{t('admin.thStatus')}</th>
+                <th className="px-4 py-3 text-center">{t('admin.subThTier')}</th>
                 <th className="px-4 py-3 text-left">{t('admin.subThExpires')}</th>
                 <th className="px-4 py-3 text-center hidden md:table-cell">{t('admin.subThSource')}</th>
                 <th className="px-4 py-3 text-right">{t('admin.subThActions')}</th>
@@ -227,6 +229,11 @@ export default function SubscriptionsPanel({ plugins }: { plugins: PluginOption[
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">{statusBadge(s.status)}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${tierBadgeClass(s.tier)}`}>
+                      {s.tier === 'team' ? t('admin.subTierTeam') : t('admin.subTierPersonal')}
+                    </span>
+                  </td>
                   <td className="px-4 py-3">
                     <div className="tabular-nums text-neutral-800">{fmtDateTime(s.expires_at)}</div>
                     {isPast(s.expires_at) && s.status === 'active' && (
@@ -252,7 +259,7 @@ export default function SubscriptionsPanel({ plugins }: { plugins: PluginOption[
               ))}
               {subs.length === 0 && !subLoading && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-neutral-400 text-sm">
+                  <td colSpan={6} className="px-4 py-12 text-center text-neutral-400 text-sm">
                     {t('admin.subNoSubs')}
                   </td>
                 </tr>

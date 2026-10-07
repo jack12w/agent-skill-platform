@@ -116,6 +116,10 @@ export class PluginSubscription {
   @Column({ type: 'text', default: 'monthly' })
   plan: string;
 
+  /** 订阅类型（0031）：personal=个人版（默认）/ team=团队版。仅档位标注，不参与判权。 */
+  @Column({ type: 'text', default: 'personal' })
+  tier: string;
+
   @Column({ type: 'int', default: 0 })
   price_cents: number;
 

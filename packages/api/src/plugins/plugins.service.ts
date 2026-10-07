@@ -322,6 +322,20 @@ export class PluginsService {
     return s;
   }
 
+  /** 订阅类型白名单（0031）：personal=个人版 / team=团队版。仅档位标注，不参与判权。 */
+  private static readonly SUB_TIERS = ['personal', 'team'];
+
+  /** 与 parseStatusInput 同构：未传回退 fallback，非法报 400（新增/编辑两入口共用防漂移） */
+  private parseTierInput(body: any, fallback: string): string {
+    const raw = body?.tier;
+    if (raw === undefined || raw === null || raw === '') return fallback;
+    const s = String(raw).trim();
+    if (!PluginsService.SUB_TIERS.includes(s)) {
+      throw new BadRequestException(`订阅类型只能是 ${PluginsService.SUB_TIERS.join(' / ')}`);
+    }
+    return s;
+  }
+
   /**
    * 后台：某插件的订阅列表（join users 取邮箱/昵称）。
    *
@@ -352,6 +366,7 @@ export class PluginsService {
         's.user_id AS user_id',
         's.plugin_id AS plugin_id',
         's.plan AS plan',
+        's.tier AS tier',
         's.status AS status',
         's.price_cents AS price_cents',
         's.started_at AS started_at',
@@ -414,6 +429,7 @@ export class PluginsService {
         existing.expires_at = new Date(base + days * DAY);
       }
       existing.status = status;
+      existing.tier = this.parseTierInput(body, existing.tier || 'personal');
       await this.subRepo.save(existing);
       return existing;
     }
@@ -425,6 +441,7 @@ export class PluginsService {
       user_id: userId,
       plugin_id: pluginId,
       plan: 'manual',
+      tier: this.parseTierInput(body, 'personal'),
       price_cents: 0,
       status,
       started_at: new Date(),
@@ -460,6 +477,9 @@ export class PluginsService {
     if (body?.status !== undefined) {
       // 复用同一个解析器：白名单与报错文案与新增入口保持一致
       sub.status = this.parseStatusInput(body, sub.status);
+    }
+    if (body?.tier !== undefined) {
+      sub.tier = this.parseTierInput(body, sub.tier || 'personal');
     }
     await this.subRepo.save(sub);
     return sub;

@@ -10,6 +10,8 @@ export interface SubRow {
   id: string;
   user_id: string;
   plan: string;
+  /** 订阅类型（0031）：personal=个人版 / team=团队版（存量行由 DB 默认值归入 personal） */
+  tier?: string;
   status: string;
   price_cents: number | string;
   started_at: string;
@@ -28,6 +30,14 @@ export interface UserRow {
 
 /** 状态值必须与后端 PluginsService.SUB_STATUSES 逐字一致 */
 export const SUB_STATUSES = ['active', 'expired', 'cancelled'] as const;
+
+/** 订阅类型（0031）必须与后端 PluginsService.SUB_TIERS 逐字一致 */
+export const SUB_TIERS = ['personal', 'team'] as const;
+
+/** 订阅类型 → 徽标样式（team 紫 / personal 灰） */
+export function tierBadgeClass(t?: string): string {
+  return t === 'team' ? 'bg-violet-100 text-violet-700' : 'bg-neutral-100 text-neutral-500';
+}
 
 export const PRESET_DAYS = [7, 30, 90, 365];
 export const PAGE_SIZE = 20;

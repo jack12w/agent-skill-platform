@@ -6,6 +6,7 @@ import useTranslation from '../../../hooks/useTranslation';
 import {
   PRESET_DAYS,
   SUB_STATUSES,
+  SUB_TIERS,
   dayToCnEndOfDay,
   getToken,
   toDateInput,
@@ -37,6 +38,8 @@ export default function SubFormModal({ mode, pluginId, sub, onClose, onSaved }: 
   /* ---------------- 共用：状态 / 到期时间 ---------------- */
   // 新增与编辑的默认状态都是「生效中」
   const [status, setStatus] = useState<string>(isEdit ? sub?.status || 'active' : 'active');
+  // 订阅类型（0031）：编辑默认取现有值，新增默认个人版
+  const [tier, setTier] = useState<string>(isEdit ? sub?.tier || 'personal' : 'personal');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
 
@@ -88,7 +91,7 @@ export default function SubFormModal({ mode, pluginId, sub, onClose, onSaved }: 
       return;
     }
 
-    const body: Record<string, unknown> = { status };
+    const body: Record<string, unknown> = { status, tier };
 
     if (isEdit) {
       if (!day) {
@@ -296,6 +299,22 @@ export default function SubFormModal({ mode, pluginId, sub, onClose, onSaved }: 
               </div>
             </div>
           )}
+
+          {/* 订阅类型（0031）：仅档位标注，不影响判权 */}
+          <label className="block">
+            <span className="text-xs text-neutral-500">{t('admin.subThTier')}</span>
+            <select
+              className={`${field} mt-1`}
+              value={tier}
+              onChange={(e) => setTier(e.target.value)}
+            >
+              {SUB_TIERS.map((v) => (
+                <option key={v} value={v}>
+                  {v === 'team' ? t('admin.subTierTeam') : t('admin.subTierPersonal')}
+                </option>
+              ))}
+            </select>
+          </label>
 
           {/* 状态 */}
           <label className="block">
