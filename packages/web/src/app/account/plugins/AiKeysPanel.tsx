@@ -50,6 +50,8 @@ export default function AiKeysPanel({
   /* 一键使用卡片（2026-10-06）：WorkBuddy 粘贴 JSON / ACCIO WORK HTTP 表单三行，两平台同端点 */
   const [useTab, setUseTab] = useState<'wb' | 'accio'>('wb');
   const [useCopied, setUseCopied] = useState(false);
+  /* ACCIO 三行独立复制的「已复制」标记（2026-10-07） */
+  const [copiedField, setCopiedField] = useState('');
 
   const load = useCallback(async () => {
     if (!currentUserId()) {
@@ -97,7 +99,8 @@ export default function AiKeysPanel({
         setLabel('');
         await load();
       } else {
-        onNotice?.(t('plugins.keysCreateFailed'));
+        /* 后端业务文案优先（如 KEY_LIMIT：有效密钥最多 10 个…），别吞成统一「操作失败」 */
+        onNotice?.(String(j?.error || j?.message || t('plugins.keysCreateFailed')));
       }
     } catch {
       onNotice?.(t('plugins.keysCreateFailed'));
@@ -124,6 +127,25 @@ export default function AiKeysPanel({
     setBusyId(null);
   };
 
+  const delKey = async (row: KeyRow) => {
+    if (busyId) return;
+    if (!confirm(t('plugins.keysDelConfirm'))) return;
+    setBusyId(row.id);
+    try {
+      const res = await fetch(`/api/ai/keys/${row.id}?purge=1`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+        cache: 'no-store',
+      });
+      if (res.ok) onNotice?.(t('plugins.keysDelDone'));
+      else onNotice?.(t('plugins.keysCreateFailed'));
+      await load();
+    } catch {
+      onNotice?.(t('plugins.keysCreateFailed'));
+    }
+    setBusyId(null);
+  };
+
   const copyKey = async () => {
     try {
       await navigator.clipboard.writeText(newKey);
@@ -133,29 +155,43 @@ export default function AiKeysPanel({
     }
   };
 
-  /* 一键使用：按当前 tab 组装配置文本（密钥自动嵌入；origin 运行时取，避免硬编码域名） */
-  const buildUseText = () => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://skills.rehomi.com';
-    const base = `${origin}/api/ai/mcp`;
-    if (useTab === 'wb') {
-      return JSON.stringify(
-        {
-          mcpServers: {
-            外贸工具箱: {
-              type: 'http',
-              url: base,
-              headers: { Authorization: `Bearer ${newKey}` },
-            },
+  /* MCP 端点（origin 运行时取，避免硬编码域名）；WorkBuddy JSON 与 ACCIO 三行共用 */
+  const mcpBase = `${typeof window !== 'undefined' ? window.location.origin : 'https://skills.rehomi.com'}/api/ai/mcp`;
+
+  /* 一键使用：WorkBuddy 标签页的 JSON 配置文本（密钥自动嵌入） */
+  const buildUseText = () =>
+    JSON.stringify(
+      {
+        mcpServers: {
+          外贸工具箱: {
+            type: 'http',
+            url: mcpBase,
+            headers: { Authorization: `Bearer ${newKey}` },
           },
         },
-        null,
-        2,
-      );
+      },
+      null,
+      2,
+    );
+
+  /* ACCIO HTTP 表单三行（2026-10-07 真机核实 ACCIO 支持自定义请求头，Key=Value 格式）：
+     字段名与 ACCIO 配置页同名，一行对一个输入框独立复制。鉴权走 header，密钥不进 URL。 */
+  const accioFields = [
+    { id: 'name', label: t('plugins.keysAccioName'), value: '外贸工具箱' },
+    { id: 'url', label: t('plugins.keysAccioUrl'), value: mcpBase },
+    { id: 'header', label: t('plugins.keysAccioHeader'), value: `Authorization=Bearer ${newKey}` },
+  ];
+
+  const copyField = async (id: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedField(id);
+      setTimeout(() => setCopiedField(''), 1500);
+    } catch {
+      /* 剪贴板权限被拒：值可手动选中复制（code 块带 select-all） */
     }
-    /* ACCIO HTTP 表单（2026-10-07 真机核实支持自定义请求头，Key=Value 格式）：
-       三行 = ① 服务器名称 ② 服务器 URL ③ 请求头。鉴权走 header，密钥不进 URL（与 WorkBuddy 同通道）。 */
-    return [`外贸工具箱`, base, `Authorization=Bearer ${newKey}`].join('\n');
   };
+
   const copyUseText = async () => {
     try {
       await navigator.clipboard.writeText(buildUseText());
@@ -235,22 +271,42 @@ export default function AiKeysPanel({
             <li>{t(useTab === 'wb' ? 'plugins.keysUseWbStep2' : 'plugins.keysUseAccioStep2')}</li>
             <li>{t(useTab === 'wb' ? 'plugins.keysUseWbStep3' : 'plugins.keysUseAccioStep3')}</li>
           </ol>
-          <div className="mt-2 flex items-center gap-2">
-            <code className="flex-1 text-[11px] font-mono bg-white border border-neutral-200 rounded-lg px-3 py-2 break-all select-all max-h-32 overflow-auto whitespace-pre">
-              {buildUseText()}
-            </code>
-            <button
-              onClick={copyUseText}
-              className="shrink-0 text-xs text-white bg-brand-600 rounded-lg px-3 py-1.5 hover:bg-brand-700"
-            >
-              {useCopied ? t('plugins.keysUseCopied') : t('plugins.keysUseCopy')}
-            </button>
-          </div>
-          <p className="mt-2 text-[11px] text-neutral-400">
-            {t('plugins.keysUseTry')}
-            {useTab === 'accio' ? ' ' + t('plugins.keysUseAccioJson') : ''}
-          </p>
-          <p className="mt-1 text-[11px] text-neutral-400">{t('plugins.keysUseLost')}</p>
+          {useTab === 'accio' ? (
+            /* ACCIO：三行独立复制（字段名与 ACCIO HTTP 配置页同名） */
+            <div className="mt-2 space-y-2">
+              {accioFields.map((f) => (
+                <div key={f.id} className="flex items-center gap-2">
+                  <span className="shrink-0 w-[76px] text-xs text-neutral-600">{f.label}</span>
+                  <code className="flex-1 text-[11px] font-mono bg-white border border-neutral-200 rounded-lg px-3 py-2 break-all select-all">
+                    {f.value}
+                  </code>
+                  <button
+                    onClick={() => copyField(f.id, f.value)}
+                    className={`shrink-0 text-xs border rounded-lg px-2.5 py-1.5 ${
+                      copiedField === f.id
+                        ? 'text-emerald-600 border-emerald-200 bg-emerald-50'
+                        : 'text-brand-600 border-brand-200 hover:bg-brand-50'
+                    }`}
+                  >
+                    {copiedField === f.id ? t('plugins.keysUseCopied') : t('plugins.keysCopy')}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-2 flex items-center gap-2">
+              <code className="flex-1 text-[11px] font-mono bg-white border border-neutral-200 rounded-lg px-3 py-2 break-all select-all max-h-32 overflow-auto whitespace-pre">
+                {buildUseText()}
+              </code>
+              <button
+                onClick={copyUseText}
+                className="shrink-0 text-xs text-white bg-brand-600 rounded-lg px-3 py-1.5 hover:bg-brand-700"
+              >
+                {useCopied ? t('plugins.keysUseCopied') : t('plugins.keysUseCopy')}
+              </button>
+            </div>
+          )}
+          <p className="mt-2 text-[11px] text-neutral-400">{t('plugins.keysUseLost')}</p>
         </div>
       )}
 
@@ -278,7 +334,16 @@ export default function AiKeysPanel({
                   {k.label || '—'} · {new Date(k.createdAt).toLocaleDateString('zh-CN')}
                 </div>
               </div>
-              {!k.revokedAt && (
+              {k.revokedAt ? (
+                /* 已吊销：可从列表删除（后端 purge=1 仅删本人已吊销行） */
+                <button
+                  onClick={() => delKey(k)}
+                  disabled={busyId === k.id}
+                  className="shrink-0 text-xs text-neutral-600 border border-neutral-200 rounded-md px-2.5 py-1 hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  {busyId === k.id ? '…' : t('plugins.keysDel')}
+                </button>
+              ) : (
                 <button
                   onClick={() => revoke(k)}
                   disabled={busyId === k.id}

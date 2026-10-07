@@ -8,11 +8,12 @@ import {
   HttpException,
   Param,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import * as crypto from 'node:crypto';
 import { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
@@ -24,7 +25,8 @@ import { AiApiKey } from './ai-api-key.entity';
  * 路由（用户 JWT，AuthGuard）：
  *   POST   /api/ai/keys      {label?} → {ok, id, key(明文仅此一次), keyHint}
  *   GET    /api/ai/keys      → {ok, keys:[{id,label,keyMasked,createdAt,revokedAt}]}
- *   DELETE /api/ai/keys/:id  → {ok}（软吊销 revoked_at，幂等）
+ *   DELETE /api/ai/keys/:id          → {ok}（软吊销 revoked_at，幂等）
+ *   DELETE /api/ai/keys/:id?purge=1 → {ok}（硬删除，仅限本人已吊销的行；2026-10-07）
  *
  * 安全要点：
  *   · 生成 crypto.randomBytes(18).toString('base64url')，前缀 ai_sk_；**只存 sha256**，
@@ -94,11 +96,26 @@ export class AiKeysController {
 
   @Delete('keys/:id')
   @Header('Cache-Control', 'no-store')
-  async revoke(@Req() req: Request, @Param('id') id: string) {
+  async revoke(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Query('purge') purge: string,
+  ) {
     const userId = this.uid(req);
     const keyId = Number(id);
     if (!Number.isInteger(keyId) || keyId <= 0) {
       return { ok: true, already: true };
+    }
+    /* purge=1：硬删除已吊销的行（2026-10-07 用户需求：吊销后的记录可从列表移除）。
+       双保险：仅删 (本人 + 已吊销) 的行——有效密钥传 purge 也删不掉，先吊销再删除。 */
+    if (String(purge || '') === '1') {
+      await this.keyRepo.delete({
+        id: keyId,
+        user_id: userId,
+        revoked_at: Not(IsNull()) as any,
+      });
+      /* 幂等：不存在/非本人/未吊销 一律 ok（防枚举，不区分原因） */
+      return { ok: true };
     }
     await this.keyRepo.update(
       { id: keyId, user_id: userId, revoked_at: IsNull() as any },
