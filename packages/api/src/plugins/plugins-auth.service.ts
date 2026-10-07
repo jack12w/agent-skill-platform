@@ -329,6 +329,8 @@ export class PluginsAuthService {
       expires_at: sub.expires_at.toISOString(),
       status: sub.status,
       plan: sub.plan,
+      /** 订阅类型（0031）：AI 功能（推送/自动采集）仅 team 档开放，插件端按此挂/不挂 AI UI */
+      tier: sub.tier === 'team' ? ('team' as const) : ('personal' as const),
       plugin: plugin ? { slug: plugin.slug, name: plugin.name } : undefined,
     };
   }

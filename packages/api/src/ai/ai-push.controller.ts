@@ -152,6 +152,16 @@ export class AiPushController {
         upgradeUrl: `${(process.env.PUBLIC_BASE_URL || 'https://skills.rehomi.com').replace(/\/+$/, '')}/pricing`,
       });
     }
+    /* ②b 企业版门禁（2026-10-07）：AI 推送仅 team 档可用。口径与 ② 同为订阅级失效
+       → 402 保留令牌（升级后即恢复），插件端按 code=TIER_REQUIRED 区分提示文案。 */
+    if (String(sub.tier || 'personal') !== 'team') {
+      await this.log(device.user_id, device.plugin_id, 'rejected', null, 0, 'TIER_REQUIRED');
+      fail(402, {
+        ok: false,
+        code: 'TIER_REQUIRED',
+        upgradeUrl: `${(process.env.PUBLIC_BASE_URL || 'https://skills.rehomi.com').replace(/\/+$/, '')}/pricing`,
+      });
+    }
 
     /* ③ 体积硬上限（先查原始 body 再解析级校验；全局 body parser 上限 10mb，此处业务红线 5MB） */
     const bytes = body && typeof body === 'object' ? Buffer.byteLength(JSON.stringify(body)) : 0;
