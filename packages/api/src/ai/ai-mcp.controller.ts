@@ -87,6 +87,8 @@ function toolErrorText(status: number, body: Record<string, unknown>): string {
       return '密钥无效或已吊销（401）。请在平台「密钥管理」重新生成并更新配置。';
     case 'MEMBER_REQUIRED':
       return `订阅已失效（402）。密钥已保留，续费即恢复：${String(body?.upgradeUrl || '')}`;
+    case 'TIER_REQUIRED':
+      return `非企业订阅不可调用（402）。AI 数据取数仅限企业版订阅使用，升级后当前密钥直接生效：${String(body?.upgradeUrl || '')}`;
     case 'NOT_FOUND':
       return `${String(body?.error || '该类型尚无数据')}（404）。先在插件对应工作条采集/导出一次。`;
     case 'RATE_LIMITED':

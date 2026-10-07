@@ -110,6 +110,19 @@ export class AiQueryService {
       });
     }
 
+    /* ③b 企业版门禁（2026-10-07 用户拍板）：查询取数与推送同口径，仅 team 订阅可调。
+       个人版 → 402 TIER_REQUIRED（密钥保留，升级即恢复），upgradeUrl 供客户端跳订阅页。
+       与 ai-push ②b 同一判断写法（String(sub.tier||'personal')!=='team'）。 */
+    if (String(sub.tier || 'personal') !== 'team') {
+      await this.usage(userId, key.id, t, null, 0, 'rejected', 'TIER_REQUIRED');
+      fail(402, {
+        ok: false,
+        code: 'TIER_REQUIRED',
+        error: '非企业订阅不可调用：AI 数据取数仅限企业版订阅使用',
+        upgradeUrl: `${(process.env.PUBLIC_BASE_URL || 'https://skills.rehomi.com').replace(/\/+$/, '')}/pricing`,
+      });
+    }
+
     /* ④ 限流 60 次/时/密钥：按 usage_event 全量计数（含失败） */
     const recent = await this.dataSource.query(
       `SELECT COUNT(*)::int AS n FROM ai_usage_event

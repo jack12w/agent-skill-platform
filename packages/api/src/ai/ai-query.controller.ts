@@ -13,6 +13,7 @@ import { AiQueryService } from './ai-query.service';
  *        —— page 省略时全量返回（向后兼容旧 MCP），带 page/pageSize 时为切片
  *   401 {ok:false, code:'UNAUTHORIZED'}                    密钥缺失/无效/已吊销
  *   402 {ok:false, code:'MEMBER_REQUIRED', upgradeUrl}     订阅失效（isSubscriptionEntitled 唯一口径）
+ *   402 {ok:false, code:'TIER_REQUIRED', upgradeUrl}       非企业订阅（仅 team 可查；密钥保留，升级即恢复）
  *   404 {ok:false, code:'NOT_FOUND'}                       该类型尚无数据（查不到 ≠ 失败）
  *   413 {ok:false, code:'PAYLOAD_TOO_LARGE'}               全量合并 >8MB（提示改用分页）
  *   429 {ok:false, code:'RATE_LIMITED'}                    60 次/时/密钥
