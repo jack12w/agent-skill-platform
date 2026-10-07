@@ -47,7 +47,7 @@ export default function AiKeysPanel({
   const [label, setLabel] = useState('');
   const [newKey, setNewKey] = useState('');
   const [copied, setCopied] = useState(false);
-  /* 一键使用卡片（2026-10-06）：WorkBuddy 粘贴 JSON / ACCIO WORK HTTP URL，两平台同端点 */
+  /* 一键使用卡片（2026-10-06）：WorkBuddy 粘贴 JSON / ACCIO WORK HTTP 表单三行，两平台同端点 */
   const [useTab, setUseTab] = useState<'wb' | 'accio'>('wb');
   const [useCopied, setUseCopied] = useState(false);
 
@@ -152,7 +152,9 @@ export default function AiKeysPanel({
         2,
       );
     }
-    return `${base}?key=${newKey}`;
+    /* ACCIO HTTP 表单（2026-10-07 真机核实支持自定义请求头，Key=Value 格式）：
+       三行 = ① 服务器名称 ② 服务器 URL ③ 请求头。鉴权走 header，密钥不进 URL（与 WorkBuddy 同通道）。 */
+    return [`外贸工具箱`, base, `Authorization=Bearer ${newKey}`].join('\n');
   };
   const copyUseText = async () => {
     try {

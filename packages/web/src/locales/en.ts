@@ -988,7 +988,7 @@ const en = {
     keysUseWbStep2: 'Follow the prompt: open "Connectors" → Custom connectors → click "Trust" on the new entry',
     keysUseWbStep3: 'Back in chat, just say "Fetch today\'s visitors" to pull data',
     keysUseAccioStep1: 'Open ACCIO WORK → Connector / MCP settings → choose the "HTTP" method',
-    keysUseAccioStep2: 'Paste the URL below into the URL field (key included), then save and enable',
+    keysUseAccioStep2: 'Fill "Server name" with line 1, "Server URL" with line 2, and paste line 3 into the header field (Key=Value format), then save and enable',
     keysUseAccioStep3: 'Start chatting: "Fetch today\'s visitors" or "Fetch search keywords"',
     keysUseCopy: 'Copy config',
     keysUseCopied: 'Copied',

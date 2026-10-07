@@ -999,7 +999,7 @@ const zh = {
     keysUseWbStep2: '按提示打开「连接器」→ 自定义连接器 → 对「外贸工具箱」点「信任」',
     keysUseWbStep3: '回到对话框，说「拉取今天的访客」即可取数',
     keysUseAccioStep1: '打开 ACCIO WORK → 连接器 / MCP 配置 → 选择「HTTP」方式',
-    keysUseAccioStep2: '把下方地址粘贴到 URL 栏（密钥已包含在地址里），保存并启用',
+    keysUseAccioStep2: '第 1 行填「服务器名称」、第 2 行填「服务器 URL」、第 3 行粘贴到「请求头」（Key=Value 格式），保存并启用',
     keysUseAccioStep3: '开启对话：「拉取今天的访客」「拉取 search 关键词」即可取数',
     keysUseCopy: '复制配置',
     keysUseCopied: '已复制',
