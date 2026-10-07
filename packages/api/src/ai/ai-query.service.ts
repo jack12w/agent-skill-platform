@@ -324,7 +324,10 @@ export class AiQueryService {
     };
   }
 
-  /** usage_event 全量留痕（尽力而为，失败不影响主流程） */
+  /** usage_event 全量留痕（尽力而为，失败不影响主流程）。
+   *  ⚠️ 0026 把 type 设为 NOT NULL、0027 只放开了 user_id —— 401/未知 type 路径 type 可能是
+   *  null，插 NULL 会被约束拒绝并被 try/catch 静默吞掉（自 0026 起的审计缺口，2026-10-07 修复）。
+   *  这里统一兜底：type null → ''（语义无损，失效原因本就记在 code 列）；user_id null 合法（0027）。 */
   private async usage(
     userId: string | null,
     keyId: number | null,
@@ -338,7 +341,7 @@ export class AiQueryService {
       await this.dataSource.query(
         `INSERT INTO ai_usage_event (user_id, api_key_id, type, range_days, rows_returned, status, code)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [userId, keyId, type, rangeDays, rows, status, code],
+        [userId, keyId, type ?? '', rangeDays, rows, status, code],
       );
     } catch (e) {
       /* 留痕失败不影响主流程 */

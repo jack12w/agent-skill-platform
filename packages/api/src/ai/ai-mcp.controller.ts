@@ -248,13 +248,14 @@ export class AiMcpController {
   }
 
   /** MCP 层 401 留痕（尽力而为，失败不影响响应）。
-   *  ⚠️ ai_usage_event.user_id/type 为 NOT NULL（0026）——必须用哨兵值，插 NULL 会静默失败：
-   *  user_id 用 nil-uuid、type 用 '__unauth__'（REST 路径 service 里 usage(null,…) 同样受此限制）。 */
+   *  0027 已放开 user_id 的 NOT NULL → 与 REST 路径 service.usage() 口径一致：
+   *  user_id NULL（拿不到）+ type ''（0026 NOT NULL，code 列记 UNAUTHORIZED）。
+   *  部署幂等保险：ALTER TABLE ai_usage_event ALTER COLUMN user_id DROP NOT NULL;（0027 已含）。 */
   private async audit401(): Promise<void> {
     try {
       await this.dataSource.query(
         `INSERT INTO ai_usage_event (user_id, api_key_id, type, range_days, rows_returned, status, code)
-         VALUES ('00000000-0000-0000-0000-000000000000', NULL, '__unauth__', NULL, 0, 'rejected', 'UNAUTHORIZED')`,
+         VALUES (NULL, NULL, '', NULL, 0, 'rejected', 'UNAUTHORIZED')`,
       );
     } catch (e) {
       /* 留痕失败不影响主流程 */
