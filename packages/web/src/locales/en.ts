@@ -401,6 +401,17 @@ const en = {
     loading: 'Loading…',
     prevPage: 'Previous',
     nextPage: 'Next',
+    // ── Users (user-count column popup) ──
+    thUserCount: 'Users',
+    usersTitle: 'Users',
+    usersTotal: '{n} user(s)',
+    usersUuid: 'UUID',
+    usersName: 'Name',
+    usersEmail: 'Email',
+    usersStartDate: 'First used',
+    usersRecentDate: 'Last active',
+    usersEmpty: 'No users yet',
+    usersSearch: 'Search email / name',
     // ── Subscriptions ──
     tabPlugins: 'Plugins',
     tabSubscriptions: 'Subscriptions',

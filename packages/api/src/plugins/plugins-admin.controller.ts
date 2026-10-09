@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   Query,
+  Header,
   UseGuards,
   Request,
   UseInterceptors,
@@ -193,8 +194,20 @@ export class PluginsAdminController {
   }
 
   @Get()
+  @Header('Cache-Control', 'no-store')
   list() {
     return this.svc.adminList();
+  }
+
+  /**
+   * 某插件的「使用用户」列表（distinct 已授权设备用户，join users）。
+   * 路由两段 `:id/users` 不会与一段的 `@Get(':id')` 互相截胡。
+   * 走 no-store：刚解绑/新增设备后，管理端点开要看到最新名单，不能读浏览器启发式缓存。
+   */
+  @Get(':id/users')
+  @Header('Cache-Control', 'no-store')
+  listUsers(@Param('id') id: string, @Query() q: any) {
+    return this.svc.adminListUsers(id, q);
   }
 
   @Get(':id')

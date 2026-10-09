@@ -401,6 +401,17 @@ const zh = {
     loading: '加载中…',
     prevPage: '上一页',
     nextPage: '下一页',
+    // ── 使用用户（用户数列弹窗）──
+    thUserCount: '用户数',
+    usersTitle: '使用用户',
+    usersTotal: '共 {n} 人',
+    usersUuid: 'UUID',
+    usersName: '用户名称',
+    usersEmail: '邮箱号',
+    usersStartDate: '开始日期',
+    usersRecentDate: '最近日期',
+    usersEmpty: '暂无使用用户',
+    usersSearch: '搜索邮箱 / 用户名',
     // ── 订阅管理 ──
     tabPlugins: '插件管理',
     tabSubscriptions: '订阅管理',

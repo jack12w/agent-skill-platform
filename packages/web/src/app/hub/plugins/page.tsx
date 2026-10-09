@@ -25,6 +25,8 @@ interface PluginItem {
   max_activations: number;
   download_key: string | null;
   download_filename: string | null;
+  /** 使用这款插件的用户数（已授权设备口径，按 user_id 去重） */
+  user_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -108,6 +110,47 @@ export default function HubPluginsPage() {
   const [tab, setTab] = useState<'plugins' | 'subs' | 'data'>('plugins');
   /** 「插件数据」内子 tab：数据看板 / 类型注册表（计划 v2.4） */
   const [dataTab, setDataTab] = useState<'board' | 'types'>('board');
+
+  /** 「使用用户」弹窗状态（点击列表里的用户数打开） */
+  const [usersOpen, setUsersOpen] = useState(false);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [users, setUsers] = useState<any[]>([]);
+  const [usersTotal, setUsersTotal] = useState(0);
+  const [usersPlugin, setUsersPlugin] = useState<PluginItem | null>(null);
+  const [usersSearch, setUsersSearch] = useState('');
+
+  const loadUsers = useCallback(
+    async (pluginId: string, page: number, search: string) => {
+      const token = getToken();
+      if (!token) return;
+      setUsersLoading(true);
+      try {
+        const params = new URLSearchParams({ page: String(page), size: '50', search });
+        const res = await fetch(`/api/admin/plugins/${pluginId}/users?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        const data = await res.json();
+        setUsers(data.items || []);
+        setUsersTotal(data.total || 0);
+      } catch {
+        setUsers([]);
+        setUsersTotal(0);
+      } finally {
+        setUsersLoading(false);
+      }
+    },
+    [],
+  );
+
+  const openUsers = (p: PluginItem) => {
+    setUsersPlugin(p);
+    setUsersOpen(true);
+    setUsers([]);
+    setUsersTotal(0);
+    setUsersSearch('');
+    loadUsers(p.id, 1, '');
+  };
 
   const fetchData = useCallback(async () => {
     const token = getToken();
@@ -400,6 +443,7 @@ export default function HubPluginsPage() {
                 <th className="px-4 py-3 text-right">{t('admin.thPrice')}</th>
                 <th className="px-4 py-3 text-center hidden sm:table-cell">{t('admin.thOrder')}</th>
                 <th className="px-4 py-3 text-center hidden lg:table-cell">{t('admin.thDevices')}</th>
+                <th className="px-4 py-3 text-center hidden lg:table-cell">{t('admin.thUserCount')}</th>
                 <th className="px-4 py-3 text-center">{t('admin.thStatus')}</th>
                 <th className="px-4 py-3 text-right">{t('admin.thActions')}</th>
               </tr>
@@ -436,6 +480,15 @@ export default function HubPluginsPage() {
                   <td className="px-4 py-3 text-center text-neutral-500 hidden lg:table-cell">
                     {p.max_activations ?? 2}
                   </td>
+                  <td className="px-4 py-3 text-center hidden lg:table-cell">
+                    <button
+                      onClick={() => openUsers(p)}
+                      title={t('admin.usersTitle')}
+                      className="text-brand-600 hover:underline font-medium tabular-nums"
+                    >
+                      {p.user_count ?? 0}
+                    </button>
+                  </td>
                   <td className="px-4 py-3 text-center">
                     <span
                       className={`px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -470,7 +523,7 @@ export default function HubPluginsPage() {
               ))}
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-neutral-400 text-sm">
+                  <td colSpan={9} className="px-4 py-12 text-center text-neutral-400 text-sm">
                     {t('admin.noPlugins')}
                   </td>
                 </tr>
@@ -732,6 +785,81 @@ export default function HubPluginsPage() {
               >
                 {t('admin.save')}
               </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* 使用用户弹窗：点击列表里的「用户数」打开 */}
+      {usersOpen && usersPlugin && (
+        <Modal onClose={() => setUsersOpen(false)} align="top" backdrop="bg-black/40">
+          <div className="bg-white rounded-xl w-full max-w-3xl my-8 shadow-xl">
+            <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
+              <h2 className="font-semibold text-neutral-900">
+                {usersPlugin.name} · {t('admin.usersTitle')}
+                <span className="ml-2 text-sm font-normal text-neutral-500">
+                  {t('admin.usersTotal', { n: usersTotal })}
+                </span>
+              </h2>
+              <button
+                onClick={() => setUsersOpen(false)}
+                className="text-neutral-400 hover:text-neutral-700 text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <input
+                className={field}
+                placeholder={t('admin.usersSearch')}
+                value={usersSearch}
+                onChange={(e) => setUsersSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') loadUsers(usersPlugin.id, 1, usersSearch);
+                }}
+              />
+
+              {usersLoading ? (
+                <div className="flex justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
+                </div>
+              ) : users.length === 0 ? (
+                <div className="py-12 text-center text-neutral-400 text-sm">
+                  {t('admin.usersEmpty')}
+                </div>
+              ) : (
+                <div className="bg-white border border-neutral-200 rounded-xl overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-neutral-100 text-neutral-500 text-xs uppercase">
+                      <tr>
+                        <th className="px-3 py-2 text-left">{t('admin.usersUuid')}</th>
+                        <th className="px-3 py-2 text-left">{t('admin.usersName')}</th>
+                        <th className="px-3 py-2 text-left">{t('admin.usersEmail')}</th>
+                        <th className="px-3 py-2 text-left">{t('admin.usersStartDate')}</th>
+                        <th className="px-3 py-2 text-left">{t('admin.usersRecentDate')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {users.map((u) => (
+                        <tr key={u.user_id} className="hover:bg-neutral-50">
+                          <td className="px-3 py-2">
+                            <code className="text-xs text-neutral-500 break-all">{u.user_id}</code>
+                          </td>
+                          <td className="px-3 py-2 text-neutral-800">{u.user_name || '—'}</td>
+                          <td className="px-3 py-2 text-neutral-600">{u.user_email || '—'}</td>
+                          <td className="px-3 py-2 text-neutral-500 tabular-nums whitespace-nowrap">
+                            {u.start_date ? new Date(u.start_date).toLocaleString('zh-CN') : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-neutral-500 tabular-nums whitespace-nowrap">
+                            {u.recent_date ? new Date(u.recent_date).toLocaleString('zh-CN') : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         </Modal>

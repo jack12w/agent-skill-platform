@@ -130,9 +130,92 @@ export class PluginsService {
 
   // ─────────────────────── 后台上架管理（AdminGuard 保护） ───────────────────────
 
-  /** 后台列表：含下架，按排序 */
-  async adminList(): Promise<Plugin[]> {
-    return this.pluginRepo.find({ order: { sort_order: 'ASC', created_at: 'ASC' } });
+  /**
+   * 后台列表：含下架，按排序。
+   * 额外附带 `user_count` = 该插件「已授权设备」口径的去重用户数
+   * （plugin_devices 中 revoked_at IS NULL，按 user_id 去重）。
+   */
+  async adminList(): Promise<Array<Plugin & { user_count: number }>> {
+    const [plugins, counts] = await Promise.all([
+      this.pluginRepo.find({ order: { sort_order: 'ASC', created_at: 'ASC' } }),
+      this.userCounts(),
+    ]);
+    return plugins.map((p) => ({ ...p, user_count: counts[p.id] ?? 0 }));
+  }
+
+  /**
+   * 各插件的「使用用户数」聚合（一次 GROUP BY 全量算完，避免 N+1）。
+   * 口径与后台列表「用户数」列、以及 :id/users 弹窗完全一致：
+   * plugin_devices 中 revoked_at IS NULL，按 user_id 去重。
+   *
+   * ⚠️ 用原始 SQL 片段 `.where('d.revoked_at IS NULL')` —— 不要用 `where: { revoked_at: null }`
+   * 对象写法（TypeORM 0.3 默认会把裸 null 条件静默丢弃，见项目 memory）。
+   */
+  private async userCounts(): Promise<Record<string, number>> {
+    const rows = await this.deviceRepo
+      .createQueryBuilder('d')
+      .select('d.plugin_id', 'plugin_id')
+      .addSelect('COUNT(DISTINCT d.user_id)', 'cnt')
+      .where('d.revoked_at IS NULL')
+      .groupBy('d.plugin_id')
+      .getRawMany();
+    const map: Record<string, number> = {};
+    for (const r of rows) map[r.plugin_id] = Number(r.cnt) || 0;
+    return map;
+  }
+
+  /**
+   * 后台：某插件的「使用用户」列表（distinct 已授权设备用户，join users 取邮箱/昵称）。
+   *
+   * 口径与列表页「用户数」列一致：plugin_devices 中 revoked_at IS NULL，按 user_id 去重；
+   * 一个用户可能有多台设备，这里聚合成一行：
+   *   · start_date  = 该用户最早一次设备授权 created_at（首次开始使用）
+   *   · recent_date = 该用户最近活跃 last_seen_at（未上报过则为 NULL，前端显示「—」）
+   *
+   * 复用 adminListSubscriptions 的写法：devices 表用构造函数注入的 deviceRepo，
+   * users 走 `leftJoin(User, ...)`（与订阅列表同构，避免往 module ENTITIES 加 User 触发 502）。
+   */
+  async adminListUsers(pluginId: string, q: any) {
+    await this.adminGet(pluginId); // 插件不存在 → 直接 404
+
+    const page = Math.max(1, Math.floor(Number(q?.page) || 1));
+    const size = Math.min(200, Math.max(1, Math.floor(Number(q?.size) || 50)));
+    const search = String(q?.search ?? '').trim();
+
+    // items 与 total 必须走**完全相同**的 where，否则分页数会对不上
+    const apply = (qb: any) => {
+      qb.where('d.plugin_id = :pluginId', { pluginId }).andWhere('d.revoked_at IS NULL');
+      if (search) {
+        qb.andWhere('(u.email ILIKE :kw OR u.name ILIKE :kw)', { kw: `%${search}%` });
+      }
+      return qb;
+    };
+
+    const items = await apply(
+      this.deviceRepo.createQueryBuilder('d').leftJoin(User, 'u', 'u.id = d.user_id'),
+    )
+      .select([
+        'd.user_id AS user_id',
+        'u.email AS user_email',
+        'u.name AS user_name',
+        'MIN(d.created_at) AS start_date',
+        'MAX(d.last_seen_at) AS recent_date',
+      ])
+      .groupBy('d.user_id')
+      .addGroupBy('u.email')
+      .addGroupBy('u.name')
+      .orderBy('recent_date', 'DESC', 'NULLS LAST')
+      .offset((page - 1) * size)
+      .limit(size)
+      .getRawMany();
+
+    const totalRow = await apply(
+      this.deviceRepo.createQueryBuilder('d').leftJoin(User, 'u', 'u.id = d.user_id'),
+    )
+      .select('COUNT(DISTINCT d.user_id)', 'c')
+      .getRawOne();
+
+    return { items, total: Number(totalRow?.c ?? 0), page, size };
   }
 
   /** 后台详情（含下架），未找到抛 404 */
