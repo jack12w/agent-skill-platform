@@ -32,6 +32,8 @@ interface MySub {
   plugin_id: string;
   status: string;
   expires_at: string;
+  /** personal=个人版 / team=企业版（企业版订单由支付回调映射到主插件行并置 team） */
+  tier?: string;
 }
 
 const EMOJI: Record<string, string> = {
@@ -110,7 +112,16 @@ export default function PluginsPage() {
   );
 
   const isActive = (p: Plugin): MySub | null => {
-    const s = subs[p.id];
+    let s = subs[p.id];
+    // 企业版档位商品（alibaba-toolkit-b2b）的权益实体在主插件行上（tier='team'，
+    // 支付回调 fulfillPluginSubscription 做了映射）。主插件行上的 team 订阅
+    // 视同已订阅企业版，否则买过企业版的用户在企业版卡片上看到的是
+    // 「订阅」按钮，点进去重复付费。
+    if (!s && p.slug === 'alibaba-toolkit-b2b') {
+      const mainId = plugins.find((x) => x.slug === 'alibaba-toolkit')?.id;
+      const main = mainId ? subs[mainId] : null;
+      if (main && String(main.tier || 'personal') === 'team') s = main;
+    }
     if (!s) return null;
     // 与后端 isSubscriptionEntitled 对齐：cancelled（到期不再续费）但未到期 → 仍算已订阅，
     // 否则取消过的用户会在市场页看到「订阅」按钮，点进去重复付费。

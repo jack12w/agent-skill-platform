@@ -87,9 +87,19 @@ export class PluginsService {
   /** 生成签名下载 URL（免费下载；复用 OSS 签名，不暴露桶路径与原始响应头） */
   async signDownload(pluginId: string) {
     /** 2026-09-27 修正：下架后仍允许已购用户下载安装包。 */
-    const plugin = await this.pluginRepo.findOne({ where: { id: pluginId } });
+    let plugin = await this.pluginRepo.findOne({ where: { id: pluginId } });
     if (!plugin) {
       throw new NotFoundException('插件不存在');
+    }
+    /**
+     * 企业版档位商品（alibaba-toolkit-b2b）的权益实体在主插件行（见
+     * orders.service.ts fulfillPluginSubscription 的映射），安装包也和主插件是同一个。
+     * b2b 商品没单独配 download_key 时回退主插件的，避免已购企业版用户点下载报
+     * 「暂未配置下载文件」。
+     */
+    if (!plugin.download_key && plugin.slug === 'alibaba-toolkit-b2b') {
+      const main = await this.pluginRepo.findOne({ where: { slug: 'alibaba-toolkit' } });
+      if (main?.download_key) plugin = main;
     }
     if (!plugin.download_key) {
       throw new BadRequestException('该插件暂未配置下载文件');

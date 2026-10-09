@@ -9,6 +9,7 @@ import useTranslation from '../../../hooks/useTranslation';
 
 interface Plugin {
   id: string;
+  slug: string;
   name: string;
   category: string;
   price_monthly_cents: number;
@@ -20,6 +21,8 @@ interface MySub {
   status: string;
   expires_at: string;
   started_at: string;
+  /** personal=个人版 / team=企业版（企业版订单由支付回调映射到主插件行并置 team） */
+  tier?: string;
 }
 
 interface DeviceRow {
@@ -624,13 +627,28 @@ export default function MyPluginsPage() {
 
                 <div className="mt-3 flex items-center justify-end gap-2">
                   <button
-                    onClick={() =>
-                      setPayInfo({
-                        id: s.plugin_id,
-                        name: p?.name,
-                        price: p?.price_monthly_cents || 0,
-                      })
-                    }
+                    onClick={() => {
+                      // 企业版（tier=team）订阅的权益实体在主插件行上（支付回调映射，
+                      // 见 orders.service.ts fulfillPluginSubscription），但续费必须
+                      // 按企业版档位商品（alibaba-toolkit-b2b）下单——否则订单落在
+                      // 主插件行上会错按个人版 ¥9.9 计价，等于花 9.9 续了 99 的权益。
+                      const b2b = Object.values(plugins).find(
+                        (x) => x.slug === 'alibaba-toolkit-b2b',
+                      );
+                      if (s.tier === 'team' && b2b) {
+                        setPayInfo({
+                          id: b2b.id,
+                          name: b2b.name,
+                          price: b2b.price_monthly_cents,
+                        });
+                      } else {
+                        setPayInfo({
+                          id: s.plugin_id,
+                          name: p?.name,
+                          price: p?.price_monthly_cents || 0,
+                        });
+                      }
+                    }}
                     className="text-xs text-white bg-brand-600 rounded-lg px-3 py-1.5 hover:bg-brand-700"
                   >
                     {valid ? t('plugins.renew') : t('plugins.resubscribe')}

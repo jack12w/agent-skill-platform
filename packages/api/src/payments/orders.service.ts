@@ -22,6 +22,15 @@ import { BalanceService } from './balance.service';
 import { MembershipService } from './membership.service';
 import { SettingsService } from './settings.service';
 
+/**
+ * 企业版档位商品（alibaba-toolkit-b2b）只是收银台的价格档位，权益实体在主插件行上：
+ * 扩展端 auth_core.js 写死 DEFAULT_SLUG='alibaba-toolkit'，AI 门禁也只读主插件行。
+ * b2b 订单的订阅由 fulfillPluginSubscription 映射到 MAIN_PLUGIN_SLUG 行并置 tier='team'。
+ */
+const B2B_TIER_SLUG = 'alibaba-toolkit-b2b';
+/** 权益实体所在的主插件行（扩展端与 AI 门禁写死的 slug） */
+const MAIN_PLUGIN_SLUG = 'alibaba-toolkit';
+
 export interface CreateOrderInput {
   type: 'skill' | 'membership' | 'creator_membership' | 'plugin';
   skillId?: string;
@@ -469,6 +478,12 @@ export class OrdersService implements OnModuleInit {
    *    cancelled（「到期不再续费」）的用户续费时，剩余天数还应当被保留 ——
    *    旧写法会走 else 分支把到期日重置成 now+30d，等于把他没用的十几天直接吞掉。
    * deliver 仅在 markPaymentPaid 原子抢占成功后调用，故本方法单笔支付只跑一次。
+   *
+   * 企业版档位商品只是收银台的一个价格档位，**权益实体不在它自己身上**：
+   * 扩展端 auth_core.js 写死 DEFAULT_SLUG='alibaba-toolkit'（设备激活/下载只认主插件行），
+   * AI 门禁 ai-query.service.ts 也只读主插件行且要求 tier='team'。
+   * 因此 b2b 订单支付成功后必须把订阅落到主插件行并置 tier='team'（见 B2B_TIER_SLUG），
+   * 否则用户花 ¥99 买到的订阅没人读 → 扩展激活失败 + AI 402（2026-10-09 排查结论）。
    */
   private async fulfillPluginSubscription(
     userId: string,
@@ -478,8 +493,21 @@ export class OrdersService implements OnModuleInit {
   ) {
     const MONTH = 30 * 86400_000;
     const now = Date.now();
+
+    // 企业版订单 → 权益映射到主插件行；其余商品照旧落在自己的行上
+    let targetPluginId = pluginId;
+    let tier = 'personal';
+    const ordered = await this.pluginRepo.findOne({ where: { id: pluginId } });
+    if (ordered?.slug === B2B_TIER_SLUG) {
+      const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
+      if (main) {
+        targetPluginId = main.id;
+        tier = 'team';
+      }
+    }
+
     const existing = await this.pluginSubRepo.findOne({
-      where: { user_id: userId, plugin_id: pluginId },
+      where: { user_id: userId, plugin_id: targetPluginId },
     });
     if (existing) {
       if (isSubscriptionEntitled(existing, now)) {
@@ -491,12 +519,17 @@ export class OrdersService implements OnModuleInit {
       }
       existing.price_cents = priceCents;
       existing.order_id = orderId;
+      // tier 只升不降：企业版订单升 team；个人版续费不得把后台已置的 team 降回 personal
+      if (tier === 'team' || String(existing.tier || 'personal') === 'team') {
+        existing.tier = 'team';
+      }
       await this.pluginSubRepo.save(existing);
     } else {
       const sub = this.pluginSubRepo.create({
         user_id: userId,
-        plugin_id: pluginId,
+        plugin_id: targetPluginId,
         plan: 'monthly',
+        tier,
         price_cents: priceCents,
         status: 'active',
         started_at: new Date(),
