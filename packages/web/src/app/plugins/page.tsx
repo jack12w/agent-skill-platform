@@ -148,22 +148,6 @@ export default function PluginsPage() {
     loadMine();
   };
 
-  // ── 收银台档位下拉（2026-10-09）──
-  // 选项 = 当前全部上架插件（个人版/企业版），价格沿用促销判定；
-  // 默认选中企业版（用户拍板：点「订阅」先看到企业版，下拉可切回个人版）。
-  const checkoutOptions = useMemo(
-    () =>
-      plugins.map((p) => ({
-        id: p.id,
-        name: p.name,
-        priceCents: payCents(p),
-        listCents: strikeCents(p),
-      })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [plugins],
-  );
-  const defaultOptionId = plugins.find((p) => p.slug === 'alibaba-toolkit-b2b')?.id;
-
   // 整元不显示小数，非整元保留两位（避免 ¥79.5 被四舍五入成 ¥80）
   const yuan = (cents: number) => {
     const v = Number(cents || 0) / 100;
@@ -188,6 +172,24 @@ export default function PluginsPage() {
     const list = Number(p.list_price_monthly_cents || 0);
     return list > payCents(p) && promoActive(p) ? list : 0;
   };
+
+  // ── 收银台档位下拉（2026-10-09）──
+  // 选项 = 当前全部上架插件（个人版/企业版），价格沿用促销判定；
+  // 默认选中企业版（用户拍板：点「订阅」先看到企业版，下拉可切回个人版）。
+  // ⚠️ 必须放在 payCents/strikeCents 声明之后：useMemo 工厂在 render 时同步执行，
+  //    放前面会命中 const 的暂时性死区（TDZ）→ Cannot access before initialization。
+  const checkoutOptions = useMemo(
+    () =>
+      plugins.map((p) => ({
+        id: p.id,
+        name: p.name,
+        priceCents: payCents(p),
+        listCents: strikeCents(p),
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [plugins],
+  );
+  const defaultOptionId = plugins.find((p) => p.slug === 'alibaba-toolkit-b2b')?.id;
 
   /* Hero / 结尾 CTA 的主角插件：优先取已订阅的那一个，否则取第一款。
      没有上架插件时 primary 为 null，所有 CTA 自动隐藏（不再渲染空按钮）。 */
