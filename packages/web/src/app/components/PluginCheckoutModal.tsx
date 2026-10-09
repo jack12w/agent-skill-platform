@@ -5,6 +5,14 @@ import QRCode from 'qrcode';
 import useTranslation from '../../hooks/useTranslation';
 import Modal from './Modal';
 
+/** 档位下拉选项（同系列多档商品，如 个人版/企业版） */
+export interface CheckoutOption {
+  id: string;
+  name: string;
+  priceCents: number;
+  listCents?: number;
+}
+
 interface Props {
   pluginId: string;
   pluginName?: string;
@@ -12,6 +20,10 @@ interface Props {
   priceCents: number;
   /** 划线原价（分）；促销中才传，其余情况留空 */
   listCents?: number;
+  /** 可选：传入且 >1 条时，「购买内容」变为档位下拉框；不传保持原样 */
+  options?: CheckoutOption[];
+  /** 打开时默认选中的商品 id；不传或不在 options 里则用 pluginId */
+  defaultOptionId?: string;
   onClose: () => void;
   /** 支付成功回调 */
   onPaid: () => void;
@@ -33,10 +45,25 @@ export default function PluginCheckoutModal({
   pluginName,
   priceCents,
   listCents,
+  options,
+  defaultOptionId,
   onClose,
   onPaid,
 }: Props) {
   const { t } = useTranslation();
+  /* ── 档位下拉（2026-10-09）：仅当调用方传入 >1 条 options 时启用。
+     选中态只影响「展示的名称/价格」与下单 pluginId；未传 options 的调用方
+     （account/plugins 续费页）行为完全不变。 ── */
+  const opts = options && options.length > 1 ? options : null;
+  const [selectedId, setSelectedId] = useState<string>(
+    opts && defaultOptionId && opts.some((o) => o.id === defaultOptionId)
+      ? defaultOptionId
+      : pluginId,
+  );
+  const sel =
+    opts?.find((o) => o.id === selectedId) ??
+    opts?.[0] ?? { id: pluginId, name: pluginName, priceCents, listCents };
+
   const [creating, setCreating] = useState(false);
   const [orderNo, setOrderNo] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
@@ -96,7 +123,7 @@ export default function PluginCheckoutModal({
     setErr(null);
     setCreating(true);
     try {
-      const body: any = { type: 'plugin', pluginId, tradeType: 'NATIVE' };
+      const body: any = { type: 'plugin', pluginId: sel.id, tradeType: 'NATIVE' };
       const res = await fetch('/api/pay/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -137,7 +164,7 @@ export default function PluginCheckoutModal({
     setErr(null);
   };
 
-  const amount = priceCents || 0;
+  const amount = sel.priceCents || 0;
   const mmss = `${String(Math.floor(left / 60)).padStart(2, '0')}:${String(left % 60).padStart(2, '0')}`;
 
   return (
@@ -160,14 +187,32 @@ export default function PluginCheckoutModal({
           <div className="px-6 py-5">
             <div className="mb-4">
               <div className="text-sm text-neutral-500 mb-1">{t('pay.subject')}</div>
-              <div className="font-medium truncate">{pluginName || t('plugins.title')}</div>
+              {opts ? (
+                <select
+                  className="w-full px-3 py-2 text-sm font-medium text-neutral-900 border border-neutral-200 rounded-lg bg-white focus:outline-none focus:border-brand-400"
+                  value={sel.id}
+                  onChange={(e) => {
+                    // 切档即作废未支付订单（二维码/倒计时都对应旧 pluginId）
+                    setSelectedId(e.target.value);
+                    resetOrder();
+                  }}
+                >
+                  {opts.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="font-medium truncate">{sel.name || t('plugins.title')}</div>
+              )}
             </div>
 
             <div className="flex items-baseline justify-between mb-4">
               <span className="text-sm text-neutral-500">{t('pay.amount')}</span>
               <span className="flex items-baseline gap-2">
-                {!!listCents && listCents > amount && (
-                  <span className="text-sm text-neutral-400 line-through">¥{yuan(listCents)}</span>
+                {!!sel.listCents && sel.listCents > amount && (
+                  <span className="text-sm text-neutral-400 line-through">¥{yuan(sel.listCents)}</span>
                 )}
                 <span className="text-2xl font-bold text-brand-700">¥{yuan(amount)}</span>
               </span>
