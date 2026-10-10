@@ -239,8 +239,11 @@ export class AiPushController {
       /* ⑧a 词级 upsert：records 必须每条都带去重键（缺失/空/超 200 字符 → 400，防止
          键值互相吞并——dedupe_val 截断会把不同词合并成同一行）。单条 SQL 经
          jsonb_array_elements 逐元素展开，一条往返完成全部 upsert；
-         RETURNING (xmax = 0) 区分 insert（新词）与 update（重复词）。 */
+         RETURNING (xmax = 0) 区分 insert（新词）与 update（重复词）。
+         ⚠️ 批内按键去重（后写胜出）：同批两条同键记录会让 ON CONFLICT DO UPDATE
+         对同一行作用两次 → PG 21000「cannot affect row a second time」→ 500。 */
       const dkey = String(reg.dedupe_key);
+      const uniq = new Map<string, Record<string, unknown>>();
       for (let i = 0; i < env.records.length; i++) {
         const kv = (env.records[i] as Record<string, unknown>)[dkey];
         if (typeof kv !== 'string' || !kv.trim()) {
@@ -259,8 +262,12 @@ export class AiPushController {
             error: `records[${i}].${dkey} 超 200 字符（去重键上限）`,
           });
         }
+        uniq.set(kv.trim(), env.records[i]);
       }
-      const upsertRes: Array<{ inserted: boolean }> = await this.dataSource.query(
+      const dedupRecords = Array.from(uniq.values());
+      let upsertRes: Array<{ inserted: boolean }>;
+      try {
+        upsertRes = await this.dataSource.query(
         /* ⚠️ 每个 $n 都必须显式 cast（2026-10-06 生产 500 教训）：
            INSERT..SELECT 里 SELECT 列表的参数虽可从目标列推断，但同一参数在
            jsonb_build_object(...) 里复用时——该函数参数是 any，无法推断类型——
@@ -296,21 +303,32 @@ export class AiPushController {
           collectedAt.toISOString(),
           env.schemaVer,
           dkey,
-          JSON.stringify(env.records),
+          JSON.stringify(dedupRecords),
         ],
       );
+      } catch (e) {
+        /* 0032：落库异常不再裸 500 —— 透出真实原因给插件状态行 + push_log 留痕 */
+        const msg = String((e && e.message) || e).slice(0, 200);
+        await this.log(device.user_id, device.plugin_id, 'error', env.type, bytes, msg);
+        fail(500, { ok: false, code: 'SERVER_ERROR', error: msg });
+      }
       const inserted = upsertRes.filter((r) => r.inserted).length;
       const updated = upsertRes.length - inserted;
       await this.log(device.user_id, device.plugin_id, 'ok', env.type, bytes, null);
       return { ok: true, accepted: inserted, updated, deduped: 0 };
     }
 
-    /* ⑧b 快照类型：原子幂等落库（原 0028 语义不变） */
-    const inserted = await this.dataSource.query(
+    /* ⑧b 快照类型：原子幂等落库（原 0028 语义不变）。
+       0032：uq_ai_dataset_snap 已改为部分唯一索引（WHERE dedupe_val IS NULL）——
+       词级行不再受快照键约束（0029 设计漏洞：全表约束下词级多行批次必撞键 → 500）。
+       ON CONFLICT 目标的 WHERE 谓词必须与索引谓词逐字一致。 */
+    let inserted;
+    try {
+      inserted = await this.dataSource.query(
       `INSERT INTO ai_dataset
          (user_id, type, source, vendor_slug, ext_ver, range_days, collected_at, schema_ver, count, seq, payload)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       ON CONFLICT (user_id, vendor_slug, type, range_days, collected_at, seq) DO NOTHING
+       ON CONFLICT (user_id, vendor_slug, type, range_days, collected_at, seq) WHERE dedupe_val IS NULL DO NOTHING
        RETURNING id`,
       [
         device.user_id,
@@ -325,7 +343,12 @@ export class AiPushController {
         env.seq,
         JSON.stringify(env),
       ],
-    );
+      );
+    } catch (e) {
+      const msg = String((e && e.message) || e).slice(0, 200);
+      await this.log(device.user_id, device.plugin_id, 'error', env.type, bytes, msg);
+      fail(500, { ok: false, code: 'SERVER_ERROR', error: msg });
+    }
     const deduped = inserted.length === 0;
 
     await this.log(device.user_id, device.plugin_id, 'ok', env.type, bytes, null);
