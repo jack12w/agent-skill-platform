@@ -315,12 +315,23 @@ export class RefundService implements OnModuleInit {
           // 按 order_id 定位本单发放/顺延的那一行，置 expired + 到期日=now：
           // isSubscriptionEntitled 对 expired 一律判无权，权益即时终止。
           // 团队行同此处理（行上 user_id 是团长，成员经 team_members 实时解析一并失权）。
-          await manager
+          // ⚠️ 四轮质检：续费会把订阅行的 order_id **覆盖成最新一笔**订单
+          // （fulfillPluginSubscription / adminAddSubscription 均写 order_id），所以：
+          //   · 退「较早」那笔 → 此处 order_id 已不匹配 → 命中 0 行 → 权益未撤销；
+          //   · 退「最新」那笔 → 整行 expired，把未退款的更早周期一起抹掉（过度撤权）。
+          // 两者都需人工判断，故这里把「未命中」显式记日志——旧实现完全静默，
+          // 等于「退了钱、权益还在用」且无人知晓。
+          const revoked = await manager
             .createQueryBuilder()
             .update(PluginSubscription)
             .set({ status: 'expired', expires_at: new Date() })
             .where('order_id = :oid', { oid: order.id })
             .execute();
+          if (!revoked.affected) {
+            this.logger.warn(
+              `插件退款未命中订阅行（order_id 可能已随续费被覆盖）order=${order.id}，权益未自动撤销，请人工核对`,
+            );
+          }
         }
       }
 

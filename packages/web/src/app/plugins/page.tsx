@@ -41,6 +41,25 @@ interface MySub {
   via_team?: boolean;
 }
 
+/** 权益实体所在的主插件 slug（与后端 MAIN_PLUGIN_SLUG 一致） */
+const MAIN_PLUGIN_SLUG = 'alibaba-toolkit';
+/** 企业版档位 slug（团队权益）——其余档位都是个人权益 */
+const B2B_TIER_SLUG = 'alibaba-toolkit-b2b';
+
+/**
+ * 主插件的「档位商品」判定（与后端 isMainPluginTierSlug 逐字对齐，2026-10-12 四轮质检）。
+ *
+ * 后台「插件管理」允许运营手工新建商品：除企业版 `-b2b` 外，线上还有
+ * `alibaba-toolkit-year`（Pro 标准版年付）这类**同一插件的价格档位**。
+ * 它们的权益实体都落在主插件行上，故市场页必须把档位卡片映射到主行去查订阅，
+ * 否则买过档位的用户在档位卡片上看到「订阅」按钮 → 重复付费。
+ * 旧实现只硬编码了 `-b2b` 一个 slug，运营每加一个档位就会重新踩一次这个坑。
+ */
+function isTierSlug(slug?: string | null): boolean {
+  const s = String(slug ?? '');
+  return s !== MAIN_PLUGIN_SLUG && s.startsWith(`${MAIN_PLUGIN_SLUG}-`);
+}
+
 const EMOJI: Record<string, string> = {
   '客户开发': '🎯',
   '数据采集': '🛒',
@@ -96,6 +115,10 @@ export default function PluginsPage() {
   const [cat, setCat] = useState<string>('all');
   const [payId, setPayId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // 「我的订阅」拉取失败 → 无法判断每张卡片是否已订阅。此时**必须**禁用订阅按钮：
+  // 否则已付费用户看到可点的「订阅」→ 重复下单。2026-10-12 四轮质检：
+  // 三轮只加了文案（声称「已暂停展示订阅按钮」）却没实现，属文案与行为不符。
+  const [subsUnknown, setSubsUnknown] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -132,14 +155,20 @@ export default function PluginsPage() {
           if (!cur || betterSub(s, cur)) map[s.plugin_id] = s;
         }
         setSubs(map);
+        setSubsUnknown(false);
       } else if (res.status !== 401) {
         // 2026-10-12 三轮质检：非 401 的失败（500/网络）原为静默 → subs 保持 {}
         // → isActive() 全返回 null → **已付费用户看到「订阅」按钮**，可能重复下单。
         // 401 属「登录态失效」，按访客视图展示是合理的，不提示；其余必须显式报错。
         setErr(t('plugins.mineLoadFailed'));
+        setSubsUnknown(true);
+      } else {
+        // 401：按访客视图展示（无订阅状态可判断，但此时也确实没有可保护的已购权益）
+        setSubsUnknown(false);
       }
     } catch {
       setErr(t('plugins.mineLoadFailed'));
+      setSubsUnknown(true);
     }
   };
 
@@ -172,14 +201,21 @@ export default function PluginsPage() {
 
   const isActive = (p: Plugin): MySub | null => {
     let s = subs[p.id];
-    // 企业版档位商品（alibaba-toolkit-b2b）的权益实体在主插件行上（tier='team'，
-    // 支付回调 fulfillPluginSubscription 做了映射）。主插件行上的 team 订阅
-    // 视同已订阅企业版，否则买过企业版的用户在企业版卡片上看到的是
-    // 「订阅」按钮，点进去重复付费。
-    if (!s && p.slug === 'alibaba-toolkit-b2b') {
-      const mainId = plugins.find((x) => x.slug === 'alibaba-toolkit')?.id;
+    // 档位商品（企业版 / Pro 年付 / 运营后续新建的任意 `alibaba-toolkit-*` 档位）
+    // 的权益实体在主插件行上（见后端 isMainPluginTierSlug / fulfillPluginSubscription）。
+    // 少了这层映射，买过档位的用户会在档位卡片上看到「订阅」按钮，点进去重复付费。
+    // 档位与权益行的 tier 必须匹配：企业版档位只认团队行，其余档位只认个人行。
+    // ⚠️ 已知取舍：订阅行不记录「买的是哪个档位商品」，所以个人行（体验版月付）与
+    //    年付档位在数据上不可区分 —— 月付用户会看到年付卡片也是「已订阅」，
+    //    即**没有月付→年付的升级入口**（需产品侧确认要不要补「升级」CTA）。
+    if (!s && isTierSlug(p.slug)) {
+      const mainId = plugins.find((x) => x.slug === MAIN_PLUGIN_SLUG)?.id;
       const main = mainId ? subs[mainId] : null;
-      if (main && String(main.tier || 'personal') === 'team') s = main;
+      if (main) {
+        const wantTeam = p.slug === B2B_TIER_SLUG;
+        const isTeamRow = String(main.tier || 'personal') === 'team' || !!main.via_team;
+        if (wantTeam === isTeamRow) s = main;
+      }
     }
     if (!s) return null;
     // 与后端 isSubscriptionEntitled 对齐：cancelled（到期不再续费）但未到期 → 仍算已订阅，
@@ -611,6 +647,17 @@ export default function PluginsPage() {
                           >
                             {t('plugins.manage')}
                           </Link>
+                        ) : subsUnknown ? (
+                          // 订阅状态未知 → 按钮置灰并说明原因，避免重复下单
+                          // （2026-10-12 四轮质检：让 mineLoadFailed 的文案名副其实）
+                          <button
+                            type="button"
+                            disabled
+                            title={t('plugins.mineLoadFailed')}
+                            className="flex-1 rounded-lg border border-neutral-200 bg-neutral-100 py-2.5 text-sm font-semibold text-neutral-400 cursor-not-allowed"
+                          >
+                            {t('plugins.subsUnknown')}
+                          </button>
                         ) : (
                           <button
                             onClick={() => {

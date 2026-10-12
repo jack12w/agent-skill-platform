@@ -205,14 +205,48 @@ export class AdminService {
     return { ok: true, updated: ids.length };
   }
 
-  async updateSkill(id: string, data: { name?: string; short_summary?: string; tags?: string[]; cover_url?: string }) {
+  async updateSkill(id: string, data: Record<string, any>) {
     const skill = await this.skillRepo.findOneBy({ id });
     if (!skill) throw new NotFoundException('Skill not found');
-    // 保护「精选」标签：管理员修改其他标签时，如果技能当前有精选标签，始终保持
-    if (Array.isArray(data.tags) && skill.tags?.includes('精选') && !data.tags.includes('精选')) {
-      data.tags.push('精选');
+    /**
+     * 2026-10-12 四轮质检：字段白名单（原为整包透传）。
+     *
+     * 原实现 `update(id, data)` 把 controller 透传的 body 整包写库。签名里的
+     * `{ name?; short_summary?; tags?; cover_url? }` 只是编译期声明，运行时 body 是 any，
+     * 可携带 skills 表的**任意列**：status（下架）、price_cents（改价）、
+     * owner_user_id / created_by（改归属=窃取技能收益）、is_featured / 精选等。
+     * 虽然该路由在 @UseGuards(AuthGuard, AdminGuard) 下（仅管理员可达），但
+     * 「管理员面板 → 任意列写」这条链一旦被 XSS/CSRF 利用，危害从「能调管理接口」
+     * 升级为「能改任意字段」。且未来前端若把整条 skill 对象回传，脏字段会静默覆盖。
+     * 只挑出前端实际使用的 4 个字段（已核对 hub/skills 编辑弹窗只提交 name + tags）。
+     */
+    const patch: {
+      name?: string;
+      short_summary?: string | null;
+      tags?: string[];
+      cover_url?: string | null;
+    } = {};
+    if (data?.name !== undefined) {
+      const name = String(data.name).trim();
+      if (!name) throw new BadRequestException('技能名称不能为空');
+      patch.name = name;
     }
-    await this.skillRepo.update(id, data);
+    if (data?.short_summary !== undefined) {
+      patch.short_summary =
+        data.short_summary === null ? null : String(data.short_summary);
+    }
+    if (Array.isArray(data?.tags)) {
+      patch.tags = data.tags.map((x: any) => String(x)).filter(Boolean);
+    }
+    if (data?.cover_url !== undefined) {
+      patch.cover_url = data.cover_url === null ? null : String(data.cover_url);
+    }
+    if (Object.keys(patch).length === 0) return { ok: true, unchanged: true };
+    // 保护「精选」标签：管理员修改其他标签时，如果技能当前有精选标签，始终保持
+    if (Array.isArray(patch.tags) && skill.tags?.includes('精选') && !patch.tags.includes('精选')) {
+      patch.tags.push('精选');
+    }
+    await this.skillRepo.update(id, patch);
     return { ok: true };
   }
 
@@ -366,39 +400,73 @@ export class AdminService {
     const team = await this.teamRepo.findOneBy({ id });
     if (!team) throw new NotFoundException('Team not found');
 
-    // 2026-10-12 二轮质检 #2：后台删团此前**无任何前置检查**——旧代码直接
-    // teamRepo.delete，而 plugin_subscriptions.team_id（0035 NO ACTION FK）与
-    // skills.owner_team_id（0001 NO ACTION FK）任一引用该团都会 FK 23503 → 500。
-    // 与用户侧 teams.service.deleteTeam 对齐（第一轮只修了用户侧，后台漏了）：
-    // 插件订阅引用 → 明确拒绝；skills → 回落到原创作者；成员/申请 CASCADE 自动清。
-    const refs: Array<{ cnt: number }> = await this.teamRepo.query(
-      `SELECT COUNT(*)::int AS cnt FROM plugin_subscriptions WHERE team_id = $1`,
-      [id],
-    );
-    if (Number(refs[0]?.cnt || 0) > 0) {
-      throw new BadRequestException(
-        '该团队有生效中的插件订阅，不能删除；请先在「订阅管理」取消该团队订阅后再解散',
+    /**
+     * 2026-10-12 二轮质检 #2：后台删团此前**无任何前置检查**——旧代码直接
+     * teamRepo.delete，而 plugin_subscriptions.team_id（0035 NO ACTION FK）与
+     * skills.owner_team_id（0001 NO ACTION FK）任一引用该团都会 FK 23503 → 500。
+     * 与用户侧 teams.service.deleteTeam 对齐（第一轮只修了用户侧，后台漏了）：
+     * 插件订阅引用 → 明确拒绝；skills → 回落到原创作者；成员/申请 CASCADE 自动清。
+     *
+     * ⚠️ 2026-10-12 四轮质检修正：上面那版「有引用就一律拒绝」在**执行层走不通** ——
+     * 全站没有删除订阅行的入口（取消只置 cancelled、退款只置 expired，无 DELETE 路由），
+     * 所以订阅行一旦存在就永久挡删，报错文案却让人去「订阅管理取消」，是条死路。
+     * 现改为：只拦**仍在有效期内、仍产生权益**的行；已失效的历史行先摘团归属再删团
+     * （不删行——订阅行是财务溯源凭证）。整体放进一个事务，避免半成品状态。
+     * 成员与入团申请由 DB 的 ON DELETE CASCADE 清理（0001/0020 迁移已定义）。
+     */
+    return this.teamRepo.manager.transaction(async (m) => {
+      const activeRefs: Array<{ cnt: number }> = await m.query(
+        `SELECT COUNT(*)::int AS cnt FROM plugin_subscriptions
+          WHERE team_id = $1 AND status IN ('active', 'cancelled') AND expires_at > now()`,
+        [id],
       );
-    }
+      if (Number(activeRefs[0]?.cnt || 0) > 0) {
+        throw new BadRequestException(
+          '该团队仍有生效中的插件订阅，不能删除；请先在「订阅管理」取消订阅，待当前订阅期结束后再解散',
+        );
+      }
 
-    await this.skillRepo
-      .createQueryBuilder()
-      .update(Skill)
-      .set({ owner_team_id: null, owner_user_id: () => 'created_by' })
-      .where('owner_team_id = :teamId', { teamId: id })
-      .andWhere('created_by IS NOT NULL')
-      .execute();
+      // 已失效的历史订阅行：摘掉团归属（避开 0035 的个人行部分唯一索引，故加 NOT EXISTS 守卫）
+      await m.query(
+        `UPDATE plugin_subscriptions s SET team_id = NULL
+          WHERE s.team_id = $1
+            AND NOT EXISTS (
+              SELECT 1 FROM plugin_subscriptions p
+               WHERE p.user_id = s.user_id
+                 AND p.plugin_id = s.plugin_id
+                 AND p.team_id IS NULL
+            )`,
+        [id],
+      );
+      const left: Array<{ cnt: number }> = await m.query(
+        `SELECT COUNT(*)::int AS cnt FROM plugin_subscriptions WHERE team_id = $1`,
+        [id],
+      );
+      if (Number(left[0]?.cnt || 0) > 0) {
+        throw new BadRequestException(
+          '该团队存在已失效但无法自动摘除的历史订阅（该用户名下已有同一插件的个人订阅），请先手工处理后再删除',
+        );
+      }
 
-    await this.skillRepo
-      .createQueryBuilder()
-      .update(Skill)
-      .set({ owner_team_id: null, owner_user_id: team.owner_user_id })
-      .where('owner_team_id = :teamId', { teamId: id })
-      .andWhere('created_by IS NULL')
-      .execute();
+      await m
+        .createQueryBuilder()
+        .update(Skill)
+        .set({ owner_team_id: null, owner_user_id: () => 'created_by' })
+        .where('owner_team_id = :teamId', { teamId: id })
+        .andWhere('created_by IS NOT NULL')
+        .execute();
 
-    await this.teamRepo.delete({ id });
-    return { ok: true };
+      await m
+        .createQueryBuilder()
+        .update(Skill)
+        .set({ owner_team_id: null, owner_user_id: team.owner_user_id })
+        .where('owner_team_id = :teamId', { teamId: id })
+        .andWhere('created_by IS NULL')
+        .execute();
+
+      await m.delete(Team, { id });
+      return { ok: true };
+    });
   }
 
   // ── 操作日志 ──────────────────────────────

@@ -33,6 +33,58 @@ export const B2B_TIER_SLUG = 'alibaba-toolkit-b2b';
 /** 权益实体所在的主插件行（扩展端与 AI 门禁写死的 slug） */
 export const MAIN_PLUGIN_SLUG = 'alibaba-toolkit';
 
+/**
+ * 「主插件的档位商品」判定（2026-10-12 四轮质检，**高危**）。
+ *
+ * 背景：后台「插件管理」允许运营手工新建任意商品。除企业版（`-b2b`）之外，
+ * 线上已存在 `alibaba-toolkit-year`（Pro 标准版 ¥499/年）这类**同一插件的价格档位**。
+ *
+ * 为什么必须识别它：扩展端 `auth_core.js` 写死 `DEFAULT_SLUG='alibaba-toolkit'`，
+ * 设备注册 / 权益校验 / AI 门禁全部只认**主插件行**（见 PluginsAuthService.entitlement
+ * 用 `device.plugin_id` 解析权益）。若档位订单把订阅行落在档位商品自己的 id 上：
+ *   · 用户付了 ¥499 → 扩展端查主行 → 无订阅 → 激活失败
+ *   · AI 门禁查主行 → 无订阅 → 402
+ *   · 而市场页却因为 `subs[档位商品id]` 命中而显示「已订阅」→ 用户看到自相矛盾的结果
+ * 即「花了钱，权益没人读」。旧实现只写了 `slug === B2B_TIER_SLUG` 一个档位，故有此坑。
+ *
+ * 判定口径：slug 以主插件 slug 开头且带 `-` 后缀（`alibaba-toolkit` 之后的档位族）。
+ * 主行本身不算档位商品。
+ */
+export function isMainPluginTierSlug(slug?: string | null): boolean {
+  const s = String(slug ?? '');
+  return s !== MAIN_PLUGIN_SLUG && s.startsWith(`${MAIN_PLUGIN_SLUG}-`);
+}
+
+/**
+ * 档位商品对应的权益 tier。
+ * 只有企业版档位（`-b2b`）是团队权益；其余档位（如 `-year` 年付 Pro）都是个人权益。
+ */
+export function tierOfTierSlug(slug?: string | null): 'personal' | 'team' {
+  return String(slug ?? '') === B2B_TIER_SLUG ? 'team' : 'personal';
+}
+
+/**
+ * 席位 / 每成员设备数的「只升不降」合并（2026-10-12 四轮质检）。
+ *
+ * 背景：后台可为付费用户手工加席（运营场景，见 adminUpdateSubscription）。续费路径
+ * （支付回调 + 后台新增/续期）若用商品配置无条件覆盖，一次续费就把 10 席静默打回 3 席，
+ * 之后邀请成员被 assertSeatAvailable 拦下 —— 付费用户被降配且无人告知。
+ * 降席属于敏感操作，只允许走后台编辑弹窗（显式 PATCH），续费路径一律取较大值。
+ *
+ * 任一侧为空/非法则取另一侧；双侧都空返回 null（个人行保持无席位语义）。
+ */
+export function mergeSeatsFloor(
+  a: number | null | undefined,
+  b: number | null | undefined,
+): number | null {
+  const na = Number(a);
+  const nb = Number(b);
+  const ha = Number.isFinite(na) && na > 0;
+  const hb = Number.isFinite(nb) && nb > 0;
+  if (!ha && !hb) return null;
+  return Math.max(ha ? na : 0, hb ? nb : 0);
+}
+
 export interface CreateOrderInput {
   type: 'skill' | 'membership' | 'creator_membership' | 'plugin';
   skillId?: string;
@@ -521,24 +573,27 @@ export class OrdersService implements OnModuleInit {
   ) {
     const now = Date.now();
 
-    // 企业版订单 → 权益映射到主插件行；其余商品照旧落在自己的行上
+    // 档位商品（企业版 / Pro 年付 等）→ 权益映射到主插件行；主行商品照旧落在自己的行上。
+    // ⚠️ 2026-10-12 四轮质检（高危）：旧实现只识别 `-b2b` 一个档位，运营在后台新建的
+    //    其它档位商品（如 `alibaba-toolkit-year` Pro 标准版）会把订阅行落在**档位商品
+    //    自己的 id** 上 → 扩展端/AI 门禁查主行查不到 → 用户付费后无权益。见 isMainPluginTierSlug。
     let targetPluginId = pluginId;
     let tier = 'personal';
     const ordered = await this.pluginRepo.findOne({ where: { id: pluginId } });
     // 订阅时长取所购商品的「订阅有效期（天）」（0033，后台逐款可配）；未配回落 30 = 原包月行为
     const MONTH = (ordered?.subscription_duration_days ?? 30) * 86400_000;
-    if (ordered?.slug === B2B_TIER_SLUG) {
+    if (ordered && isMainPluginTierSlug(ordered.slug)) {
       const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
-      // 主插件行缺失 = 配置事故（2026-10-12 二轮质检 L-4）：旧代码静默把 ¥99
-      // 企业版订单按个人版发到 b2b 行上——没人读的死行 + 不建团，用户付费后无权益。
+      // 主插件行缺失 = 配置事故（2026-10-12 二轮质检 L-4）：旧代码静默把档位订单
+      // 按个人版发到档位行上——没人读的死行 + 不建团，用户付费后无权益。
       // 必须显式拒绝发货，让订单卡在非 DELIVERED 等人工处理。
       if (!main) {
         throw new BadRequestException(
-          '企业版商品配置异常：主插件行（alibaba-toolkit）缺失，已拒绝发货，请联系平台管理员',
+          '档位商品配置异常：主插件行（alibaba-toolkit）缺失，已拒绝发货，请联系平台管理员',
         );
       }
       targetPluginId = main.id;
-      tier = 'team';
+      tier = tierOfTierSlug(ordered.slug);
     }
 
     // 席位制（0035）：团队订单自动建团（购买者=团长，已有团复用），
@@ -582,10 +637,17 @@ export class OrdersService implements OnModuleInit {
       if (tier === 'team' || String(existing.tier || 'personal') === 'team') {
         existing.tier = 'team';
       }
-      // 席位字段以本次发放为准（升级席位/换档立即生效）
-      existing.team_id = teamId;
-      existing.seats = seats;
-      existing.max_devices_per_member = maxPerMember;
+      // 席位字段：团队订单才写；且**只升不降**（2026-10-12 四轮质检）——
+      // 旧实现 `existing.seats = seats` 无条件用商品配置覆盖，后台手工加过的席位
+      // 会被一次续费静默打回商品默认值（付费用户被降配）。降席请走后台编辑弹窗。
+      if (teamId) existing.team_id = teamId;
+      if (tier === 'team') {
+        existing.seats = mergeSeatsFloor(existing.seats, seats);
+        existing.max_devices_per_member = mergeSeatsFloor(
+          existing.max_devices_per_member,
+          maxPerMember,
+        );
+      }
       await this.pluginSubRepo.save(existing);
     } else {
       const sub = this.pluginSubRepo.create({

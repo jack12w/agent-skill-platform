@@ -454,6 +454,10 @@ const en = {
     aiTypeNewDedupe: 'Dedupe key (e.g. keyword, empty=snapshot)',
     aiTypeAdd: 'Add Type',
     aiTypeFormatHint: 'Format: lowercase first letter, only a-z / 0-9 / _',
+    /* QA 2026-10-12 round 4: this key was missing, so t() returned the raw key and the
+       panel footer literally read "admin.aiTypeHint" (pre-existing, introduced by a917c78). */
+    aiTypeHint:
+      'The dedupe key declares the unique identity of a business entity: only the latest record per key is kept (word-level dedupe for keywords). "Contract" types are frozen — once they hold data they cannot be deleted or renamed, only disabled.',
     aiTypeColType: 'Type',
     aiTypeColLabel: 'Name',
     aiTypeColDedupe: 'Dedupe',
@@ -976,6 +980,8 @@ const en = {
     subscribe: 'Subscribe',
     subscribed: 'Subscribed',
     validUntil: 'Valid until',
+    /* QA 2026-10-12 round 4: subtitle for expired rows (previously reused "Active"). */
+    startedOn: 'Started',
     perMonth: '¥/mo',
     /* Unit follows the plugin's subscription duration: ≥365 days → per year. */
     perYear: '¥/yr',
@@ -1003,7 +1009,9 @@ const en = {
     b2bMissing: 'The Business tier product is not configured yet, so renewal is temporarily unavailable. Please contact the administrator.',
     /* 2026-10-12 QA round 3: shown when the marketplace cannot load "my subscriptions"
        (non-401). The old silent failure left subs empty and showed Subscribe buttons. */
-    mineLoadFailed: 'Could not load your subscription status. Subscribe buttons are hidden to avoid a duplicate purchase — please refresh and retry.',
+    mineLoadFailed: 'Could not load your subscription status. Subscribe buttons are temporarily disabled to avoid a duplicate purchase — please refresh and retry.',
+    /* QA 2026-10-12 round 4: label for the disabled button when the status is unknown. */
+    subsUnknown: 'Status unknown',
     expired: 'Expired',
     active: 'Active',
     myTitle: 'My Plugin Subscriptions',

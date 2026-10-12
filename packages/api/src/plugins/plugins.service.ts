@@ -11,7 +11,13 @@ import { User } from '../auth/user.entity';
 import { ensureOwnerTeam } from '../teams/ensure-owner-team';
 import { PluginDevice } from './plugin-auth.entity';
 import { isSubscriptionEntitled } from './plugin-auth.util';
-import { OrdersService, B2B_TIER_SLUG, MAIN_PLUGIN_SLUG } from '../payments/orders.service';
+import {
+  OrdersService,
+  MAIN_PLUGIN_SLUG,
+  isMainPluginTierSlug,
+  tierOfTierSlug,
+  mergeSeatsFloor,
+} from '../payments/orders.service';
 import { OssService } from '../storage/oss.service';
 
 /**
@@ -114,8 +120,8 @@ export class PluginsService {
      * b2b 商品没单独配 download_key 时回退主插件的，避免已购企业版用户点下载报
      * 「暂未配置下载文件」。
      */
-    if (!plugin.download_key && plugin.slug === 'alibaba-toolkit-b2b') {
-      const main = await this.pluginRepo.findOne({ where: { slug: 'alibaba-toolkit' } });
+    if (!plugin.download_key && isMainPluginTierSlug(plugin.slug)) {
+      const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
       if (main?.download_key) plugin = main;
     }
     if (!plugin.download_key) {
@@ -471,11 +477,16 @@ export class PluginsService {
     // 同一用户同时持有个人+团队两个订阅 → 两个筛选下各显示一行，互不遮挡。
     let wherePluginId = pluginId;
     let rowKind: 'team' | 'personal' | null = null;
-    if (plugin.slug === B2B_TIER_SLUG) {
+    if (isMainPluginTierSlug(plugin.slug)) {
+      // 档位商品（企业版 / Pro 年付 / 运营后续新建的 `alibaba-toolkit-*` 档位）的
+      // 权益行都在主插件行上，筛选时按档位还原归属。
+      // ⚠️ 归属只能按 tier 区分：订阅行不记录「买的是哪个档位商品」，
+      //    故非企业版档位（如 `-year`）与主行个人订阅在数据上不可区分，
+      //    统一归入个人桶（团队桶 = tier=team 或 team_id 非空）。
       const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
       if (main) {
         wherePluginId = main.id;
-        rowKind = 'team';
+        rowKind = tierOfTierSlug(plugin.slug) === 'team' ? 'team' : 'personal';
       }
     } else if (plugin.slug === MAIN_PLUGIN_SLUG) {
       rowKind = 'personal';
@@ -553,11 +564,13 @@ export class PluginsService {
   async adminAddSubscription(pluginId: string, body: any): Promise<PluginSubscription> {
     const plugin = await this.adminGet(pluginId);
 
-    // 0036 归属映射（与 orders.fulfillPluginSubscription 同规）：在 b2b 档位商品页
-    // 手动开通 → 权益行落到主插件行。否则会落在一个**没人读的死行**上——
-    // 扩展端与 AI 门禁只认主行 slug，落错行 = 后台显示已开通、用户实际无权益。
+    // 档位映射（与 orders.fulfillPluginSubscription 同规，2026-10-12 四轮质检扩到全族）：
+    // 在档位商品页（企业版 `-b2b`、Pro 年付 `-year`、以及运营后续新建的任意
+    // `alibaba-toolkit-*` 档位）手动开通 → 权益行落到**主插件行**。否则会落在一个
+    // **没人读的死行**上——扩展端与 AI 门禁只认主行 slug，落错行 = 后台显示已开通、
+    // 用户实际无权益。旧实现只识别 `-b2b`，故 `-year` 手动开通同样会落死行。
     let targetPluginId = pluginId;
-    if (plugin.slug === B2B_TIER_SLUG) {
+    if (isMainPluginTierSlug(plugin.slug)) {
       const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
       if (main) targetPluginId = main.id;
     }
@@ -610,8 +623,14 @@ export class PluginsService {
       existing.tier = tier;
       if (tier === 'team') {
         existing.team_id = teamId;
-        existing.seats = seats;
-        existing.max_devices_per_member = maxPerMember;
+        // 席位上取（2026-10-12 四轮质检）：新增/续期弹窗的席位初值恒为商品档位默认值，
+        // 旧实现无条件覆盖 → 运营手工加过席位的团，一次续期就被打回默认值
+        // （付费用户被降配，后续邀请被 assertSeatAvailable 拦下）。降席只能走编辑弹窗。
+        existing.seats = mergeSeatsFloor(existing.seats, seats);
+        existing.max_devices_per_member = mergeSeatsFloor(
+          existing.max_devices_per_member,
+          maxPerMember,
+        );
       }
       await this.subRepo.save(existing);
       return existing;
@@ -655,7 +674,7 @@ export class PluginsService {
     // 与列表筛选/新增入口同规）。少了这层映射，b2b 页点编辑会被
     // 「该订阅不属于当前插件」误杀（行本身就在主插件行上）。
     let targetPluginId = pluginId;
-    if (plugin.slug === B2B_TIER_SLUG) {
+    if (isMainPluginTierSlug(plugin.slug)) {
       const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
       if (main) targetPluginId = main.id;
     }
@@ -674,8 +693,21 @@ export class PluginsService {
       // 复用同一个解析器：白名单与报错文案与新增入口保持一致
       sub.status = this.parseStatusInput(body, sub.status);
     }
+
+    /**
+     * tier 只解析一次，全流程用同一个归一化值（2026-10-12 四轮质检）。
+     * 旧实现「写 sub.tier 用 parseTierInput，判是否建团却用原始 body.tier」——
+     * 传 `' team '`（带空白）时 parseTierInput 通过并 trim 成 'team'，但
+     * `' team ' === 'team'` 为 false → 行被标成 tier=team 却没有 team_id，
+     * 权益解析走个人分支 → 「团队版」实际只有团长一人能用。
+     */
+    const nextTier =
+      body?.tier !== undefined
+        ? this.parseTierInput(body, sub.tier || 'personal')
+        : sub.tier || 'personal';
+
     if (body?.tier !== undefined) {
-      sub.tier = this.parseTierInput(body, sub.tier || 'personal');
+      sub.tier = nextTier;
       // 降级必须摘团队关系（2026-10-12 质检）：只改 tier 不摘 team_id 的话，
       // resolvePluginSubscription 仍走团队分支（team_id 非空）→ 成员照常有权益、
       // AI 门禁照旧放行 team 功能，「降级」只在列表页生效，是假的。
@@ -700,21 +732,41 @@ export class PluginsService {
     // 席位制（0035）：后台编辑席位数 / 每成员设备数。
     // 加席即时生效（邀请时实时查 MAX(seats)，无缓存）；缩席只拦新邀请、
     // 不剔除已入成员——避免改数字就把付费用户的权益掐了（拍板 2026-10-12）。
-    if (body?.seats !== undefined && body?.seats !== null && body?.seats !== '') {
-      sub.seats = this.normalizeSeats(body.seats, plugin.team_seats ?? 3);
-    }
-    if (
-      body?.max_devices_per_member !== undefined &&
-      body?.max_devices_per_member !== null &&
-      body?.max_devices_per_member !== ''
-    ) {
-      sub.max_devices_per_member = this.normalizeSeats(body.max_devices_per_member, 1);
+    // ⚠️ 四轮质检：只在**团队行**上写席位。旧实现不看 tier，请求体同时带
+    //    `tier=personal` + `seats` 时，会在上面刚把 seats 置 null 之后又写回去，
+    //    产出 `tier=personal, team_id=NULL, seats=N` 的畸形行（违反
+    //    「个人行 seats 恒为 null」不变量，列表页会展示席位数）。
+    if (nextTier === 'team') {
+      if (body?.seats !== undefined && body?.seats !== null && body?.seats !== '') {
+        sub.seats = this.normalizeSeats(body.seats, plugin.team_seats ?? 3);
+      }
+      if (
+        body?.max_devices_per_member !== undefined &&
+        body?.max_devices_per_member !== null &&
+        body?.max_devices_per_member !== ''
+      ) {
+        sub.max_devices_per_member = this.normalizeSeats(body.max_devices_per_member, 1);
+      }
     }
     // 个人行直接编辑成团队行：补建团（与新增入口、支付回调行为一致），
     // 否则权益解析按 team_members 实时查，无 team_id 的团队行等于团长独享。
     // ⚠️ 只在弹窗显式把 tier 提交为 team 时触发（二轮质检 #7）：旧实现只要
     // 行上 tier 已是 team 就补建团——管理员只想改个到期日也会静默建团。
-    if (body?.tier === 'team' && sub.team_id == null) {
+    if (nextTier === 'team' && sub.team_id == null) {
+      // ⚠️ 四轮质检：升级守卫对称化。降级分支有「已有个人行 → 400」的保护，
+      //    升级分支原先**没有** —— 若该用户已有同插件的团队行，直接 save 会
+      //    生成第二行同 (user, plugin) 的团队订阅：0037 生效时撞
+      //    `uq_plugin_subs_user_plugin_team` → 23505 → 500（PgErrorFilter 只映射
+      //    22P02，23505 仍是默认 500）；0037 未生效时静默产生重复团队行，
+      //    后续续期只会命中其中一行，另一行变成陈旧孤儿。
+      const teamRow = await this.subRepo.findOne({
+        where: { user_id: sub.user_id, plugin_id: targetPluginId, team_id: Not(IsNull()) },
+      });
+      if (teamRow && teamRow.id !== sub.id) {
+        throw new BadRequestException(
+          '该用户已持有该插件的团队订阅，不能把这条订阅也升级为团队版；请直接编辑已有团队订阅',
+        );
+      }
       const team = await ensureOwnerTeam(this.subRepo.manager, sub.user_id, body?.team_name);
       sub.team_id = team.id;
       if (sub.seats == null) {

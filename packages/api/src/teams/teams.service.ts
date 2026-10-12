@@ -404,40 +404,78 @@ export class TeamsService {
       throw new ForbiddenException('Only the team owner can delete it');
     }
 
-    // 插件订阅引用拦截（0035/2026-10-12 质检）：plugin_subscriptions.team_id 是
-    // NO ACTION 外键，直接删团必现 FK 23503 → 500。且删团=全团成员立刻失去插件
-    // 权益（team_members 实时解析），必须显式拦截让管理员先处理订阅。
-    const refs: Array<{ cnt: number }> = await this.teamRepository.query(
-      `SELECT COUNT(*)::int AS cnt FROM plugin_subscriptions WHERE team_id = $1`,
-      [teamId],
-    );
-    if (Number(refs[0]?.cnt || 0) > 0) {
-      throw new BadRequestException(
-        '该团队有生效中的插件订阅，不能删除；请先在「订阅管理」取消该团队订阅后再解散',
+    /**
+     * 插件订阅引用处理（0035 / 2026-10-12 四轮质检）。
+     *
+     * 背景：`plugin_subscriptions.team_id` 是 **NO ACTION** 外键，订阅行只要还在就挡删；
+     * 而全站**没有删除订阅行的入口**（取消只置 `cancelled`、退款只置 `expired`，
+     * 控制器也没有 DELETE 路由）。所以旧实现「先取消订阅再解散」在执行层走不通 ——
+     * **任何曾经有过插件订阅的团都永远无法解散**，而报错文案却把人指向这条死路。
+     *
+     * 正确口径：
+     *   ① 仍在有效期内、仍产生权益的行（active/cancelled 且 expires_at > now()）
+     *      → 明确拒绝（删团=全团成员立刻失去插件权益）；
+     *   ② 已失效的历史行 → 只摘团归属（`team_id = NULL`），**不删行**
+     *      （订阅行是财务溯源凭证，删了就对不上订单）；摘团要避开 0035 的个人行
+     *      部分唯一索引（同 user+plugin 已有个人行会撞），故加 NOT EXISTS 守卫。
+     * 整个「摘团 → 复查 → 删团」放在一个事务里：任一环节失败即整体回滚，
+     * 不会出现「行被摘了、团还在」的半成品状态。
+     */
+    return this.teamRepository.manager.transaction(async (m: EntityManager) => {
+      const activeRefs: Array<{ cnt: number }> = await m.query(
+        `SELECT COUNT(*)::int AS cnt FROM plugin_subscriptions
+          WHERE team_id = $1 AND status IN ('active', 'cancelled') AND expires_at > now()`,
+        [teamId],
       );
-    }
+      if (Number(activeRefs[0]?.cnt || 0) > 0) {
+        throw new BadRequestException(
+          '该团队仍有生效中的插件订阅，不能解散；请先在「订阅管理」取消订阅，待当前订阅期结束后再解散',
+        );
+      }
 
-    // Detach skills：回落到个人归属（原创作者 created_by），避免删团队后变成无主孤儿。
-    // 主路径：owner_user_id 回填为原创作者；兜底：created_by 为空的极端情况落到团队 owner。
-    await this.skillRepository
-      .createQueryBuilder()
-      .update(Skill)
-      .set({ owner_team_id: null, owner_user_id: () => 'created_by' })
-      .where('owner_team_id = :teamId', { teamId })
-      .andWhere('created_by IS NOT NULL')
-      .execute();
+      await m.query(
+        `UPDATE plugin_subscriptions s SET team_id = NULL
+          WHERE s.team_id = $1
+            AND NOT EXISTS (
+              SELECT 1 FROM plugin_subscriptions p
+               WHERE p.user_id = s.user_id
+                 AND p.plugin_id = s.plugin_id
+                 AND p.team_id IS NULL
+            )`,
+        [teamId],
+      );
+      const left: Array<{ cnt: number }> = await m.query(
+        `SELECT COUNT(*)::int AS cnt FROM plugin_subscriptions WHERE team_id = $1`,
+        [teamId],
+      );
+      if (Number(left[0]?.cnt || 0) > 0) {
+        throw new BadRequestException(
+          '该团队存在已失效但无法自动摘除的历史订阅（该用户名下已有同一插件的个人订阅），请先联系平台处理后再解散',
+        );
+      }
 
-    await this.skillRepository
-      .createQueryBuilder()
-      .update(Skill)
-      .set({ owner_team_id: null, owner_user_id: team.owner_user_id })
-      .where('owner_team_id = :teamId', { teamId })
-      .andWhere('created_by IS NULL')
-      .execute();
-    // Remove members
-    await this.memberRepository.delete({ team_id: teamId });
-    // Finally delete team
-    await this.teamRepository.delete({ id: teamId });
-    return { ok: true };
+      // Detach skills：回落到个人归属（原创作者 created_by），避免删团队后变成无主孤儿。
+      // 主路径：owner_user_id 回填为原创作者；兜底：created_by 为空的极端情况落到团队 owner。
+      await m
+        .createQueryBuilder()
+        .update(Skill)
+        .set({ owner_team_id: null, owner_user_id: () => 'created_by' })
+        .where('owner_team_id = :teamId', { teamId })
+        .andWhere('created_by IS NOT NULL')
+        .execute();
+
+      await m
+        .createQueryBuilder()
+        .update(Skill)
+        .set({ owner_team_id: null, owner_user_id: team.owner_user_id })
+        .where('owner_team_id = :teamId', { teamId })
+        .andWhere('created_by IS NULL')
+        .execute();
+      // Remove members
+      await m.delete(TeamMember, { team_id: teamId });
+      // Finally delete team
+      await m.delete(Team, { id: teamId });
+      return { ok: true };
+    });
   }
 }

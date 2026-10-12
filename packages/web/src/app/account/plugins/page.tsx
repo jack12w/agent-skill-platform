@@ -486,9 +486,12 @@ export default function MyPluginsPage() {
                       </div>
                     )}
                     <div className="text-xs text-neutral-400 mt-0.5">
+                      {/* 2026-10-12 四轮质检：失效行原来拼的是 `plugins.active`（「生效中」），
+                          于是卡片上「已过期」徽标与副标题「生效中 2026-03-01」自相矛盾。
+                          失效行应显示订阅**开始**时间，故用中性的 startedOn。 */}
                       {valid
                         ? `${t('plugins.validUntil')} ${fmtDate(s.expires_at)}`
-                        : `${t('plugins.active')} ${fmtDate(s.started_at)}`}
+                        : `${t('plugins.startedOn')} ${fmtDate(s.started_at)}`}
                     </div>
                   </div>
                   <span
