@@ -6,6 +6,7 @@ import compression from 'compression';
 import { AppModule } from './app.module';
 import { RateLimitGuard } from './common/rate-limit.guard';
 import { CacheInterceptor } from './common/cache.interceptor';
+import { PgErrorFilter } from './common/pg-error.filter';
 import { SystemMetricsService } from './common/system-metrics.service';
 import { parseCorsOrigin } from './common/cors.util';
 
@@ -41,10 +42,14 @@ async function bootstrap() {
     console.log('🌐 CORS: 放行所有来源（未配置 CORS_ORIGIN）');
   }
 
-  // ── 全局限流：每真实客户端 IP 每分钟 120 次（Redis 跨进程共享计数） ────
-  // 守卫内部已做：① X-Forwarded-For 取真实客户端 IP；② 拿不到真实 IP（反代/网桥）时回退全局大桶（2000/min），
+  // ── 全局限流：每真实客户端 IP 每分钟 120 次（Redis 跨进程共享计数） ────  // 守卫内部已做：① X-Forwarded-For 取真实客户端 IP；② 拿不到真实 IP（反代/网桥）时回退全局大桶（2000/min），
   //    避免所有用户共享小桶被打满；③ Redis 不可用时降级内存兜底，绝不阻塞全站；④ /api/health 豁免。
   app.useGlobalGuards(new RateLimitGuard(120));
+
+  // ── 全局驱动错误映射（2026-10-12 三轮质检） ────
+  // PG 22P02（非法 UUID/数字格式）→ 400，其余维持默认 500。
+  // 修复前 `GET /api/teams/not-a-uuid` 返回 500（实测生产）：语义错误 + 污染告警。
+  app.useGlobalFilters(new PgErrorFilter());
 
   // ── 热点只读 GET 接口 Redis 响应缓存（扛 5000 在线的核心杠杆） ────
   // 仅白名单公开 GET（列表/详情/版本/榜单/分类/GEO feed）；匿名共享 + 登录用户按令牌隔离（防串号）；

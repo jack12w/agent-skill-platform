@@ -335,10 +335,30 @@ export class AdminService {
     };
   }
 
-  async updateTeam(id: string, data: { name?: string; description?: string }) {
+  async updateTeam(id: string, data: Record<string, any>) {
     const team = await this.teamRepo.findOneBy({ id });
     if (!team) throw new NotFoundException('Team not found');
-    await this.teamRepo.update(id, data);
+    /**
+     * 2026-10-12 三轮质检：字段白名单。
+     *
+     * 原实现把 controller 透传的 body **整包**丢给 `repo.update(id, data)` —— 类型注解
+     * `{ name?; description? }` 只是编译期声明，运行时 body 是 any，可携带任意列名。
+     * 例如传 `kind: 'plugin'` 可把 skills 协作团改成插件团，直接破坏 0036 的用途隔离
+     * （该 skill 团进而可能被 ensureOwnerTeam 复用、成员被动获得插件权益）；
+     * 传 `is_public` / `owner_user_id` 同理可越权改归属。
+     * 参照同文件 updateUser 的白名单范式，只挑出明确允许的字段。
+     */
+    const patch: { name?: string; description?: string | null } = {};
+    if (data?.name !== undefined) {
+      const name = String(data.name).trim();
+      if (!name) throw new BadRequestException('Team name cannot be empty');
+      patch.name = name;
+    }
+    if (data?.description !== undefined) {
+      patch.description = data.description === null ? null : String(data.description);
+    }
+    if (Object.keys(patch).length === 0) return { ok: true, unchanged: true };
+    await this.teamRepo.update(id, patch);
     return { ok: true };
   }
 
@@ -418,10 +438,23 @@ export class AdminService {
     return this.tagGroupRepo.save(data);
   }
 
-  async updateTagGroup(id: string, data: { name?: string; tags?: string[] }) {
+  async updateTagGroup(id: string, data: Record<string, any>) {
     const g = await this.tagGroupRepo.findOneBy({ id });
     if (!g) throw new NotFoundException('Tag group not found');
-    await this.tagGroupRepo.update(id, data);
+    // 2026-10-12 三轮质检：同 updateTeam —— 白名单代替整包透传（前端实际只传 name/tags，
+    // 白名单与之兼容，不影响现有功能；目的是挡住未来任何来源的脏字段写入）。
+    const patch: { name?: string; tags?: string[] } = {};
+    if (data?.name !== undefined) {
+      const name = String(data.name).trim();
+      if (!name) throw new BadRequestException('Tag group name cannot be empty');
+      patch.name = name;
+    }
+    if (data?.tags !== undefined) {
+      if (!Array.isArray(data.tags)) throw new BadRequestException('tags must be an array');
+      patch.tags = data.tags.map((x: any) => String(x).trim()).filter(Boolean);
+    }
+    if (Object.keys(patch).length === 0) return { ok: true, unchanged: true };
+    await this.tagGroupRepo.update(id, patch);
     return { ok: true };
   }
 

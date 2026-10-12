@@ -101,9 +101,16 @@ export default function PluginsPage() {
     setLoading(true);
     try {
       const res = await fetch('/api/plugins');
-      if (res.ok) setPlugins(await res.json());
+      if (res.ok) {
+        setPlugins(await res.json());
+        setErr(null);
+      } else {
+        // 2026-10-12 三轮质检：原实现失败静默 → plugins 保持 [] → 渲染「暂无数据」，
+        // 把服务故障伪装成「平台没有商品」，用户无法察觉也无法重试。
+        setErr(t('plugins.loadFailed'));
+      }
     } catch {
-      /* 静默 */
+      setErr(t('plugins.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -125,9 +132,14 @@ export default function PluginsPage() {
           if (!cur || betterSub(s, cur)) map[s.plugin_id] = s;
         }
         setSubs(map);
+      } else if (res.status !== 401) {
+        // 2026-10-12 三轮质检：非 401 的失败（500/网络）原为静默 → subs 保持 {}
+        // → isActive() 全返回 null → **已付费用户看到「订阅」按钮**，可能重复下单。
+        // 401 属「登录态失效」，按访客视图展示是合理的，不提示；其余必须显式报错。
+        setErr(t('plugins.mineLoadFailed'));
       }
     } catch {
-      /* 静默 */
+      setErr(t('plugins.mineLoadFailed'));
     }
   };
 
@@ -501,7 +513,11 @@ export default function PluginsPage() {
           {loading ? (
             <div className="py-16 text-center text-sm text-neutral-400">{t('plugins.loading')}</div>
           ) : visible.length === 0 ? (
-            <div className="py-16 text-center text-sm text-neutral-400">{t('home.noData')}</div>
+            // 2026-10-12 三轮质检：加载失败时上方已有红色错误条，此处不再叠加
+            // 「暂无数据」——同屏两个矛盾提示会让用户误以为平台真的没商品。
+            err ? null : (
+              <div className="py-16 text-center text-sm text-neutral-400">{t('home.noData')}</div>
+            )
           ) : (
             <div className="space-y-4">
               {visible.map((p) => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import useTranslation from '../../../hooks/useTranslation';
 import SubFormModal from './SubFormModal';
 import {
@@ -49,10 +49,21 @@ export default function SubscriptionsPanel({ plugins }: { plugins: PluginOption[
     if (!pluginId && plugins.length > 0) setPluginId(plugins[0].id);
   }, [plugins, pluginId]);
 
+  /**
+   * 请求序号守卫（2026-10-12 三轮质检）。
+   *
+   * loadSubs 依赖 [pluginId, search, statusFilter, page]，每次变化都发新请求，但原实现
+   * 既无 AbortController 也无序号：快速切换插件 / 连续输入搜索词时多个请求并发在途，
+   * **先发后到的旧响应会覆盖新结果** —— 列表与「总数」和当前所选插件/页码不一致，
+   * 管理员可能据此对错误的订阅行做续期/改状态。
+   */
+  const loadSeq = useRef(0);
+
   const loadSubs = useCallback(async () => {
     if (!pluginId) return;
     const token = getToken();
     if (!token) return;
+    const seq = ++loadSeq.current;
     setSubLoading(true);
     setSubErr('');
     try {
@@ -69,13 +80,16 @@ export default function SubscriptionsPanel({ plugins }: { plugins: PluginOption[
       });
       if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
+      // 序号不再是「最新」→ 已有更新的请求发出，丢弃本次结果
+      if (seq !== loadSeq.current) return;
       setSubs(Array.isArray(data?.items) ? data.items : []);
       setTotal(Number(data?.total) || 0);
     } catch {
+      if (seq !== loadSeq.current) return;
       // ⚠️ 失败**绝不**清空列表：保留旧数据 + 报错，否则一次网络抖动就把整页清空
       setSubErr(t('admin.subLoadFailed'));
     } finally {
-      setSubLoading(false);
+      if (seq === loadSeq.current) setSubLoading(false);
     }
   }, [pluginId, search, statusFilter, page, t]);
 
@@ -89,6 +103,12 @@ export default function SubscriptionsPanel({ plugins }: { plugins: PluginOption[
     setPage(1);
     setModal(null);
     setFlash('');
+    // 2026-10-12 三轮质检：同时清空上一个插件的行与错误。否则新插件的请求在途/失败期间，
+    // 表格列头与插件下拉已是新插件、下方却仍渲染旧插件的订阅行 —— 管理员会把 A 的订阅
+    // 误当成 B 的处理。清空后由 loadSubs 填入（期间显示 loading/空态，语义正确）。
+    setSubs([]);
+    setTotal(0);
+    setSubErr('');
   };
 
   const openModal = (next: ModalState) => {

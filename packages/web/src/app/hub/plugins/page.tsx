@@ -122,15 +122,20 @@ export default function HubPluginsPage() {
   const [usersTotal, setUsersTotal] = useState(0);
   const [usersPlugin, setUsersPlugin] = useState<PluginItem | null>(null);
   const [usersSearch, setUsersSearch] = useState('');
+  /** 2026-10-12 三轮质检：「使用用户」弹窗的加载错误（原实现失败时静默置空列表） */
+  const [usersErr, setUsersErr] = useState('');
 
   const loadUsers = useCallback(
     async (pluginId: string, page: number, search: string) => {
       const token = getToken();
       if (!token) return;
       setUsersLoading(true);
+      setUsersErr('');
       try {
         const params = new URLSearchParams({ page: String(page), size: '50', search });
         const res = await fetch(`/api/admin/plugins/${pluginId}/users?${params.toString()}`, {
+          // 与后端 no-store 呼应：避免磁盘缓存复用旧快照
+          cache: 'no-store',
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) throw new Error(String(res.status));
@@ -138,13 +143,14 @@ export default function HubPluginsPage() {
         setUsers(data.items || []);
         setUsersTotal(data.total || 0);
       } catch {
-        setUsers([]);
-        setUsersTotal(0);
+        // 2026-10-12 三轮质检：原实现失败时 `setUsers([])` —— 把「加载失败」伪装成
+        // 「该插件没有用户」，运营据此误判。改为保留旧数据 + 显式报错。
+        setUsersErr(t('admin.usersLoadFailed'));
       } finally {
         setUsersLoading(false);
       }
     },
-    [],
+    [t],
   );
 
   const openUsers = (p: PluginItem) => {
@@ -158,7 +164,14 @@ export default function HubPluginsPage() {
 
   const fetchData = useCallback(async () => {
     const token = getToken();
-    if (!token) return;
+    if (!token) {
+      // 2026-10-12 三轮质检：原实现在此直接 return，而 loading 初始态为 true →
+      // 登录态失效（localStorage 无 token）时整页**永久卡在 spinner**，且不提示登录，
+      // 管理员无法自救。改为结束 loading + 明确提示。
+      setLoading(false);
+      setErr(t('admin.notLoggedIn'));
+      return;
+    }
     setLoading(true);
     setErr('');
     try {
@@ -843,14 +856,23 @@ export default function HubPluginsPage() {
                 }}
               />
 
+              {/* 2026-10-12 三轮质检：加载失败必须显式可见，不能伪装成「无用户」 */}
+              {usersErr && (
+                <div className="mb-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  {usersErr}
+                </div>
+              )}
+
               {usersLoading ? (
                 <div className="flex justify-center py-12">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
                 </div>
               ) : users.length === 0 ? (
-                <div className="py-12 text-center text-neutral-400 text-sm">
-                  {t('admin.usersEmpty')}
-                </div>
+                usersErr ? null : (
+                  <div className="py-12 text-center text-neutral-400 text-sm">
+                    {t('admin.usersEmpty')}
+                  </div>
+                )
               ) : (
                 <div className="bg-white border border-neutral-200 rounded-xl overflow-x-auto">
                   <table className="w-full text-sm">

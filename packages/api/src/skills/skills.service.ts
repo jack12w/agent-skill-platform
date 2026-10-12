@@ -134,7 +134,22 @@ export class SkillsService {
   }
 
   async findAll(query: { query?: string; tag?: string; tags?: string; sort?: string; page?: number; size?: number; owner?: string; owner_id?: string }, userId?: string) {
-    const { query: q, tag, tags: tagsStr, sort, page = 1, size = 20, owner, owner_id } = query;
+    const { query: q, tag, tags: tagsStr, sort, owner, owner_id } = query;
+    /**
+     * 2026-10-12 三轮质检：分页入参归一化 + 上界。
+     *
+     * 为什么必须设上界：`/api/skills` 在 rate-limit.guard 的 READONLY_WHITELIST 里
+     * **完全免限流**（理由是该接口有 30s 服务端缓存、正常浏览会密集触发）。但缓存按
+     * query 分桶 —— `?size=100000` 是独立缓存桶，等于给匿名请求开了一条免限流的
+     * 大表扫描通道（`.take(100000)` + 关联 stats/version/author 多表 join）。
+     *
+     * page 归一化同理：负数会让 `(page-1)*size` 变负 → PG `OFFSET -N` 语法错误 → 500。
+     * 非数值（`size=abc` → NaN）会让 `.take(NaN)` 行为未定义。
+     */
+    const sizeRaw = Number(query.size);
+    const size = Number.isFinite(sizeRaw) && sizeRaw > 0 ? Math.min(Math.floor(sizeRaw), 100) : 20;
+    const pageRaw = Number(query.page);
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.floor(pageRaw) : 1;
     const tagList = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
 
     // For score-based sorts, count real events from the last 7 days / all-time
@@ -1040,12 +1055,18 @@ export class SkillsService {
 
   async getGeoFeed(page: number, size: number) {
     const BASE_URL = process.env.PUBLIC_BASE_URL;
+    // 2026-10-12 三轮质检：与 findAll 同因——geo feed 由 geo.controller 直接透传
+    // query（page_size 运行时是字符串），无上界时同样可被用来触发大表扫描。
+    const sizeNum = Number(size);
+    const safeSize = Number.isFinite(sizeNum) && sizeNum > 0 ? Math.min(Math.floor(sizeNum), 100) : 50;
+    const pageNum = Number(page);
+    const safePage = Number.isFinite(pageNum) && pageNum > 0 ? Math.floor(pageNum) : 1;
     const [skills, total] = await this.skillRepository.findAndCount({
       where: { status: SkillStatus.PUBLISHED },
       relations: ['owner_user', 'created_by_user', 'owner_team', 'stats'],
       order: { updated_at: 'DESC' },
-      take: size,
-      skip: (page - 1) * size,
+      take: safeSize,
+      skip: (safePage - 1) * safeSize,
     });
 
     return {
@@ -1053,8 +1074,8 @@ export class SkillsService {
         title: 'SkillDepot — AI Agent Skills Feed',
         description: 'Machine-readable feed of AI agent skills for GEO (Generative Engine Optimization).',
         total,
-        page,
-        page_size: size,
+        page: safePage,
+        page_size: safeSize,
         last_updated: new Date().toISOString(),
         feed_url: `${BASE_URL}/api/ai/feed`,
       },

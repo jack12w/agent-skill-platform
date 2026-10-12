@@ -414,6 +414,10 @@ const en = {
     usersStartDate: 'First used',
     usersRecentDate: 'Last active',
     usersEmpty: 'No users yet',
+    /* 2026-10-12 QA round 3: admin "users" dialog load failure (used to show "No users yet") */
+    usersLoadFailed: 'Failed to load the user list. Please retry.',
+    /* 2026-10-12 QA round 3: admin page with no token — replaces an infinite loading spinner */
+    notLoggedIn: 'Your session has expired. Please sign in again.',
     usersSearch: 'Search email / name',
     // ── Subscriptions ──
     tabPlugins: 'Plugins',
@@ -997,6 +1001,9 @@ const en = {
     /* 2026-10-12 QA: fallback when the b2b tier product is missing for a team-tier renewal —
        never silently charge the personal price (9.9 for 99 worth of access = loss). */
     b2bMissing: 'The Business tier product is not configured yet, so renewal is temporarily unavailable. Please contact the administrator.',
+    /* 2026-10-12 QA round 3: shown when the marketplace cannot load "my subscriptions"
+       (non-401). The old silent failure left subs empty and showed Subscribe buttons. */
+    mineLoadFailed: 'Could not load your subscription status. Subscribe buttons are hidden to avoid a duplicate purchase — please refresh and retry.',
     expired: 'Expired',
     active: 'Active',
     myTitle: 'My Plugin Subscriptions',
