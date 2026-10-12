@@ -11,7 +11,7 @@ import { User } from '../auth/user.entity';
 import { ensureOwnerTeam } from '../teams/ensure-owner-team';
 import { PluginDevice } from './plugin-auth.entity';
 import { isSubscriptionEntitled } from './plugin-auth.util';
-import { OrdersService } from '../payments/orders.service';
+import { OrdersService, B2B_TIER_SLUG, MAIN_PLUGIN_SLUG } from '../payments/orders.service';
 import { OssService } from '../storage/oss.service';
 
 /**
@@ -456,7 +456,24 @@ export class PluginsService {
    * plugins.module.ts 的 ENTITIES 里加 User，漏一处就是 api 502（本项目踩过）。
    */
   async adminListSubscriptions(pluginId: string, q: any) {
-    await this.adminGet(pluginId); // 插件不存在 → 直接 404
+    const plugin = await this.adminGet(pluginId);
+
+    // 归属映射（0036）：权益实体永远在主插件行（扩展端/AI 门禁写死主行 slug，
+    // 这个存储模型不能动），但**后台筛选按购买档位还原归属**——
+    //   筛企业版档位商品（b2b）→ 显示主行上挂了团队（team_id 非空）的订阅行；
+    //   筛主插件（个人版）→ 只显示个人行（team_id IS NULL）。
+    // 同一用户同时持有个人+团队两个订阅 → 两个筛选下各显示一行，互不遮挡。
+    let wherePluginId = pluginId;
+    let rowKind: 'team' | 'personal' | null = null;
+    if (plugin.slug === B2B_TIER_SLUG) {
+      const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
+      if (main) {
+        wherePluginId = main.id;
+        rowKind = 'team';
+      }
+    } else if (plugin.slug === MAIN_PLUGIN_SLUG) {
+      rowKind = 'personal';
+    }
 
     const page = Math.max(1, Math.floor(Number(q?.page) || 1));
     const size = Math.min(100, Math.max(1, Math.floor(Number(q?.size) || 20)));
@@ -465,7 +482,9 @@ export class PluginsService {
 
     // 把过滤条件抽成函数：items 与 total 必须走**完全相同**的 where，否则分页数会对不上
     const applyFilters = (qb: any) => {
-      qb.where('s.plugin_id = :pluginId', { pluginId });
+      qb.where('s.plugin_id = :pluginId', { pluginId: wherePluginId });
+      if (rowKind === 'team') qb.andWhere('s.team_id IS NOT NULL');
+      if (rowKind === 'personal') qb.andWhere('s.team_id IS NULL');
       if (status) qb.andWhere('s.status = :status', { status });
       if (search) qb.andWhere('(u.email ILIKE :kw OR u.name ILIKE :kw)', { kw: `%${search}%` });
       return qb;
@@ -521,6 +540,15 @@ export class PluginsService {
   async adminAddSubscription(pluginId: string, body: any): Promise<PluginSubscription> {
     const plugin = await this.adminGet(pluginId);
 
+    // 0036 归属映射（与 orders.fulfillPluginSubscription 同规）：在 b2b 档位商品页
+    // 手动开通 → 权益行落到主插件行。否则会落在一个**没人读的死行**上——
+    // 扩展端与 AI 门禁只认主行 slug，落错行 = 后台显示已开通、用户实际无权益。
+    let targetPluginId = pluginId;
+    if (plugin.slug === B2B_TIER_SLUG) {
+      const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
+      if (main) targetPluginId = main.id;
+    }
+
     const userId = String(body?.user_id ?? '').trim();
     if (!userId) throw new BadRequestException('请选择要授权的用户');
 
@@ -550,8 +578,8 @@ export class PluginsService {
     const existing = await this.subRepo.findOne({
       where:
         tier === 'team'
-          ? { user_id: userId, plugin_id: pluginId, team_id: Not(IsNull()) }
-          : { user_id: userId, plugin_id: pluginId, team_id: IsNull() },
+          ? { user_id: userId, plugin_id: targetPluginId, team_id: Not(IsNull()) }
+          : { user_id: userId, plugin_id: targetPluginId, team_id: IsNull() },
     });
 
     if (existing) {
@@ -581,7 +609,7 @@ export class PluginsService {
     //    order_id 刻意不传 → 落库为 NULL，这就是「非付费」的天然标记。
     const sub = this.subRepo.create({
       user_id: userId,
-      plugin_id: pluginId,
+      plugin_id: targetPluginId,
       plan: 'manual',
       tier,
       team_id: teamId,

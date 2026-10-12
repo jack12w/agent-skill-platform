@@ -28,9 +28,10 @@ import { SettingsService } from './settings.service';
  * 扩展端 auth_core.js 写死 DEFAULT_SLUG='alibaba-toolkit'，AI 门禁也只读主插件行。
  * b2b 订单的订阅由 fulfillPluginSubscription 映射到 MAIN_PLUGIN_SLUG 行并置 tier='team'。
  */
-const B2B_TIER_SLUG = 'alibaba-toolkit-b2b';
+/** 收银台档位商品（企业版）的 slug；权益实体不在它身上，见 fulfillPluginSubscription */
+export const B2B_TIER_SLUG = 'alibaba-toolkit-b2b';
 /** 权益实体所在的主插件行（扩展端与 AI 门禁写死的 slug） */
-const MAIN_PLUGIN_SLUG = 'alibaba-toolkit';
+export const MAIN_PLUGIN_SLUG = 'alibaba-toolkit';
 
 export interface CreateOrderInput {
   type: 'skill' | 'membership' | 'creator_membership' | 'plugin';

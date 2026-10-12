@@ -18,6 +18,14 @@ export class Team {
   @Column()
   owner_user_id: string;
 
+  /**
+   * 团队用途（0036）：'skill' = skills 协作团队（默认，存量全归此类）；
+   * 'plugin' = 插件团队订阅的专属团（ensureOwnerTeam 只认/只建此类）。
+   * 两类彻底隔离：买插件团队版**不会**复用 skills 团，skills 团成员也吃不到插件权益。
+   */
+  @Column({ default: 'skill' })
+  kind: string;
+
   @Column({ default: true })
   is_public: boolean;
 
