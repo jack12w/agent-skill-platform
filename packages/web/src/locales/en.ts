@@ -1009,6 +1009,14 @@ const en = {
     /* 2026-10-12 QA: fallback when the b2b tier product is missing for a team-tier renewal —
        never silently charge the personal price (9.9 for 99 worth of access = loss). */
     b2bMissing: 'The Business tier product is not configured yet, so renewal is temporarily unavailable. Please contact the administrator.',
+    /* 2026-10-12 QA round 5: the subscription row records the purchased tier (0040) but that
+       tier product has been unlisted/deleted, or the product list failed to load — so the
+       product cannot be resolved. The old code silently ordered the main row (¥49/mo),
+       costing an annual buyer 335 days. Now it is blocked explicitly. */
+    sourceTierMissing: 'The tier product you originally purchased is unlisted or temporarily unavailable, so renewal is not possible. Please contact the administrator.',
+    /* Card-title fallback for the same case: do not fall back to the main row name
+       (it would read "Trial" and look like the wrong product). */
+    tierUnavailable: 'Unlisted tier',
     /* 2026-10-12 QA round 3: shown when the marketplace cannot load "my subscriptions"
        (non-401). The old silent failure left subs empty and showed Subscribe buttons. */
     mineLoadFailed: 'Could not load your subscription status. Subscribe buttons are temporarily disabled to avoid a duplicate purchase — please refresh and retry.',

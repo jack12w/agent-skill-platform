@@ -135,6 +135,15 @@ export function clearPendingReferral() {
 }
 
 /**
+ * 这些路径的 401 与「登录态失效」无关 —— 它们用**另一种凭据**鉴权（扩展端 `ai_sk_…`
+ * 密钥 / 插件设备令牌），把用户 JWT 放 Authorization 里必然 401。
+ * 2026-10-12 五轮质检：全路由巡检时命中 `/api/ai/data/query`（带用户 JWT）→ 全局拦截器
+ * 把已登录用户踢出登录态。当前 Web 前端不调用这些路径，故线上无实害；但这是潜在误登出
+ * 隐患（日后若有人在这些路径下加页面调用就会触发），此处显式排除，零行为变更。
+ */
+const NON_SESSION_401_PATHS = ['/api/ai/data/', '/api/ai/mcp', '/api/plugins/auth/'];
+
+/**
  * 全局 401 拦截器：监听所有 fetch 请求，当后端返回 401 时自动清除本地 token
  * 并跳转到登录页。
  */
@@ -152,8 +161,13 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       // 检测到 401
       if (response.status === 401) {
         const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url;
-        // 登录/注册接口本身返回 401（凭证错误）不视为登录态失效，避免死循环
-        if (!url.includes('/auth/login') && !url.includes('/auth/register')) {
+        // 登录/注册接口本身返回 401（凭证错误）不视为登录态失效，避免死循环；
+        // 非会话凭据路径（AI 密钥 / 设备令牌）的 401 同样不是登录态失效。
+        const isNonSession =
+          url.includes('/auth/login') ||
+          url.includes('/auth/register') ||
+          NON_SESSION_401_PATHS.some((p) => url.includes(p));
+        if (!isNonSession) {
           // 关键：仅当本次请求「携带了登录态」(Authorization) 时，401 才说明 token 失效，
           // 应清登录态并跳登录。未携带 token 的「公开请求」(如订阅数、公开列表) 返回 401
           // 不应清登录态——否则会把游客/公开页的已登录用户误踢回登录页。

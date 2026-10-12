@@ -458,15 +458,20 @@ export default function MyPluginsPage() {
             // 卡片标题按购买档位显示商品名（2026-10-12 用户反馈）：订阅行存储在
             // 主插件行上，直接读主插件名会显示「体验版」让人以为买错了。
             // 0040 起优先用订阅行记录的购买档位商品名（精确，含 Pro 年付等非团队档位）；
-            // 历史行无记录时退回按 tier 推断（团队→b2b 企业版）。
-            const srcPlugin = s.source_plugin_id ? plugins[s.source_plugin_id] : undefined;
+            // 历史行（无记录）退回按 tier 推断（团队→b2b 企业版，其余→主行名）。
+            // 2026-10-12 五轮质检：**有记录却解析不到商品**（该档位已下架 / 商品列表本次
+            // 加载失败）时不再退回主行名 —— 否则年付 Pro 用户看到「体验版」以为自己买错了；
+            // 团队行仍可借 b2b 商品名兜底，最后才落到中性文案。
+            const srcId = s.source_plugin_id || null;
+            const srcPlugin = srcId ? plugins[srcId] : undefined;
             const displayName =
               srcPlugin?.name ||
               (s.tier === 'team'
-                ? Object.values(plugins).find((x) => x.slug === 'alibaba-toolkit-b2b')?.name ||
-                  p?.name ||
-                  s.plugin_id
-                : p?.name || s.plugin_id);
+                ? Object.values(plugins).find((x) => x.slug === 'alibaba-toolkit-b2b')?.name
+                : undefined) ||
+              (srcId ? t('plugins.tierUnavailable') : undefined) ||
+              p?.name ||
+              s.plugin_id;
             const dd = deviceData[s.plugin_id];
             const open = deviceOpen === s.id;
             return (
@@ -705,9 +710,21 @@ export default function MyPluginsPage() {
                         //   旧实现只能按 tier 猜（team→b2b，其余→主行）：年付 Pro 用户在
                         //   `-year` 档买的 365 天权益，续费会被按主行月付档下单
                         //   → 少给 335 天（用户资损）。现按订阅行记录的 source_plugin_id 精确下单。
-                        const srcPlugin = s.source_plugin_id
-                          ? plugins[s.source_plugin_id]
-                          : undefined;
+                        const srcId = s.source_plugin_id || null;
+                        const srcPlugin = srcId ? plugins[srcId] : undefined;
+                        // 2026-10-12 五轮质检：**有购买档位记录但解析不到商品**时不能兜底。
+                        // 触发条件有两种，都不能当作「没有档位记录」处理：
+                        //   ① 该档位商品被后台下架/删除（公共列表只返回 status='active'，
+                        //      下架后就不再出现在 plugins 映射里）；
+                        //   ② 本次 /api/plugins 请求失败 → plugins 是空对象 → 全员解析不到。
+                        // 旧实现在这两种情况下会落到下面的 tier 推断分支，对**个人档位行**
+                        // （如年付 Pro）静默按主行 ¥49/月 下单 —— 续一次少给 335 天（资损），
+                        // 且订单商品与用户实际持有的档位不符。与 b2bMissing 同款处置：
+                        // 显式拦住并说明，绝不静默错价下单。
+                        if (srcId && !srcPlugin) {
+                          setNotice(t('plugins.sourceTierMissing'));
+                          return;
+                        }
                         if (srcPlugin) {
                           setPayInfo({
                             id: srcPlugin.id,
@@ -716,7 +733,8 @@ export default function MyPluginsPage() {
                           });
                           return;
                         }
-                        // 兜底：0040 之前的历史行没有购买档位记录，仍按 tier 推断 ——
+                        // 兜底：0040 之前的历史行**没有**购买档位记录（srcId 为空），
+                        // 只能按 tier 推断 ——
                         // 团队权益只能来自企业版档位 b2b；其余回落主行。
                         // b2b 档位商品缺失（配置事故/数据异常）时显式拦住并说明，
                         // 绝不静默按个人价 ¥49/月 下单 —— 否则用户花小钱拿团队权益（资损），
