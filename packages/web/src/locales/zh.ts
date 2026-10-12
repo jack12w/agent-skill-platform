@@ -500,6 +500,9 @@ const zh = {
     subThTier: '订阅类型',
     subTierPersonal: '个人版',
     subTierTeam: '团队版',
+    /* 0035 席位制：后台选团队版时的行为提示（自动建团 + 覆盖成员） */
+    subTierTeamHint: '选择「团队版」将自动为该用户创建团队（其本人为团长），权益覆盖团队全部在册成员；每成员默认 1 台设备。',
+    subSeats: '席位',
     subThActions: '操作',
     subSourcePaid: '付费',
     subSourceManual: '手动',
@@ -961,6 +964,8 @@ const zh = {
     /* 「取消订阅」= 到期不再续费，**不是立即失效**（2026-09-26 语义修正，与后端
        isSubscriptionEntitled 一致）。所以这里要把它说清楚，别让用户以为自己被断供了。 */
     cancelledUntil: '到期不再续费',
+    /* 0035 席位制：团队覆盖的成员订阅行徽标（此类行不显示续费/取消，只有团长能续） */
+    providedByTeam: '由团队提供',
     /* 2026-09-28：原文写「已取消自动续费」，但平台没有自动续费功能（见 pLead 注释）。
        改成「已停止续订」——描述用户已做的动作，不暗示存在一个可开关的续费机制。 */
     cancelledHint: '已停止续订，权益保留至 {date}；期间点「续费」可继续顺延。',

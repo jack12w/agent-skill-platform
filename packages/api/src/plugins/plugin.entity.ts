@@ -92,6 +92,13 @@ export class Plugin {
   @Column({ type: 'int', default: 30 })
   subscription_duration_days: number;
 
+  /**
+   * 团队档含席位数（0035）。NULL = 该款没有团队档概念；
+   * 团队档商品（如 alibaba-toolkit-b2b）配置它，发放团队订阅时快照到 seats。
+   */
+  @Column({ type: 'int', nullable: true })
+  team_seats: number | null;
+
   /** 出品方（团队），可为空表示平台直营 */
   @Column({ type: 'uuid', nullable: true })
   owner_team_id: string;
@@ -127,6 +134,24 @@ export class PluginSubscription {
   /** 订阅类型（0031）：personal=个人版（默认）/ team=团队版。仅档位标注，不参与判权。 */
   @Column({ type: 'text', default: 'personal' })
   tier: string;
+
+  // ── 团队席位制（0035）──
+  /**
+   * 团队 id：NULL = 个人订阅（行为与 0035 之前完全一致）；非 NULL = 团队订阅行，
+   * user_id 为团长（购买者），权益覆盖该团队全部在册成员（team_members 实时校验）。
+   * ⚠️ 唯一性：个人行 UNIQUE(user_id, plugin_id)（部分唯一索引，迁移 0035）；
+   *    团队行允许与团长的个人行共存。
+   */
+  @Column({ type: 'uuid', nullable: true })
+  team_id: string;
+
+  /** 席位数（团队行才有；含团长）。发放时从商品 team_seats 快照。 */
+  @Column({ type: 'int', nullable: true })
+  seats: number;
+
+  /** 每成员设备上限（团队行才有；下单快照，默认 1）。个人行不读此列，仍用商品 max_activations。 */
+  @Column({ type: 'int', nullable: true })
+  max_devices_per_member: number;
 
   @Column({ type: 'int', default: 0 })
   price_cents: number;

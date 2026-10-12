@@ -235,6 +235,18 @@ export default function SubscriptionsPanel({ plugins }: { plugins: PluginOption[
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${tierBadgeClass(s.tier)}`}>
                       {s.tier === 'team' ? t('admin.subTierTeam') : t('admin.subTierPersonal')}
                     </span>
+                    {/* 团队订阅行：展示关联团名 + 席位数（个人行无 team_name，不渲染） */}
+                    {s.tier === 'team' && s.team_name && (
+                      <div className="mt-1 text-[11px] text-neutral-500">
+                        {s.team_name}
+                        {s.seats != null && Number(s.seats) > 0 && (
+                          <span className="text-neutral-400">
+                            {' · '}
+                            {Number(s.seats)} {t('admin.subSeats')}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="tabular-nums text-neutral-800">{fmtDateTime(s.expires_at)}</div>

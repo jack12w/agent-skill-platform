@@ -20,6 +20,15 @@ export interface SubRow {
   order_id: string | null;
   user_email: string | null;
   user_name: string | null;
+  /** ---- 席位制（0035）---- */
+  /** 非空 = 团队订阅行（user_id 为团长）；为空 = 个人订阅行 */
+  team_id?: string | null;
+  /** 团队订阅行关联的团名（后端 leftJoin teams 带出） */
+  team_name?: string | null;
+  /** 席位总数（含团长）；个人行为 null */
+  seats?: number | string | null;
+  /** 团队内每成员设备数快照；个人行为 null */
+  max_devices_per_member?: number | string | null;
 }
 
 export interface UserRow {

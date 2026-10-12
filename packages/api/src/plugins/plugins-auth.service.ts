@@ -19,6 +19,7 @@ import {
   subFailReason,
   safeEqualHex,
 } from './plugin-auth.util';
+import { resolvePluginSubscription } from './plugin-entitlement-resolve';
 
 /** 授权码有效期 10 分钟：够用户切到浏览器登录并确认，又短到无法被慢速枚举 */
 const CODE_TTL_MS = 10 * 60 * 1000;
@@ -302,10 +303,14 @@ export class PluginsAuthService {
       }
     }
 
-    const sub = await this.subRepo.findOne({
-      where: { user_id: device.user_id, plugin_id: device.plugin_id },
-    });
-    if (!isSubscriptionEntitled(sub)) {
+    // 席位制（0035）：本人订阅 OR 所在团队的有效团队订阅（resolvePluginSubscription 收口）
+    const resolved = await resolvePluginSubscription(
+      this.subRepo.manager,
+      device.user_id,
+      device.plugin_id,
+    );
+    const sub = resolved?.sub ?? null;
+    if (!resolved || !resolved.entitled) {
       return {
         valid: false as const,
         code: 'SUBSCRIPTION_EXPIRED',
@@ -329,8 +334,12 @@ export class PluginsAuthService {
       expires_at: sub.expires_at.toISOString(),
       status: sub.status,
       plan: sub.plan,
-      /** 订阅类型（0031）：AI 功能（推送/自动采集）仅 team 档开放，插件端按此挂/不挂 AI UI */
-      tier: sub.tier === 'team' ? ('team' as const) : ('personal' as const),
+      /** 订阅类型（0031/0035）：AI 功能（推送/自动采集）仅 team 档开放，插件端按此挂/不挂 AI UI。
+       *  团队席位覆盖的成员同样按 team 返回（权益来自团队订阅行）。 */
+      tier:
+        resolved.via === 'team' || sub.tier === 'team'
+          ? ('team' as const)
+          : ('personal' as const),
       plugin: plugin ? { slug: plugin.slug, name: plugin.name } : undefined,
     };
   }
@@ -360,14 +369,20 @@ export class PluginsAuthService {
     const plugin = req.plugin_id
       ? await this.pluginRepo.findOne({ where: { id: req.plugin_id } })
       : null;
-    const sub = plugin
-      ? await this.subRepo.findOne({
-          where: { user_id: userId, plugin_id: plugin.id },
-        })
+    // 席位制（0035）：本人订阅 OR 团队席位覆盖
+    const resolved = plugin
+      ? await resolvePluginSubscription(this.subRepo.manager, userId, plugin.id)
       : null;
+    const sub = resolved?.sub ?? null;
     // 「已订阅」标记供授权页分流用：cancelled 但未到期同样算已订阅（否则用户明明还能用，
     // 授权页却引导他去「重新订阅」）
-    const subscribed = isSubscriptionEntitled(sub);
+    const subscribed = !!resolved?.entitled;
+
+    // 设备上限：个人订阅用商品 max_activations；团队席位用订阅行快照的每成员上限（默认 1）
+    const maxDevices =
+      resolved?.via === 'team'
+        ? sub.max_devices_per_member ?? 1
+        : plugin?.max_activations ?? 2;
 
     return {
       status: req.status,
@@ -385,7 +400,7 @@ export class PluginsAuthService {
       subscribed,
       subscription_expires_at: sub?.expires_at?.toISOString(),
       devices_used: plugin ? await this.countActiveDevices(userId, plugin.id) : 0,
-      max_devices: plugin?.max_activations ?? 2,
+      max_devices: maxDevices,
     };
   }
 
@@ -437,9 +452,11 @@ export class PluginsAuthService {
       return deny('NO_SUBSCRIPTION', '插件不存在或已下架');
     }
 
-    const sub = await this.subRepo.findOne({
-      where: { user_id: userId, plugin_id: plugin.id },
-    });
+    // 席位制（0035）：本人订阅 OR 团队席位覆盖
+    const resolved = plugin
+      ? await resolvePluginSubscription(this.subRepo.manager, userId, plugin.id)
+      : null;
+    const sub = resolved?.sub ?? null;
     if (!sub) {
       return deny(
         'NO_SUBSCRIPTION',
@@ -448,7 +465,7 @@ export class PluginsAuthService {
     }
     // cancelled 但未到期 → 有权（见 isSubscriptionEntitled）；这里只剩「已到期」与
     // 「后台强制终止」两种成因，文案要分开，别让被终止的用户以为自己只是过期了。
-    if (!isSubscriptionEntitled(sub)) {
+    if (!resolved!.entitled) {
       return deny(
         'EXPIRED_SUBSCRIPTION',
         subFailReason(sub) === 'expired'
@@ -457,22 +474,26 @@ export class PluginsAuthService {
       );
     }
 
-    const max = plugin.max_activations ?? 2;
+    // 设备上限：个人订阅用商品 max_activations；团队席位用订阅行快照的每成员上限（默认 1）
+    const max =
+      resolved!.via === 'team'
+        ? sub.max_devices_per_member ?? 1
+        : plugin.max_activations ?? 2;
 
     /**
      * 设备上限：以 start 阶段记录的 device_id 为准（不信网页传参）。
      *
      * ⚠️ 「查活跃数 → 判断 → 写设备行」必须是**原子**的。旧实现是 check-then-act：
      *    两台新机器同时点确认，各自读到 used = max-1，然后都写入 → 活跃数顶到 max+1。
-     *    互斥量选 plugin_subscriptions 上 (user_id, plugin_id) 的那一行：它唯一存在，
-     *    而设备数变更本来就只发生在这个「用户 × 插件」范围内，锁它粒度刚好。
+     *    互斥量选解析出的**那条订阅行**：个人订阅 = 本人 (user_id, plugin_id) 行；
+     *    团队席位（0035）= 团队订阅行（全体成员的授权在此串行化，量小无影响）。
      */
     const conflict = await this.subRepo.manager.transaction(async (m) => {
       const subRepo = m.getRepository(PluginSubscription);
       const devRepo = m.getRepository(PluginDevice);
 
       const locked = await subRepo.findOne({
-        where: { user_id: userId, plugin_id: plugin.id },
+        where: { id: sub.id },
         lock: { mode: 'pessimistic_write' },
       });
       // 锁内才是真相：拿到锁后重新确认订阅（前面那次检查只是为了文案更具体）

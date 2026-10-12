@@ -499,6 +499,9 @@ const en = {
     subThTier: 'Tier',
     subTierPersonal: 'Personal',
     subTierTeam: 'Team',
+    /* 0035 seat model: hint shown in admin when Team tier selected (auto team creation) */
+    subTierTeamHint: 'Selecting “Team” auto-creates a team owned by this user; entitlement covers all current members, 1 device per member by default.',
+    subSeats: 'seats',
     subThActions: 'Actions',
     subSourcePaid: 'Paid',
     subSourceManual: 'Manual',
@@ -953,6 +956,8 @@ const en = {
     cancelConfirm: 'Cancel this plugin subscription? You can keep using it until the current period ends (no refund).',
     cancelled: 'Cancelled',
     cancelledUntil: 'Ends at period end',
+    /* 0035 seat model: badge for subscription rows provided via team membership */
+    providedByTeam: 'Team seat',
     /* 2026-09-28：no auto-renewal exists, so “Auto-renewal is off” was inaccurate. */
     cancelledHint: 'Renewal stopped; your access is kept until {date}. Click Renew to extend it.',
     cancelDone: 'Renewal stopped; access kept until {date}.',

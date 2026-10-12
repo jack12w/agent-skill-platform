@@ -5,9 +5,10 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import { Plugin, PluginSubscription } from './plugin.entity';
 import { User } from '../auth/user.entity';
+import { ensureOwnerTeam } from '../teams/ensure-owner-team';
 import { PluginDevice } from './plugin-auth.entity';
 import { isSubscriptionEntitled } from './plugin-auth.util';
 import { OrdersService } from '../payments/orders.service';
@@ -64,10 +65,20 @@ export class PluginsService {
 
   /** 我的订阅（纯订阅记录，插件详情由前端用 /plugins 列表合并） */
   async mySubscriptions(userId: string): Promise<PluginSubscription[]> {
-    return this.subRepo.find({
-      where: { user_id: userId },
-      order: { started_at: 'DESC' },
-    });
+    // 席位制（0035）：除本人订阅外，还要带出「所在团队的有效覆盖行」——否则成员在
+    // 市场页/账号页看到的是「订阅」按钮，点进去重复付费（与 b2b tier 映射同坑）。
+    // 每行附带 via_team 标记，前端据此显示「由团队提供」并隐藏取消/续费。
+    const rows: any[] = await this.subRepo.query(
+      `SELECT s.*, (s.team_id IS NOT NULL) AS via_team
+         FROM plugin_subscriptions s
+        WHERE s.user_id = $1
+           OR (s.team_id IS NOT NULL AND EXISTS (
+                 SELECT 1 FROM team_members m
+                  WHERE m.team_id = s.team_id AND m.user_id = $1))
+        ORDER BY s.started_at DESC`,
+      [userId],
+    );
+    return rows as PluginSubscription[];
   }
 
   /** 订阅下单（包月，微信 Native） */
@@ -456,7 +467,10 @@ export class PluginsService {
     };
 
     const items = await applyFilters(
-      this.subRepo.createQueryBuilder('s').leftJoin(User, 'u', 'u.id = s.user_id'),
+      this.subRepo
+        .createQueryBuilder('s')
+        .leftJoin(User, 'u', 'u.id = s.user_id')
+        .leftJoin('teams', 't', 't.id = s.team_id'),
     )
       .select([
         's.id AS id',
@@ -469,8 +483,12 @@ export class PluginsService {
         's.started_at AS started_at',
         's.expires_at AS expires_at',
         's.order_id AS order_id',
+        's.team_id AS team_id',
+        's.seats AS seats',
+        's.max_devices_per_member AS max_devices_per_member',
         'u.email AS user_email',
         'u.name AS user_name',
+        't.name AS team_name',
       ])
       .orderBy('s.expires_at', 'DESC')
       .offset((page - 1) * size)
@@ -496,7 +514,7 @@ export class PluginsService {
    * 付费订阅，手动续期只该延长它的有效期，不该抹掉它的财务溯源。
    */
   async adminAddSubscription(pluginId: string, body: any): Promise<PluginSubscription> {
-    await this.adminGet(pluginId);
+    const plugin = await this.adminGet(pluginId);
 
     const userId = String(body?.user_id ?? '').trim();
     if (!userId) throw new BadRequestException('请选择要授权的用户');
@@ -510,8 +528,25 @@ export class PluginsService {
     const DAY = 86400_000;
     const now = Date.now();
 
+    // 席位制（0035）：tier=team 时自动建团（购买者/被授权者=团长），订阅行挂 team_id。
+    // 与支付回调（orders.fulfillPluginSubscription）走同一个 ensureOwnerTeam，两条路径行为一致。
+    const tier = this.parseTierInput(body, 'personal');
+    let teamId: string | null = null;
+    let seats: number | null = null;
+    let maxPerMember: number | null = null;
+    if (tier === 'team') {
+      const team = await ensureOwnerTeam(this.subRepo.manager, userId, body?.team_name);
+      teamId = team.id;
+      seats = Math.max(1, Math.round(Number(body?.seats) || plugin.team_seats || 3));
+      maxPerMember = Math.max(1, Math.round(Number(body?.max_devices_per_member) || 1));
+    }
+
+    // 顺延查找按行类型隔离：团队行与个人行互不干扰（同一用户可同时持有）
     const existing = await this.subRepo.findOne({
-      where: { user_id: userId, plugin_id: pluginId },
+      where:
+        tier === 'team'
+          ? { user_id: userId, plugin_id: pluginId, team_id: Not(IsNull()) }
+          : { user_id: userId, plugin_id: pluginId, team_id: IsNull() },
     });
 
     if (existing) {
@@ -526,7 +561,12 @@ export class PluginsService {
         existing.expires_at = new Date(base + days * DAY);
       }
       existing.status = status;
-      existing.tier = this.parseTierInput(body, existing.tier || 'personal');
+      existing.tier = tier;
+      if (tier === 'team') {
+        existing.team_id = teamId;
+        existing.seats = seats;
+        existing.max_devices_per_member = maxPerMember;
+      }
       await this.subRepo.save(existing);
       return existing;
     }
@@ -538,7 +578,10 @@ export class PluginsService {
       user_id: userId,
       plugin_id: pluginId,
       plan: 'manual',
-      tier: this.parseTierInput(body, 'personal'),
+      tier,
+      team_id: teamId,
+      seats,
+      max_devices_per_member: maxPerMember,
       price_cents: 0,
       status,
       started_at: new Date(),

@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, Not } from 'typeorm';
+import { Repository, LessThan, Not, IsNull } from 'typeorm';
 import {
   Order,
   OrderItem,
@@ -16,6 +16,7 @@ import { effectivePluginPrice } from '../plugins/plugin-pricing.util';
 import { isSubscriptionEntitled } from '../plugins/plugin-auth.util';
 import { User } from '../auth/user.entity';
 import { Team } from '../teams/team.entity';
+import { ensureOwnerTeam } from '../teams/ensure-owner-team';
 import { WechatPayService } from './wechat-pay.service';
 import { EntitlementService } from './entitlement.service';
 import { BalanceService } from './balance.service';
@@ -523,8 +524,25 @@ export class OrdersService implements OnModuleInit {
       }
     }
 
+    // 席位制（0035）：团队订单自动建团（购买者=团长，已有团复用），
+    // 订阅行挂 team_id —— 权益覆盖全团在册成员；seats 从商品 team_seats 快照。
+    let teamId: string | null = null;
+    let seats: number | null = null;
+    let maxPerMember: number | null = null;
+    if (tier === 'team') {
+      const team = await ensureOwnerTeam(this.pluginSubRepo.manager, userId);
+      teamId = team.id;
+      seats = ordered?.team_seats ?? 3;
+      maxPerMember = 1;
+    }
+
+    // 顺延查找：团队订单只找团队行（团长可能同时持有个人订阅行，二者互不干扰）；
+    // 个人订单只找个人行（team_id IS NULL）。
     const existing = await this.pluginSubRepo.findOne({
-      where: { user_id: userId, plugin_id: targetPluginId },
+      where:
+        tier === 'team'
+          ? { user_id: userId, plugin_id: targetPluginId, team_id: Not(IsNull()) }
+          : { user_id: userId, plugin_id: targetPluginId, team_id: IsNull() },
     });
     if (existing) {
       if (isSubscriptionEntitled(existing, now)) {
@@ -540,6 +558,10 @@ export class OrdersService implements OnModuleInit {
       if (tier === 'team' || String(existing.tier || 'personal') === 'team') {
         existing.tier = 'team';
       }
+      // 席位字段以本次发放为准（升级席位/换档立即生效）
+      existing.team_id = teamId;
+      existing.seats = seats;
+      existing.max_devices_per_member = maxPerMember;
       await this.pluginSubRepo.save(existing);
     } else {
       const sub = this.pluginSubRepo.create({
@@ -547,6 +569,9 @@ export class OrdersService implements OnModuleInit {
         plugin_id: targetPluginId,
         plan: 'monthly',
         tier,
+        team_id: teamId,
+        seats,
+        max_devices_per_member: maxPerMember,
         price_cents: priceCents,
         status: 'active',
         started_at: new Date(),

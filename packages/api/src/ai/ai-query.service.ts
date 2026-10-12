@@ -4,7 +4,7 @@ import { DataSource, Repository } from 'typeorm';
 import * as crypto from 'node:crypto';
 import { Plugin, PluginSubscription } from '../plugins/plugin.entity';
 import { AiApiKey } from './ai-api-key.entity';
-import { isSubscriptionEntitled } from '../plugins/plugin-auth.util';
+import { resolvePluginSubscription } from '../plugins/plugin-entitlement-resolve';
 
 /**
  * AI 数据服务 · query 取数核心（2026-10-06 从 AiQueryController 平移抽出）。
@@ -96,12 +96,14 @@ export class AiQueryService {
     }
     const label = String(regRows[0].label || t);
 
-    /* ③ 订阅权益（订阅级失效 → 402 保留密钥，续费即恢复；isSubscriptionEntitled 唯一口径） */
+    /* ③ 订阅权益（订阅级失效 → 402 保留密钥，续费即恢复；isSubscriptionEntitled 唯一口径）。
+       席位制（0035）：本人订阅 OR 所在团队的有效团队订阅。 */
     const plugin = await this.pluginRepo.findOne({ where: { slug: AI_VENDOR_SLUG } });
-    const sub = plugin
-      ? await this.subRepo.findOne({ where: { user_id: userId, plugin_id: plugin.id } })
+    const resolved = plugin
+      ? await resolvePluginSubscription(this.subRepo.manager, userId, plugin.id)
       : null;
-    if (!isSubscriptionEntitled(sub)) {
+    const sub = resolved?.sub ?? null;
+    if (!resolved || !resolved.entitled) {
       await this.usage(userId, key.id, t, null, 0, 'rejected', 'MEMBER_REQUIRED');
       fail(402, {
         ok: false,
@@ -112,8 +114,8 @@ export class AiQueryService {
 
     /* ③b 企业版门禁（2026-10-07 用户拍板）：查询取数与推送同口径，仅 team 订阅可调。
        个人版 → 402 TIER_REQUIRED（密钥保留，升级即恢复），upgradeUrl 供客户端跳订阅页。
-       与 ai-push ②b 同一判断写法（String(sub.tier||'personal')!=='team'）。 */
-    if (String(sub.tier || 'personal') !== 'team') {
+       与 ai-push ②b 同一判断写法；团队席位覆盖的成员（via='team'）同样放行。 */
+    if (!(resolved!.via === 'team' || String(sub!.tier || 'personal') === 'team')) {
       await this.usage(userId, key.id, t, null, 0, 'rejected', 'TIER_REQUIRED');
       fail(402, {
         ok: false,

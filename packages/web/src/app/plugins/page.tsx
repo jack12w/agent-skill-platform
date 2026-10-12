@@ -37,6 +37,8 @@ interface MySub {
   expires_at: string;
   /** personal=个人版 / team=企业版（企业版订单由支付回调映射到主插件行并置 team） */
   tier?: string;
+  /** 席位制（0035）：true = 权益来自所在团队订阅（本人仅是成员） */
+  via_team?: boolean;
 }
 
 const EMOJI: Record<string, string> = {

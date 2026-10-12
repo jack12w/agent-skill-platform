@@ -12,7 +12,8 @@ import { DataSource, Repository } from 'typeorm';
 import { z } from 'zod';
 import { PluginSubscription } from '../plugins/plugin.entity';
 import { PluginDevice } from '../plugins/plugin-auth.entity';
-import { hashSecret, isSubscriptionEntitled } from '../plugins/plugin-auth.util';
+import { hashSecret } from '../plugins/plugin-auth.util';
+import { resolvePluginSubscription } from '../plugins/plugin-entitlement-resolve';
 
 /**
  * AI 数据服务 · push 接口（计划 v2.4 多类型扩展，0028）。
@@ -140,11 +141,15 @@ export class AiPushController {
       }
     }
 
-    /* ② 订阅权益（订阅级失效 → 402 保留令牌，续费即恢复；isSubscriptionEntitled 唯一口径） */
-    const sub = await this.subRepo.findOne({
-      where: { user_id: device.user_id, plugin_id: device.plugin_id },
-    });
-    if (!isSubscriptionEntitled(sub)) {
+    /* ② 订阅权益（订阅级失效 → 402 保留令牌，续费即恢复；isSubscriptionEntitled 唯一口径）。
+       席位制（0035）：本人订阅 OR 所在团队的有效团队订阅。 */
+    const resolved = await resolvePluginSubscription(
+      this.subRepo.manager,
+      device.user_id,
+      device.plugin_id,
+    );
+    const sub = resolved?.sub ?? null;
+    if (!resolved || !resolved.entitled) {
       await this.log(device.user_id, device.plugin_id, 'rejected', null, 0, 'MEMBER_REQUIRED');
       fail(402, {
         ok: false,
@@ -153,8 +158,9 @@ export class AiPushController {
       });
     }
     /* ②b 企业版门禁（2026-10-07）：AI 推送仅 team 档可用。口径与 ② 同为订阅级失效
-       → 402 保留令牌（升级后即恢复），插件端按 code=TIER_REQUIRED 区分提示文案。 */
-    if (String(sub.tier || 'personal') !== 'team') {
+       → 402 保留令牌（升级后即恢复），插件端按 code=TIER_REQUIRED 区分提示文案。
+       团队席位覆盖的成员（via='team'）同样放行。 */
+    if (!(resolved!.via === 'team' || String(sub!.tier || 'personal') === 'team')) {
       await this.log(device.user_id, device.plugin_id, 'rejected', null, 0, 'TIER_REQUIRED');
       fail(402, {
         ok: false,

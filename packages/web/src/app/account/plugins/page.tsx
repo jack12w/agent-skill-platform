@@ -23,6 +23,9 @@ interface MySub {
   started_at: string;
   /** personal=个人版 / team=企业版（企业版订单由支付回调映射到主插件行并置 team） */
   tier?: string;
+  /** 席位制（0035）：true = 权益来自所在团队订阅（本人不是团长，仅成员）。
+   *  此类行不显示续费/取消（只有团长能续），显示「由团队提供」徽标。 */
+  via_team?: boolean;
 }
 
 interface DeviceRow {
@@ -430,6 +433,7 @@ export default function MyPluginsPage() {
             const p = plugins[s.plugin_id];
             const valid = isEntitled(s);
             const cancelled = s.status === 'cancelled';
+            const viaTeam = !!s.via_team;
             const dd = deviceData[s.plugin_id];
             const open = deviceOpen === s.plugin_id;
             return (
@@ -438,6 +442,11 @@ export default function MyPluginsPage() {
                   <div className="min-w-0">
                     <div className="font-semibold text-neutral-900 truncate">
                       {p?.name || s.plugin_id}
+                      {viaTeam && (
+                        <span className="ml-2 align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded bg-brand-50 text-brand-700 border border-brand-100">
+                          {t('plugins.providedByTeam')}
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-neutral-400 mt-0.5">
                       {valid
@@ -626,33 +635,37 @@ export default function MyPluginsPage() {
                 )}
 
                 <div className="mt-3 flex items-center justify-end gap-2">
-                  <button
-                    onClick={() => {
-                      // 企业版（tier=team）订阅的权益实体在主插件行上（支付回调映射，
-                      // 见 orders.service.ts fulfillPluginSubscription），但续费必须
-                      // 按企业版档位商品（alibaba-toolkit-b2b）下单——否则订单落在
-                      // 主插件行上会错按个人版 ¥9.9 计价，等于花 9.9 续了 99 的权益。
-                      const b2b = Object.values(plugins).find(
-                        (x) => x.slug === 'alibaba-toolkit-b2b',
-                      );
-                      if (s.tier === 'team' && b2b) {
-                        setPayInfo({
-                          id: b2b.id,
-                          name: b2b.name,
-                          price: b2b.price_monthly_cents,
-                        });
-                      } else {
-                        setPayInfo({
-                          id: s.plugin_id,
-                          name: p?.name,
-                          price: p?.price_monthly_cents || 0,
-                        });
-                      }
-                    }}
-                    className="text-xs text-white bg-brand-600 rounded-lg px-3 py-1.5 hover:bg-brand-700"
-                  >
-                    {valid ? t('plugins.renew') : t('plugins.resubscribe')}
-                  </button>
+                  {/* 席位制（0035）：团队覆盖的成员不显示续费——订阅实体在团长/团队行上，
+                      成员续费个人档不会延长团队权益，只会造成「付了钱没效果」的客诉。 */}
+                  {!viaTeam && (
+                    <button
+                      onClick={() => {
+                        // 企业版（tier=team）订阅的权益实体在主插件行上（支付回调映射，
+                        // 见 orders.service.ts fulfillPluginSubscription），但续费必须
+                        // 按企业版档位商品（alibaba-toolkit-b2b）下单——否则订单落在
+                        // 主插件行上会错按个人版 ¥9.9 计价，等于花 9.9 续了 99 的权益。
+                        const b2b = Object.values(plugins).find(
+                          (x) => x.slug === 'alibaba-toolkit-b2b',
+                        );
+                        if (s.tier === 'team' && b2b) {
+                          setPayInfo({
+                            id: b2b.id,
+                            name: b2b.name,
+                            price: b2b.price_monthly_cents,
+                          });
+                        } else {
+                          setPayInfo({
+                            id: s.plugin_id,
+                            name: p?.name,
+                            price: p?.price_monthly_cents || 0,
+                          });
+                        }
+                      }}
+                      className="text-xs text-white bg-brand-600 rounded-lg px-3 py-1.5 hover:bg-brand-700"
+                    >
+                      {valid ? t('plugins.renew') : t('plugins.resubscribe')}
+                    </button>
+                  )}
                   {/* cancelled 后不再显示「取消订阅」：再点一次毫无意义，只会让用户
                       以为上次没生效。想恢复就点「续费」（会顺延，不吞剩余天数）。
                       另外受 SHOW_CANCEL_BUTTON 总开关控制（见文件顶部说明），当前为隐藏。 */}

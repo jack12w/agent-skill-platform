@@ -303,7 +303,8 @@ export default function SubFormModal({ mode, pluginId, sub, defaultDays, onClose
             </div>
           )}
 
-          {/* 订阅类型（0031）：仅档位标注，不影响判权 */}
+          {/* 订阅类型（0031/0035）：tier=team 时后端自动建团（被授权者=团长），
+              权益覆盖团队全部在册成员；席位与每成员设备数由后端按商品配置快照 */}
           <label className="block">
             <span className="text-xs text-neutral-500">{t('admin.subThTier')}</span>
             <select
@@ -317,6 +318,11 @@ export default function SubFormModal({ mode, pluginId, sub, defaultDays, onClose
                 </option>
               ))}
             </select>
+            {tier === 'team' && (
+              <span className="block mt-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                {t('admin.subTierTeamHint')}
+              </span>
+            )}
           </label>
 
           {/* 状态 */}
