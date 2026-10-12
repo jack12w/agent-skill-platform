@@ -60,6 +60,34 @@ export default function Dashboard() {
     const res = await fetch('/api/skills?owner=me', { headers: { Authorization: `Bearer ${token}` } });
     if (res.ok) { const data = await res.json(); setSkills(Array.isArray(data) ? data : data?.items ?? []); }
   };
+  /** 拉取最新个人资料；只有 401（token 真正失效）才清登录态。
+   *  429 限流 / 5xx 抖动绝不能清 —— 培训现场 50 人共享同一出口 IP 极易命中限流，
+   *  原逻辑把 429 当成「token 已失效」直接 clearAuthCookies()，
+   *  表现为「明明登录成功了，却被弹回登录页」，反复重试后才挤进去。
+   *  401 的清态与跳转由 AuthProvider 全局拦截器统一处理，此处与其保持一致。 */
+  const loadUser = async (token: string) => {
+    try {
+      const r = await fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } });
+      if (r.ok) {
+        const data = await r.json();
+        setUser(data);
+        localStorage.setItem('user', JSON.stringify(data));
+        return;
+      }
+      if (r.status === 401) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        clearAuthCookies();
+        return;
+      }
+      // 其余非 200：保留登录态，等聚焦/手动重试时自动恢复，绝不踢人下线
+    } catch {
+      /* 同上：网络异常不清登录态 */
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     // 兜底：微信静默登录经 302 + Cookie 下发 token，但部分浏览器（尤其 iOS 微信）
     // 在 302 中可能没及时把 Cookie 同步到 localStorage，目标页首屏会误判为未登录。
@@ -72,30 +100,26 @@ export default function Dashboard() {
     localStorage.setItem('token', token);
     loadTeams(token);
     reloadSkills();
-    // 拉取最新个人资料，避免 localStorage 与服务器不一致（如换头像后 bio/tags 丢失）
-    fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
-      .then(async (r) => (r.ok ? { status: 200, data: await r.json() } : { status: r.status, data: null }))
-      .then(({ status, data }) => {
-        if (data) {
-          setUser(data);
-          localStorage.setItem('user', JSON.stringify(data));
-          return;
-        }
-        // 关键：只有 401（token 真正失效）才清登录态。
-        // 429 限流 / 5xx 抖动绝不能清 —— 培训现场 50 人共享同一出口 IP 极易命中限流，
-        // 原逻辑把 429 当成「token 已失效」直接 clearAuthCookies()，
-        // 表现为「明明登录成功了，却被弹回登录页」，反复重试后才挤进去。
-        // 401 的清态与跳转由 AuthProvider 全局拦截器统一处理，此处与其保持一致。
-        if (status === 401) {
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          clearAuthCookies();
-        }
-        // 其余非 200：保留登录态，等窗口聚焦 / 手动刷新时自动恢复，绝不踢人下线
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    // 避免 localStorage 与服务器不一致（如换头像后 bio/tags 丢失）
+    loadUser(token);
   }, []);
+
+  // 2026-10-13：登录态在、但用户资料还没拉到（上一次拉取遇到限流/5xx/断网）时，
+  // 窗口聚焦 / 回到前台自动重试 —— 微信扫码回跳落地即属此场景，用户无需手动刷新。
+  useEffect(() => {
+    const retry = () => {
+      if (user) return;
+      const token = localStorage.getItem('token');
+      if (token) loadUser(token);
+    };
+    const onVis = () => { if (document.visibilityState === 'visible') retry(); };
+    window.addEventListener('focus', retry);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('focus', retry);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [user]);
 
   // 页面获得焦点时刷新数据（用户从编辑页等子页面返回时）
   useEffect(() => {
@@ -244,7 +268,29 @@ export default function Dashboard() {
   };
 
   if (loading) return <div className="p-24 text-center text-neutral-500">加载中…</div>;
-  if (!user) return <div className="p-24 text-center">Please <Link href="/auth" className="text-brand-600">login</Link> to view your dashboard.</div>;
+  if (!user) {
+    // 2026-10-13：token 还在但用户资料没拉到（限流/5xx/断网）≠ 未登录。
+    // 旧实现直接渲染 Please login，而头部头像来自 localStorage → 「明明登录了却
+    // 让重新登录」。给明确的失败态 + 重试；只有真的没有凭证才引导去登录。
+    const token = localStorage.getItem('token') || getCookie('token');
+    if (token) {
+      return (
+        <div className="p-24 text-center">
+          <p className="text-neutral-600 mb-4">{t('dashboard.loginCheckFailed')}</p>
+          <button
+            onClick={() => {
+              setLoading(true);
+              loadUser(token);
+            }}
+            className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 text-sm"
+          >
+            {t('dashboard.retry')}
+          </button>
+        </div>
+      );
+    }
+    return <div className="p-24 text-center">Please <Link href="/auth" className="text-brand-600">login</Link> to view your dashboard.</div>;
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">

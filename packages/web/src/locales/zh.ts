@@ -219,6 +219,10 @@ const zh = {
     deleteConfirm: '确定删除"{name}"？此操作将永久删除该技能、所有版本及上传的包，不可撤销。',
     deleteFailed: '删除失败',
     createTeamFailed: '创建团队失败',
+    /* 2026-10-13：token 在、但 /api/auth/me 非 401 失败（429 限流/5xx/断网）时的失败态。
+       绝不能显示成「请登录」—— 登录态其实还在（微信扫码回跳场景头部头像都在）。 */
+    loginCheckFailed: '登录状态确认失败（可能是网络波动或访问限流）。你的登录仍然有效，点击重试即可。',
+    retry: '重试',
     onboardingTitle: '三步让你的 AI 技能上线',
     onboardingStep1: '① 准备技能包',
     onboardingStep1Desc: '创建 SKILL.md 配置文件，定义技能名称、功能和描述',
@@ -360,7 +364,10 @@ const zh = {
     thCategory: '分类',
     thPrice: '月价',
     thOrder: '排序',
-    thDevices: '设备数',
+    /* 2026-10-13：用户拍板，显示为「账号数」。
+       ⚠️ 该列实际渲染的是 plugin.max_activations（单账号可同时授权的配额，默认 2）——
+       不是实时统计值。旁边「用户数」列（设备授权口径去重）保持原样。 */
+    thDevices: '账号数',
     statusActive: '已上架',
     statusHidden: '已下架',
     publish: '上架',

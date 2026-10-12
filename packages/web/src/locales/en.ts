@@ -219,6 +219,10 @@ const en = {
     deleteConfirm: 'Delete "{name}"? This will permanently remove the skill, all its versions, and uploaded packages. This cannot be undone.',
     deleteFailed: 'Delete failed',
     createTeamFailed: 'Create team failed',
+    /* 2026-10-13: token present but /api/auth/me failed with non-401 (rate limit / 5xx / offline).
+       Never render this as "please login" — the session is still valid. */
+    loginCheckFailed: 'Could not verify your login status (network hiccup or rate limit). Your session is still valid — click retry.',
+    retry: 'Retry',
     onboardingTitle: '3 Steps to Publish Your AI Skill',
     onboardingStep1: '① Prepare your skill package',
     onboardingStep1Desc: 'Create a SKILL.md config file with your skill name, features, and description',
@@ -360,7 +364,11 @@ const en = {
     thCategory: 'Category',
     thPrice: 'Monthly',
     thOrder: 'Order',
-    thDevices: 'Devices',
+    /* 2026-10-13: renamed to Accounts per product decision.
+       ⚠️ The value rendered is plugin.max_activations (per-account authorization quota,
+       default 2) — a config value, not a live statistic. The "Users" column next to it
+       (distinct users with active devices) stays as-is. */
+    thDevices: 'Accounts',
     statusActive: 'Published',
     statusHidden: 'Hidden',
     publish: 'Publish',

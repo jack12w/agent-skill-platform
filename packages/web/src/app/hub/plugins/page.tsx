@@ -464,7 +464,12 @@ export default function HubPluginsPage() {
                 <th className="px-4 py-3 text-left hidden lg:table-cell">{t('admin.thCategory')}</th>
                 <th className="px-4 py-3 text-right">{t('admin.thPrice')}</th>
                 <th className="px-4 py-3 text-center hidden sm:table-cell">{t('admin.thOrder')}</th>
-                <th className="px-4 py-3 text-center hidden lg:table-cell">{t('admin.thDevices')}</th>
+                <th
+                  className="px-4 py-3 text-center hidden lg:table-cell"
+                  title={t('admin.fieldMaxActivationsHint')}
+                >
+                  {t('admin.thDevices')}
+                </th>
                 <th className="px-4 py-3 text-center hidden lg:table-cell">{t('admin.thUserCount')}</th>
                 <th className="px-4 py-3 text-center">{t('admin.thStatus')}</th>
                 <th className="px-4 py-3 text-right">{t('admin.thActions')}</th>
