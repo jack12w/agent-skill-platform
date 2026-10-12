@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useTranslation from '../../../hooks/useTranslation';
 import SubFormModal from './SubFormModal';
 import {
@@ -40,6 +40,20 @@ export default function SubscriptionsPanel({ plugins }: { plugins: PluginOption[
 
   /** 新增 / 编辑共用一个弹窗 */
   const [modal, setModal] = useState<ModalState>(null);
+
+  /**
+   * 购买档位商品名查找表（0040）：`source_plugin_id` → 商品名。
+   *
+   * 权益实体恒在主插件行，所以只看 plugin_id 分不出这笔订阅是按「主行月付」还是
+   * 「Pro 年付 / 企业版」卖出的。列表把订阅行记录的购买档位商品名显示出来，
+   * 管理员核对档位、排查「用户说买的年付却在月付筛选里」时不用再去翻订单。
+   * （plugins 由父组件传入，是后台全量商品，无需额外请求。）
+   */
+  const pluginNameById = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const p of plugins) m[p.id] = p.name;
+    return m;
+  }, [plugins]);
 
   const field =
     'w-full px-2.5 py-1.5 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:border-brand-400';
@@ -268,6 +282,16 @@ export default function SubscriptionsPanel({ plugins }: { plugins: PluginOption[
                             {Number(s.seats)} {t('admin.subSeats')}
                           </span>
                         )}
+                      </div>
+                    )}
+                    {/* 购买档位（0040）：权益行都在主插件行上，仅凭 plugin_id 看不出
+                        这笔订阅是按哪一档卖出的，故显示订阅行记录的档位商品名。
+                        历史行（source 为空）不渲染，不显示「未知」以免误导。 */}
+                    {s.source_plugin_id && pluginNameById[s.source_plugin_id] && (
+                      <div className="mt-1 text-[11px] text-neutral-500">
+                        {t('admin.subSourceTier')}
+                        {' · '}
+                        {pluginNameById[s.source_plugin_id]}
                       </div>
                     )}
                   </td>

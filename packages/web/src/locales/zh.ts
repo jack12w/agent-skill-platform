@@ -508,6 +508,8 @@ const zh = {
     subThTier: '订阅类型',
     subTierPersonal: '个人版',
     subTierTeam: '团队版',
+    /* 0040 购买档位：订阅行记录的商品行名（权益在主插件行，仅凭 plugin_id 分不出档位） */
+    subSourceTier: '购买档位',
     /* 0035 席位制：后台选团队版时的行为提示（自动建团 + 覆盖成员） */
     subTierTeamHint: '选择「团队版」将自动为该用户创建团队（其本人为团长），权益覆盖团队全部在册成员；席位与每成员设备数可在下方直接调整，保存后即时生效。',
     subSeatsLabel: '席位数（含团长）',

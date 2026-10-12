@@ -29,6 +29,9 @@ export interface SubRow {
   seats?: number | string | null;
   /** 团队内每成员设备数快照；个人行为 null */
   max_devices_per_member?: number | string | null;
+  /** 购买档位商品 id（0040）：本行权益最近一次购买所依据的商品行 id
+   *  （档位商品行 id；NULL = 历史未知或直接在主插件行购买）。列表据此显示购买档位。 */
+  source_plugin_id?: string | null;
 }
 
 export interface UserRow {

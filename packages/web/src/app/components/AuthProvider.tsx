@@ -3,9 +3,41 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-function getCookie(name: string): string | undefined {
+/**
+ * 读同源 Cookie。导出供登录落地页复用（/auth/wechat-callback 从 cookie 取服务端下发的
+ * token/user，见 api auth.controller wechatCallback）——避免第二个实现走偏。
+ */
+export function getCookie(name: string): string | undefined {
   const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
   return m ? m[1] : undefined;
+}
+
+/**
+ * 还原服务端下发的 `user` cookie 为原始 JSON 字符串。
+ *
+ * 约定：cookie 值 = encodeURIComponent(JSON)。但 2026-10-12 之前服务端写成
+ * 「手工 encodeURIComponent 后再交给 express res.cookie」，express 默认还会再编码一次
+ * → 落盘值是 `%257B...`（二次编码）。只 decode 一层会得到 `%7B...`，`JSON.parse`
+ * 失败 → 登录对象整个丢失（依赖它的 `getUserId()` 恒为 null）。
+ * 这里「一直解码到能解析为 JSON 为止」（最多两层）：新旧 cookie 都能正确还原，
+ * 不必等旧 cookie 的 7 天有效期自然过期。解不出来就原样返回，交给调用方兜底。
+ */
+export function decodeCookieJson(raw: string): string {
+  let v = raw;
+  for (let i = 0; i < 2; i++) {
+    try {
+      JSON.parse(v);
+      return v;
+    } catch {
+      /* 还不是 JSON：再解一层编码 */
+    }
+    try {
+      v = decodeURIComponent(v);
+    } catch {
+      return v; // 非法百分号序列 → 原样返回
+    }
+  }
+  return v;
 }
 
 // 微信内静默登录：后端经 302 + Cookie 下发 token/user，此处在「渲染期」同步回 localStorage
@@ -32,8 +64,11 @@ function hydrateTokenFromCookie() {
   localStorage.setItem('token', ckToken);
   const ckUser = getCookie('user');
   if (ckUser) {
+    // 走 decodeCookieJson 而非单层 decodeURIComponent：兼容 2026-10-12 之前落下的
+    // 二次编码 cookie（服务端 bug，见该函数注释），否则这里存进 localStorage 的是
+    // `%7B...` 字符串，JSON.parse(localStorage.user) 全线失败。
     try {
-      localStorage.setItem('user', decodeURIComponent(ckUser));
+      localStorage.setItem('user', decodeCookieJson(ckUser));
     } catch {
       /* 解析失败忽略 */
     }

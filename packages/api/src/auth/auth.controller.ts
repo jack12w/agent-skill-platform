@@ -76,17 +76,33 @@ export class AuthController {
     return this.authService.getWechatAuthUrl();
   }
 
+  // PC 网站应用扫码登录回调（微信 redirect 至此，弹窗内加载）。
+  //
+  // 2026-10-12：与微信内静默登录（mp-callback）统一为「Set-Cookie + 302 到干净 URL」。
+  // 旧实现把 JWT 拼进查询串（`/auth/wechat-callback?token=...&user=...`），会被
+  // 网关/Nginx 访问日志、浏览器历史、以及后续子资源请求的 Referer 持久落盘 —— 令牌
+  // 泄露面远大于用户侧可见的地址栏。Cookie 下发后落地页从 cookie 读，URL 保持干净。
+  // 注意：cookie 不带 httpOnly（与 mp-callback 一致），前端登录态统一读 localStorage，
+  //       需要 JS 能读到；同源 + SameSite=Lax，扫码是弹窗内的顶层导航，不受限制。
   @Get('wechat/callback')
   async wechatCallback(@Query('code') code: string, @Query('state') state: string, @Res() res: Response) {
     const base = process.env.PUBLIC_BASE_URL || 'https://skills.rehomi.com';
     try {
       const result = await this.authService.wechatCallback(code, state);
-      const params = new URLSearchParams({
-        token: result.access_token,
-        user: JSON.stringify(result.user),
+      const maxAge = 7 * 24 * 3600 * 1000;
+      res.cookie('token', result.access_token, { path: '/', sameSite: 'lax', maxAge });
+      // ⚠️ 传**原始 JSON 字符串**，不要自己 encodeURIComponent —— express 的
+      //    res.cookie 默认就会 encodeURIComponent，预先编码会二次编码
+      //    （`%7B` → `%257B`），前端 decode 一次仍不是合法 JSON，账号对象丢失。
+      //    前端约定：cookie 值 = encodeURIComponent(JSON)，读取端用 decodeCookieJson。
+      res.cookie('user', JSON.stringify(result.user), {
+        path: '/',
+        sameSite: 'lax',
+        maxAge,
       });
-      return res.redirect(`${base}/auth/wechat-callback?${params.toString()}`);
+      return res.redirect(`${base}/auth/wechat-callback`);
     } catch (err) {
+      // 错误信息不含凭证，留在查询串便于落地页展示按原因提示，无需走 cookie。
       const message = err instanceof Error ? err.message : '微信登录失败';
       return res.redirect(`${base}/auth/wechat-callback?error=${encodeURIComponent(message)}`);
     }
@@ -107,7 +123,7 @@ export class AuthController {
   }
 
   // 微信授权回调：用 code 换 openid → 查/建用户 → Set-Cookie 下发 token/user + 302 跳目标页。
-  // 与 PC 微信登录不同，这里不依赖缺失的前端 /auth/wechat-callback 页面，由后端同域闭环。
+  // 与 PC 扫码登录（wechat/callback）同规：服务端同域闭环，token 不进 URL。
   @Get('wechat/mp-callback')
   async wechatMpCallback(
     @Query('code') code: string,
@@ -131,7 +147,10 @@ export class AuthController {
       const safeRedirect = result.redirect && result.redirect.startsWith('/') ? result.redirect : '/';
       const maxAge = 7 * 24 * 3600 * 1000;
       res.cookie('token', result.access_token, { path: '/', sameSite: 'lax', maxAge });
-      res.cookie('user', encodeURIComponent(JSON.stringify(result.user)), {
+      // ⚠️ 传原始 JSON（同 wechat/callback）：express 默认 encodeURIComponent，
+      //    此处再手工编码会二次编码，前端 decode 一次后 JSON.parse 失败 →
+      //    localStorage.user 变成 `%7B...` 字符串，getUserId() 恒为 null。
+      res.cookie('user', JSON.stringify(result.user), {
         path: '/',
         sameSite: 'lax',
         maxAge,

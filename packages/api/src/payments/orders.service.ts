@@ -633,6 +633,10 @@ export class OrdersService implements OnModuleInit {
       }
       existing.price_cents = priceCents;
       existing.order_id = orderId;
+      // 购买档位溯源（0040）：记下本次所购的**商品行 id**（档位商品 → 档位行 id，
+      // 主行直购 → 主行 id）。账号中心续费据此按同一档位重新下单；
+      // 旧实现只能按 tier 猜，年付用户续费会被按主行 ¥49/月 下单（少给 335 天）。
+      existing.source_plugin_id = pluginId;
       // tier 只升不降：企业版订单升 team；个人版续费不得把后台已置的 team 降回 personal
       if (tier === 'team' || String(existing.tier || 'personal') === 'team') {
         existing.tier = 'team';
@@ -663,6 +667,8 @@ export class OrdersService implements OnModuleInit {
         started_at: new Date(),
         expires_at: new Date(now + MONTH),
         order_id: orderId,
+        // 购买档位溯源（0040）：恒为「用户下单时点的那个商品行」，非 targetPluginId
+        source_plugin_id: pluginId,
       });
       await this.pluginSubRepo.save(sub);
     }

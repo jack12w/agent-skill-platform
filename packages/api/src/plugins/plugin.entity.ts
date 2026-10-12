@@ -178,4 +178,22 @@ export class PluginSubscription {
 
   @Column({ type: 'uuid', nullable: true })
   order_id: string;
+
+  /**
+   * 购买档位商品 id（0040）：本行权益**最近一次**发放所依据的商品行 id。
+   *
+   * 权益实体恒在主插件行（`plugin_id` = alibaba-toolkit），本列只解决「记录用户当初
+   * 买的是哪一档」——档位商品（`-b2b` 企业版 / `-year` Pro 年付 / 后台新建的任意
+   * `alibaba-toolkit-*` 档位）本身不承载权益。
+   *   NULL   = 未知（0040 之前且无法由订单还原）或「直接在主插件行购买」
+   *   非 NULL = 购买该档位商品的行 id
+   * 用途：① 后台订阅列表按档位**精确**筛选（不再靠 tier 猜）；
+   *      ② 账号中心续费按同一档位商品重新下单（旧实现按 tier 猜 → 年付用户被按
+   *         ¥49/月 续费，少给 335 天）。
+   * 写入点：orders.fulfillPluginSubscription（支付发货）、
+   *        plugins.adminAddSubscription（后台手动开通）。
+   * 后台「编辑订阅」不改写本列（购买事实，非可编辑字段）。
+   */
+  @Column({ type: 'uuid', nullable: true })
+  source_plugin_id: string;
 }

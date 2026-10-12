@@ -507,6 +507,8 @@ const en = {
     subThTier: 'Tier',
     subTierPersonal: 'Personal',
     subTierTeam: 'Team',
+    /* 0040 purchase tier: product row recorded on the subscription (entitlement lives on the main row) */
+    subSourceTier: 'Purchased tier',
     /* 0035 seat model: hint shown in admin when Team tier selected (auto team creation) */
     subTierTeamHint: 'Selecting “Team” auto-creates a team owned by this user; entitlement covers all current members. Seats and per-member devices are editable below and take effect immediately.',
     subSeatsLabel: 'Seats (incl. owner)',

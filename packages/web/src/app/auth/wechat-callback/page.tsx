@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { setAuthCookie } from '../../components/AuthProvider';
+import { setAuthCookie, getCookie, decodeCookieJson } from '../../components/AuthProvider';
 
 // 健壮自关弹窗：直接 window.close() 在跨域 302（open.weixin.qq.com）后常被浏览器静默拦截。
 // 本页反复尝试多种关闭技巧，仍关不掉则明确提示用户手动关闭，绝不再把弹窗重定向到 dashboard。
@@ -22,9 +22,24 @@ export default function WechatLoginCallback() {
     try { sessionStorage.setItem('wechat_login_popup', '1'); } catch {}
 
     const sp = new URLSearchParams(window.location.search);
-    const token = sp.get('token');
-    const user = sp.get('user');
     const error = sp.get('error');
+    /* 凭证来源（2026-10-12）：服务端改为 Set-Cookie 下发 token/user 并 302 到本页
+     * （见 api auth.controller wechatCallback）——URL 不再携带 JWT，避免被网关访问日志、
+     * 浏览器历史与子请求 Referer 持久落盘。本页主通道改为读同源 Cookie。
+     *
+     * 顺序：**query 优先，cookie 兜底**。
+     *   - query 是「本次扫码这一次尝试」的明确结果（仅旧后端/部署切换瞬间会出现）；
+     *   - cookie 是浏览器环境态（可能是上一次会话留下的旧 token）。
+     *   两者冲突只可能发生在前后端不同版本混跑的瞬间，此时以本次尝试为准才不会
+     *   用上一段会话的旧身份完成登录（否则扫 B 号却登进 A 号）。
+     *   新链路下 query 不带 token/user，自然落到 cookie 分支。
+     * 两者都读不到才判定参数缺失。 */
+    const ckUserRaw = getCookie('user');
+    // Cookie 里的 user 是编码过的 JSON；用 decodeCookieJson（而非单层 decode）兼容
+    // 服务端改造前落下的二次编码 cookie，详见该函数注释。
+    const ckUser = ckUserRaw ? decodeCookieJson(ckUserRaw) : null;
+    const token = sp.get('token') || getCookie('token');
+    const user = sp.get('user') || ckUser;
 
     const notifyParent = (payload: any) => {
       try {

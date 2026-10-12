@@ -470,26 +470,35 @@ export class PluginsService {
   async adminListSubscriptions(pluginId: string, q: any) {
     const plugin = await this.adminGet(pluginId);
 
-    // 归属映射（0036）：权益实体永远在主插件行（扩展端/AI 门禁写死主行 slug，
-    // 这个存储模型不能动），但**后台筛选按购买档位还原归属**——
-    //   筛企业版档位商品（b2b）→ 显示主行上挂了团队（team_id 非空）的订阅行；
-    //   筛主插件（个人版）→ 只显示个人行（team_id IS NULL）。
-    // 同一用户同时持有个人+团队两个订阅 → 两个筛选下各显示一行，互不遮挡。
+    // 归属映射（0036 + 0040）：权益实体永远在主插件行（扩展端/AI 门禁写死主行 slug，
+    // 这个存储模型不能动），但**后台筛选按购买档位还原归属**：
+    //   筛某个档位商品（企业版 b2b / Pro 年付 year / 运营后续新建的任意档位）
+    //     → 只显示 source_plugin_id = 该档位商品 id 的行；
+    //   筛主插件（个人版）→ 显示个人行，且购买档位为主行或未知（0040 前的历史行）。
+    // 同一用户同时持有个人订阅 + 团队订阅 → 两个筛选下各显示一行，互不遮挡。
+    //
+    // ⚠️ 2026-10-12（0040）：旧实现没有 source_plugin_id，非企业版档位（如 `-year`）
+    //    与主行个人订阅在数据上不可区分，只能统一塞进「个人桶」——筛选 `-year` 会
+    //    把主行直购的订阅一起显示出来（用户实测反馈「筛选后不是只显示对应的」）。
+    //    现在按 source_plugin_id 精确筛选；NULL = 0040 之前且订单无法还原的历史行，
+    //    归入主行（唯一安全的默认归类，避免老数据在列表里凭空消失）。
     let wherePluginId = pluginId;
     let rowKind: 'team' | 'personal' | null = null;
+    /** 精确匹配 source_plugin_id 的档位商品 id（null = 不按档位过滤） */
+    let sourcePluginId: string | null = null;
+    /** true = 主行页：source 为 NULL 的历史行也算「主行直购」，一并显示 */
+    let includeNullSource = false;
     if (isMainPluginTierSlug(plugin.slug)) {
-      // 档位商品（企业版 / Pro 年付 / 运营后续新建的 `alibaba-toolkit-*` 档位）的
-      // 权益行都在主插件行上，筛选时按档位还原归属。
-      // ⚠️ 归属只能按 tier 区分：订阅行不记录「买的是哪个档位商品」，
-      //    故非企业版档位（如 `-year`）与主行个人订阅在数据上不可区分，
-      //    统一归入个人桶（团队桶 = tier=team 或 team_id 非空）。
       const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
       if (main) {
         wherePluginId = main.id;
         rowKind = tierOfTierSlug(plugin.slug) === 'team' ? 'team' : 'personal';
+        sourcePluginId = pluginId;
       }
     } else if (plugin.slug === MAIN_PLUGIN_SLUG) {
       rowKind = 'personal';
+      sourcePluginId = plugin.id;
+      includeNullSource = true;
     }
 
     const page = Math.max(1, Math.floor(Number(q?.page) || 1));
@@ -508,6 +517,17 @@ export class PluginsService {
       }
       if (rowKind === 'personal') {
         qb.andWhere("s.team_id IS NULL AND COALESCE(s.tier, 'personal') <> 'team'");
+      }
+      // 购买档位过滤（0040）：精确匹配「用户当初买的是这一档」。
+      // 主行页额外放行 NULL（历史行无法还原购买档位 → 归主行，避免老数据消失）。
+      if (sourcePluginId) {
+        if (includeNullSource) {
+          qb.andWhere('(s.source_plugin_id IS NULL OR s.source_plugin_id = :srcId)', {
+            srcId: sourcePluginId,
+          });
+        } else {
+          qb.andWhere('s.source_plugin_id = :srcId', { srcId: sourcePluginId });
+        }
       }
       if (status) qb.andWhere('s.status = :status', { status });
       if (search) qb.andWhere('(u.email ILIKE :kw OR u.name ILIKE :kw)', { kw: `%${search}%` });
@@ -534,6 +554,7 @@ export class PluginsService {
         's.team_id AS team_id',
         's.seats AS seats',
         's.max_devices_per_member AS max_devices_per_member',
+        's.source_plugin_id AS source_plugin_id',
         'u.email AS user_email',
         'u.name AS user_name',
         't.name AS team_name',
@@ -632,6 +653,11 @@ export class PluginsService {
           maxPerMember,
         );
       }
+      // 购买档位溯源（0040）：**只在为空时补写，不覆盖已知值**。
+      // 管理员在别的档位页顺手为老用户续期，不应把他的购买档位从「-year 年付」
+      // 改写成「主行月付」——那会让账号中心的下一次续费按错价下单。新建/首次记录
+      // 由下面的 create 分支写入；真正换档位购买请走对应档位商品页新建团队行。
+      if (!existing.source_plugin_id) existing.source_plugin_id = pluginId;
       await this.subRepo.save(existing);
       return existing;
     }
@@ -651,6 +677,9 @@ export class PluginsService {
       status,
       started_at: new Date(),
       expires_at: expiresAt ?? new Date(now + days * DAY),
+      // 购买档位溯源（0040）：记录管理员是在哪个商品页开出的这张订阅，
+      // 供后台按档位筛选与账号中心按同档续费使用（非 targetPluginId）。
+      source_plugin_id: pluginId,
     });
     await this.subRepo.save(sub);
     return sub;

@@ -34,6 +34,9 @@ interface MySub {
   team_id?: string | null;
   /** 订阅行归属用户 id（团队行上=团长本人），配合 via_team 判断是否团长 */
   user_id?: string;
+  /** 购买档位商品 id（0040）：本行权益最近一次购买所依据的商品行 id。
+   *  NULL = 未知（0040 前的历史行）/ 直接在主插件行购买。用于续费按同档下单 + 卡片标题。 */
+  source_plugin_id?: string | null;
 }
 
 interface DeviceRow {
@@ -452,15 +455,18 @@ export default function MyPluginsPage() {
             // 团长 vs 成员：团长看「团队版」+ 管理入口；成员看「由团队提供」。
             // 之前统一显示「由团队提供」，团长误以为买的还是个人版（2026-10-12 实测反馈）。
             const teamOwner = viaTeam && (!!s.is_team_owner || s.user_id === getUserId());
-            // 卡片标题按购买档位显示商品名（2026-10-12 用户反馈）：团队订阅行存储在
-            // 主插件行上，直接读主插件名会显示「体验版」让人以为买错了；
-            // tier=team 的行应显示企业版档位商品（b2b）的名字，与下单时所见一致。
+            // 卡片标题按购买档位显示商品名（2026-10-12 用户反馈）：订阅行存储在
+            // 主插件行上，直接读主插件名会显示「体验版」让人以为买错了。
+            // 0040 起优先用订阅行记录的购买档位商品名（精确，含 Pro 年付等非团队档位）；
+            // 历史行无记录时退回按 tier 推断（团队→b2b 企业版）。
+            const srcPlugin = s.source_plugin_id ? plugins[s.source_plugin_id] : undefined;
             const displayName =
-              s.tier === 'team'
+              srcPlugin?.name ||
+              (s.tier === 'team'
                 ? Object.values(plugins).find((x) => x.slug === 'alibaba-toolkit-b2b')?.name ||
                   p?.name ||
                   s.plugin_id
-                : p?.name || s.plugin_id;
+                : p?.name || s.plugin_id);
             const dd = deviceData[s.plugin_id];
             const open = deviceOpen === s.id;
             return (
@@ -693,17 +699,31 @@ export default function MyPluginsPage() {
                   {(!viaTeam || teamOwner) && (
                     <button
                       onClick={() => {
-                        // 企业版（tier=team）订阅的权益实体在主插件行上（支付回调映射，
-                        // 见 orders.service.ts fulfillPluginSubscription），但续费必须
-                        // 按企业版档位商品（alibaba-toolkit-b2b）下单——否则订单落在
-                        // 主插件行上会错按个人版 ¥9.9 计价，等于花 9.9 续了 99 的权益。
+                        // 续费必须按「用户当初购买的那一档商品」下单（0040）：
+                        //   权益实体在主插件行，但价格与订阅时长由档位商品决定
+                        //   （见 orders.fulfillPluginSubscription 读商品 subscription_duration_days）。
+                        //   旧实现只能按 tier 猜（team→b2b，其余→主行）：年付 Pro 用户在
+                        //   `-year` 档买的 365 天权益，续费会被按主行月付档下单
+                        //   → 少给 335 天（用户资损）。现按订阅行记录的 source_plugin_id 精确下单。
+                        const srcPlugin = s.source_plugin_id
+                          ? plugins[s.source_plugin_id]
+                          : undefined;
+                        if (srcPlugin) {
+                          setPayInfo({
+                            id: srcPlugin.id,
+                            name: srcPlugin.name,
+                            price: srcPlugin.price_monthly_cents || 0,
+                          });
+                          return;
+                        }
+                        // 兜底：0040 之前的历史行没有购买档位记录，仍按 tier 推断 ——
+                        // 团队权益只能来自企业版档位 b2b；其余回落主行。
+                        // b2b 档位商品缺失（配置事故/数据异常）时显式拦住并说明，
+                        // 绝不静默按个人价 ¥49/月 下单 —— 否则用户花小钱拿团队权益（资损），
+                        // 或订单商品与权益错配。
                         const b2b = Object.values(plugins).find(
                           (x) => x.slug === 'alibaba-toolkit-b2b',
                         );
-                        // 2026-10-12 质检：tier=team 但 b2b 档位商品缺失（配置事故/
-                        // 数据异常）时，旧实现会静默走 else 按个人价 ¥9.9 下单 ——
-                        // 用户花 9.9 却拿到团队权益（资损），或订单商品与权益错配。
-                        // 必须显式拦住并说明，绝不静默错价下单。
                         if (s.tier === 'team' && !b2b) {
                           setNotice(t('plugins.b2bMissing'));
                           return;
