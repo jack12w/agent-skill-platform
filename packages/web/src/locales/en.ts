@@ -389,8 +389,10 @@ const en = {
     fieldPromoEndsAt: 'Promo ends at',
     fieldPromoEndsAtHint: 'Empty = promo stays on and never auto-reverts. If set, the effective price reverts to the original afterwards.',
     fieldOrder: 'Sort order (smaller first)',
-    fieldMaxActivations: 'Authorized devices',
-    fieldMaxActivationsHint: 'Max devices per account (1-50, default 2). Raise it for team plans.',
+    /* 2026-10-13: product decision — this number counts accounts (one activation per
+       account), no longer phrased as "devices". Reused by the list column thDevices. */
+    fieldMaxActivations: 'Authorized accounts',
+    fieldMaxActivationsHint: 'Max accounts that can activate this plugin (1-50, default 2). Raise it for team plans.',
     fieldDuration: 'Subscription validity (days)',
     fieldDurationHint: 'Default duration for new/renewed subscriptions of this plugin (1-3650, default 30). Also used as the default when manually granting a subscription.',
     promoExpired: 'Promo ended — original price applies',

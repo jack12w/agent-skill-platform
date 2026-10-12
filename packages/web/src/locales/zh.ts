@@ -388,8 +388,10 @@ const zh = {
     fieldPromoEndsAt: '促销截止时间',
     fieldPromoEndsAtHint: '留空＝促销长期生效、不自动回价；填了则到期后实付自动回落到原价。',
     fieldOrder: '排序（越小越靠前）',
-    fieldMaxActivations: '可授权设备数',
-    fieldMaxActivationsHint: '单账号可同时授权的设备上限（1-50，默认 2）。团队版可调大。',
+    /* 2026-10-13：用户拍板口径 —— 该数值实际指「账号数」（每个账号激活一次），
+       不再说「设备」。列表列头 thDevices 与本 hint 复用同一文案。 */
+    fieldMaxActivations: '可授权账号数',
+    fieldMaxActivationsHint: '该插件可授权的账号数量上限（1-50，默认 2）。团队版可调大。',
     fieldDuration: '订阅有效期（天）',
     fieldDurationHint: '本款插件新开/续费订阅的默认时长（1-3650，默认 30）；手动开通订阅时也以此为默认天数。',
     promoExpired: '促销已结束，实付按原价',
