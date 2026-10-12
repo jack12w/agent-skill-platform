@@ -150,7 +150,9 @@ export class PluginsService {
     const sub = await this.subRepo.findOne({
       where: { user_id: userId, plugin_id: pluginId, team_id: IsNull() },
     });
-    if (!sub) throw new NotFoundException('未找到订阅记录');
+    // 二轮质检 #10：双行用户调 cancel 只会命中个人行；只持团队行的团长会走到这。
+    // 文案说清楚，避免用户以为「按钮点了没用」。
+    if (!sub) throw new NotFoundException('未找到个人订阅记录（团队订阅请联系管理员调整）');
     if (sub.status === 'cancelled') return sub;   // 幂等：重复点不再写库
     sub.status = 'cancelled';
     return this.subRepo.save(sub);
@@ -487,8 +489,15 @@ export class PluginsService {
     // 把过滤条件抽成函数：items 与 total 必须走**完全相同**的 where，否则分页数会对不上
     const applyFilters = (qb: any) => {
       qb.where('s.plugin_id = :pluginId', { pluginId: wherePluginId });
-      if (rowKind === 'team') qb.andWhere('s.team_id IS NOT NULL');
-      if (rowKind === 'personal') qb.andWhere('s.team_id IS NULL');
+      // 归属过滤（0036 + 二轮质检 #4 防御）：团队筛选放宽到「挂了团**或** tier=team」
+      // （覆盖 0035 前成交、team_id 为 NULL 的历史 b2b 行——虽然当前生产无此数据，
+      // 但口径上 tier=team 就是团队档）；个人筛选收紧为互补条件。两者互斥不漏。
+      if (rowKind === 'team') {
+        qb.andWhere("(s.team_id IS NOT NULL OR COALESCE(s.tier, 'personal') = 'team')");
+      }
+      if (rowKind === 'personal') {
+        qb.andWhere("s.team_id IS NULL AND COALESCE(s.tier, 'personal') <> 'team'");
+      }
       if (status) qb.andWhere('s.status = :status', { status });
       if (search) qb.andWhere('(u.email ILIKE :kw OR u.name ILIKE :kw)', { kw: `%${search}%` });
       return qb;
@@ -574,8 +583,8 @@ export class PluginsService {
     if (tier === 'team') {
       const team = await ensureOwnerTeam(this.subRepo.manager, userId, body?.team_name);
       teamId = team.id;
-      seats = Math.max(1, Math.round(Number(body?.seats) || plugin.team_seats || 3));
-      maxPerMember = Math.max(1, Math.round(Number(body?.max_devices_per_member) || 1));
+      seats = this.normalizeSeats(body?.seats, plugin.team_seats ?? 3);
+      maxPerMember = this.normalizeSeats(body?.max_devices_per_member, 1);
     }
 
     // 顺延查找按行类型隔离：团队行与个人行互不干扰（同一用户可同时持有）
@@ -670,7 +679,18 @@ export class PluginsService {
       // 降级必须摘团队关系（2026-10-12 质检）：只改 tier 不摘 team_id 的话，
       // resolvePluginSubscription 仍走团队分支（team_id 非空）→ 成员照常有权益、
       // AI 门禁照旧放行 team 功能，「降级」只在列表页生效，是假的。
+      // ⚠️ 二轮质检 #1：摘 team_id 会把团队行变成个人行，若该用户**已有个人行**
+      // （团长双行是 0035 后的典型形态），会撞 0035 部分唯一索引 → PG 23505 →
+      // 管理端只看到 500。必须先查个人行，有就明确拒绝。
       if (sub.tier === 'personal' && sub.team_id != null) {
+        const personalRow = await this.subRepo.findOne({
+          where: { user_id: sub.user_id, plugin_id: targetPluginId, team_id: IsNull() },
+        });
+        if (personalRow) {
+          throw new BadRequestException(
+            '该用户已持有个人订阅，不能将团队订阅降级为个人版（会撞唯一约束）；请先取消个人订阅，或直接删除该团队订阅',
+          );
+        }
         sub.team_id = null;
         sub.seats = null;
         sub.max_devices_per_member = null;
@@ -681,18 +701,20 @@ export class PluginsService {
     // 加席即时生效（邀请时实时查 MAX(seats)，无缓存）；缩席只拦新邀请、
     // 不剔除已入成员——避免改数字就把付费用户的权益掐了（拍板 2026-10-12）。
     if (body?.seats !== undefined && body?.seats !== null && body?.seats !== '') {
-      sub.seats = Math.max(1, Math.round(Number(body.seats)));
+      sub.seats = this.normalizeSeats(body.seats, plugin.team_seats ?? 3);
     }
     if (
       body?.max_devices_per_member !== undefined &&
       body?.max_devices_per_member !== null &&
       body?.max_devices_per_member !== ''
     ) {
-      sub.max_devices_per_member = Math.max(1, Math.round(Number(body.max_devices_per_member)));
+      sub.max_devices_per_member = this.normalizeSeats(body.max_devices_per_member, 1);
     }
     // 个人行直接编辑成团队行：补建团（与新增入口、支付回调行为一致），
     // 否则权益解析按 team_members 实时查，无 team_id 的团队行等于团长独享。
-    if (sub.tier === 'team' && sub.team_id == null) {
+    // ⚠️ 只在弹窗显式把 tier 提交为 team 时触发（二轮质检 #7）：旧实现只要
+    // 行上 tier 已是 team 就补建团——管理员只想改个到期日也会静默建团。
+    if (body?.tier === 'team' && sub.team_id == null) {
       const team = await ensureOwnerTeam(this.subRepo.manager, sub.user_id, body?.team_name);
       sub.team_id = team.id;
       if (sub.seats == null) {
@@ -710,6 +732,18 @@ export class PluginsService {
     const n = Math.round(Number(v));
     if (!Number.isFinite(n) || n < 0) return 0;
     return n;
+  }
+
+  /**
+   * 席位/设备数归一化（2026-10-12 二轮质检 #8/#9）：
+   * NaN/Infinity/非法值回落 fallback（防 PG 22P02 500），上下限 [1, 999]
+   * （防误配 999999 席）。与 orders 支付路径的 Math.max(1, …) 口径一致：
+   * team_seats=0 时两条路径都得 1 席，不会一个 1 一个 3。
+   */
+  private normalizeSeats(v: any, fallback: number): number {
+    const n = Math.round(Number(v));
+    if (!Number.isFinite(n)) return Math.min(999, Math.max(1, fallback));
+    return Math.min(999, Math.max(1, n));
   }
 
   /**

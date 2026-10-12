@@ -44,6 +44,10 @@ export async function ensureOwnerTeam(
         name: (name || '').trim() || `${user?.name || '我的'}的插件团队`,
         owner_user_id: userId,
         kind: 'plugin',
+        // 插件团一律私有（2026-10-12 二轮质检 M-1）：实体默认 is_public=true，
+        // 公开团可被任意登录用户刷加入申请、匿名可见成员名单——付费席位不该
+        // 有公开申请面。0036 迁移对迁建团同样显式 false，这里对齐。
+        is_public: false,
       } as Partial<Team>),
     );
   } catch (e: any) {
@@ -63,8 +67,11 @@ export async function ensureOwnerTeam(
            SELECT 1 FROM team_members WHERE team_id = $1 AND user_id = $2)`,
         [again.id, userId],
       );
-    } catch {
-      /* 赢家已写成员行（PK 冲突）→ 忽略，团+成员都已就位 */
+    } catch (e2: any) {
+      // 只吞唯一冲突（赢家已写成员行）。死锁/连接抖动/超时一律抛出：
+      // 静默吞掉会让「团存在但团长不是成员」——团长本人权益解析失权，
+      // 且 approve 锁内复查会把团长本人的授权以「已不在团队中」拒绝。
+      if (String(e2?.code) !== '23505') throw e2;
     }
     return again;
   }

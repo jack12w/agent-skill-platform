@@ -52,8 +52,16 @@ BEGIN
       VALUES (new_team_id, rec.user_id, 'owner', now());
     END IF;
 
-    UPDATE plugin_subscriptions
+    UPDATE plugin_subscriptions s
        SET team_id = new_team_id
-     WHERE team_id = rec.team_id AND user_id = rec.user_id;
+     WHERE s.team_id = rec.team_id AND s.user_id = rec.user_id
+       -- 二轮质检 L-3 防御：目标 plugin 团若已有同 (user, plugin) 团队行，
+       -- UPDATE 会造出重复行 → 撞 0037 唯一索引 → 整个 DO block abort。
+       -- 加 NOT EXISTS 守卫。按当前数据不变式实际不可达，属纵深防御。
+       AND NOT EXISTS (
+         SELECT 1 FROM plugin_subscriptions x
+          WHERE x.user_id = s.user_id
+            AND x.plugin_id = s.plugin_id
+            AND x.team_id = new_team_id);
   END LOOP;
 END $$;

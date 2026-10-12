@@ -30,12 +30,12 @@ interface AttributedOrder {
   referrer_code: string;
 }
 
-const fmt = (d: string | null | undefined) =>
-  d ? new Date(d).toLocaleString('zh-CN', { hour12: false }) : '—';
+const fmt = (d: string | null | undefined, lang: string = 'zh') =>
+  d ? new Date(d).toLocaleString(lang === 'en' ? 'en-US' : 'zh-CN', { hour12: false }) : '—';
 const yuan = (c: number | string) => (Number(c || 0) / 100).toFixed(2);
 
 export default function HubReferralsPage() {
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const [invites, setInvites] = useState<InviteRow[]>([]);
   const [orders, setOrders] = useState<AttributedOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,6 +54,9 @@ export default function HubReferralsPage() {
     setLoading(true);
     try {
       const r = await fetch('/api/admin/referrals', {
+        // 2026-10-12 质检：与后端 @Header('Cache-Control','no-store') 呼应，
+        // 防止 GET 被启发式缓存复用旧快照（新归因订单不出现）。
+        cache: 'no-store',
         headers: { Authorization: `Bearer ${token}` },
       });
       if (r.ok) {
@@ -126,7 +129,7 @@ export default function HubReferralsPage() {
                   <td className="px-4 py-2.5 text-neutral-500">{i.email || '—'}</td>
                   <td className="px-4 py-2.5 text-neutral-900">{i.referrer_name}</td>
                   <td className="px-4 py-2.5 font-mono text-xs text-brand-700">{i.referrer_code}</td>
-                  <td className="px-4 py-2.5 text-neutral-500">{fmt(i.created_at)}</td>
+                  <td className="px-4 py-2.5 text-neutral-500">{fmt(i.created_at, lang)}</td>
                 </tr>
               ))
             )}
@@ -178,8 +181,8 @@ export default function HubReferralsPage() {
                   <td className="px-4 py-2.5 text-neutral-900">{o.buyer_name || '—'}</td>
                   <td className="px-4 py-2.5 text-neutral-900">{o.referrer_name || '—'}</td>
                   <td className="px-4 py-2.5 font-mono text-xs text-brand-700">{o.referrer_code || '—'}</td>
-                  <td className="px-4 py-2.5 text-neutral-500">{fmt(o.created_at)}</td>
-                  <td className="px-4 py-2.5 text-neutral-500">{fmt(o.paid_at)}</td>
+                  <td className="px-4 py-2.5 text-neutral-500">{fmt(o.created_at, lang)}</td>
+                  <td className="px-4 py-2.5 text-neutral-500">{fmt(o.paid_at, lang)}</td>
                 </tr>
               ))
             )}

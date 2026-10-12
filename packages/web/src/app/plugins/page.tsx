@@ -173,9 +173,10 @@ export default function PluginsPage() {
     // 与后端 isSubscriptionEntitled 对齐：cancelled（到期不再续费）但未到期 → 仍算已订阅，
     // 否则取消过的用户会在市场页看到「订阅」按钮，点进去重复付费。
     // expired 状态即便 expires_at 在未来也无权（后台强制终止）。
-    return s.status !== 'expired' && new Date(s.expires_at).getTime() > Date.now()
-      ? s
-      : null;
+    // 2026-10-12 质检：旧写法 `s.status !== 'expired'` 是黑名单口径——未来任何新状态
+    // （pending/trial/…）都会被误判为有权；改成 rowEntitled 白名单（active/cancelled
+    // 且未到期），与后端逐条一致。
+    return rowEntitled(s) ? s : null;
   };
 
   const handleDownload = async (p: Plugin) => {

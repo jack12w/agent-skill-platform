@@ -46,11 +46,6 @@ export class TeamsService {
     return savedTeam;
   }
 
-  async addMember(teamId: string, userId: string, role: MemberRole) {
-    const member = this.memberRepository.create({ team_id: teamId, user_id: userId, role });
-    return this.memberRepository.save(member);
-  }
-
   // 仅团队 owner 可管理成员（含改角色）；复用此断言避免各方法重复判断
   private async assertOwner(teamId: string, operatorId: string) {
     const team = await this.teamRepository.findOne({ where: { id: teamId } });
@@ -98,10 +93,12 @@ export class TeamsService {
    * check-then-insert，同时批两个申请可超卖 1 席（多出的成员免费获得权益）。
    */
   private async lockTeamRow(m: EntityManager, teamId: string) {
-    await m.getRepository(Team).findOne({
+    const locked = await m.getRepository(Team).findOne({
       where: { id: teamId },
       lock: { mode: 'pessimistic_write' },
     });
+    // 预检通过后、拿锁前团队被并发删 → 必须 404，而不是继续插成员撞 FK 23503 变 500
+    if (!locked) throw new NotFoundException('Team not found');
   }
 
   /**
@@ -186,7 +183,9 @@ export class TeamsService {
   async requestToJoin(teamId: string, userId: string, message?: string) {
     const team = await this.teamRepository.findOne({ where: { id: teamId } });
     if (!team) throw new NotFoundException('Team not found');
-    if (!team.is_public) {
+    // 插件团（kind='plugin'）一律私有：不接受公开加入申请（2026-10-12 二轮质检 M-1），
+    // 与 ensureOwnerTeam 的 is_public=false 双保险——防历史/迁移数据 is_public 为 true。
+    if (!team.is_public || team.kind === 'plugin') {
       throw new BadRequestException('私有团队不接受公开申请，请联系团队 owner 邀请');
     }
     if (team.owner_user_id === userId) return { ok: true, already: true };
@@ -254,6 +253,9 @@ export class TeamsService {
     // approve：加入成员（若已存在成员不重复插入）。
     // 事务 + team 行锁（0035/2026-10-12 质检）：与「按邮箱邀请」同款串行化，
     // 两个审批并发不再超卖席位；席位校验与成员插入原子完成。
+    // 状态翻转也放进同一事务（二轮质检 #6）：旧实现事务提交后才 save req，
+    // 崩溃窗口里「成员已入团但申请仍 pending」，且申请人若此时撤销，save 会
+    // 把已删的申请行以 approved 复活（TypeORM 主键全赋值 → SELECT 不到 → INSERT）。
     await this.teamRepository.manager.transaction(async (m) => {
       await this.lockTeamRow(m, teamId);
       const dup = await m.getRepository(TeamMember).findOne({
@@ -265,10 +267,10 @@ export class TeamsService {
           m.getRepository(TeamMember).create({ team_id: teamId, user_id: userId, role: effectiveRole }),
         );
       }
+      req.status = 'approved';
+      req.role = effectiveRole;
+      await m.getRepository(TeamJoinRequest).save(req);
     });
-    req.status = 'approved';
-    req.role = effectiveRole;
-    await this.joinRequestRepository.save(req);
     return { ok: true, status: 'approved' };
   }
 

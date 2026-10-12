@@ -375,8 +375,12 @@ export class OrdersService implements OnModuleInit {
       await this.logRepo.update(log.id, { processed: true });
       // 已支付过：若上次发货未完成（部分步骤失败被回滚），此处补发。
       // 因 deliver 各步骤幂等，重复调用安全，且由下次回调/查单自愈。
+      // ⚠️ 只补发 **PAID** 订单（2026-10-12 二轮质检 M-3）：退款会把订单翻成
+      // REFUNDED/PARTIAL_REFUNDED，旧条件 `!== 'DELIVERED'` 会让退款后重推的
+      // 回调重新 deliver → grantPurchase/activateCreatorSub 把已撤的权益复活
+      // （钱退了权益回来）。PAID 已隐含「非 DELIVERED」。
       const o = await this.orderRepo.findOne({ where: { id: payment.order_id } });
-      if (o && o.status !== 'DELIVERED') await this.deliver(o);
+      if (o && o.status === 'PAID') await this.deliver(o);
       return { code: 'SUCCESS' };
     }
 
@@ -525,10 +529,16 @@ export class OrdersService implements OnModuleInit {
     const MONTH = (ordered?.subscription_duration_days ?? 30) * 86400_000;
     if (ordered?.slug === B2B_TIER_SLUG) {
       const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
-      if (main) {
-        targetPluginId = main.id;
-        tier = 'team';
+      // 主插件行缺失 = 配置事故（2026-10-12 二轮质检 L-4）：旧代码静默把 ¥99
+      // 企业版订单按个人版发到 b2b 行上——没人读的死行 + 不建团，用户付费后无权益。
+      // 必须显式拒绝发货，让订单卡在非 DELIVERED 等人工处理。
+      if (!main) {
+        throw new BadRequestException(
+          '企业版商品配置异常：主插件行（alibaba-toolkit）缺失，已拒绝发货，请联系平台管理员',
+        );
       }
+      targetPluginId = main.id;
+      tier = 'team';
     }
 
     // 席位制（0035）：团队订单自动建团（购买者=团长，已有团复用），
@@ -606,7 +616,8 @@ export class OrdersService implements OnModuleInit {
       // 前端轮询会持续触发本方法，因此卡在 PAID 的订单能自动恢复为 DELIVERED。
       if (payment.status === 'PAID') {
         const o = await this.orderRepo.findOne({ where: { id: payment.order_id } });
-        if (o && o.status !== 'DELIVERED') await this.deliver(o);
+        // 同 M-3：只补发 PAID 订单，退款后的订单不得复活权益
+        if (o && o.status === 'PAID') await this.deliver(o);
         return;
       }
       const r = await this.wechat.queryOrder(outTradeNo);

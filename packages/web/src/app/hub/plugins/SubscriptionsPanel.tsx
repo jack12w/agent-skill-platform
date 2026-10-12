@@ -62,6 +62,9 @@ export default function SubscriptionsPanel({ plugins }: { plugins: PluginOption[
       qs.set('page', String(page));
       qs.set('size', String(PAGE_SIZE));
       const res = await fetch(`/api/admin/plugins/${pluginId}/subscriptions?${qs}`, {
+        // 2026-10-12 质检：不带 cache 模式时 Next fetch 对 GET 可能命中磁盘缓存，
+        // 后台刚改的状态/席位数不刷新（res.ok 仍 true）。与后端 no-store 呼应。
+        cache: 'no-store',
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error(String(res.status));

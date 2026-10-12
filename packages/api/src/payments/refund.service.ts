@@ -10,6 +10,7 @@ import {
   CreatorSubscription,
   WechatNotifyLog,
 } from './payments.entity';
+import { PluginSubscription } from '../plugins/plugin.entity';
 import { WechatPayService, WechatApiError } from './wechat-pay.service';
 import { BalanceService } from './balance.service';
 import { DistributedStore } from '../common/dist-state.store';
@@ -306,6 +307,18 @@ export class RefundService implements OnModuleInit {
             .createQueryBuilder()
             .update(CreatorSubscription)
             .set({ status: 'refunded', expires_at: new Date() })
+            .where('order_id = :oid', { oid: order.id })
+            .execute();
+        } else if (order.type === 'plugin') {
+          // 插件订阅（2026-10-12 二轮质检 M-4）：旧实现只处理 skill/creator_membership，
+          // 插件全额退款后订阅行原样有效至自然到期——团队版更甚（全团成员继续白用）。
+          // 按 order_id 定位本单发放/顺延的那一行，置 expired + 到期日=now：
+          // isSubscriptionEntitled 对 expired 一律判无权，权益即时终止。
+          // 团队行同此处理（行上 user_id 是团长，成员经 team_members 实时解析一并失权）。
+          await manager
+            .createQueryBuilder()
+            .update(PluginSubscription)
+            .set({ status: 'expired', expires_at: new Date() })
             .where('order_id = :oid', { oid: order.id })
             .execute();
         }

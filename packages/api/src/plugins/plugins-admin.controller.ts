@@ -156,8 +156,14 @@ export class PluginsAdminController {
    * 某插件的订阅列表（join users 取邮箱/昵称）。
    * 路由是两段（:id/subscriptions），与一段的 `@Get(':id')` 不会互相截胡；
    * 按项目约定仍把更具体的路由写在前面。
+   *
+   * ⚠️ `@Header('Cache-Control','no-store')` 是正确性前提（2026-10-12 二轮质检）：
+   * 与同文件的 @Get()/:id/users 对齐——无此头时浏览器按启发式缓存复用旧快照，
+   * 管理员手动添加订阅后列表不刷新，会重复添加同一用户同插件（双倍顺延）。
+   * `@Header()` 不支持类级，必须逐方法标。
    */
   @Get(':id/subscriptions')
+  @Header('Cache-Control', 'no-store')
   listSubscriptions(@Param('id') id: string, @Query() q: any) {
     return this.svc.adminListSubscriptions(id, q);
   }

@@ -554,7 +554,7 @@ export class AuthService {
          FROM orders o
          JOIN order_items oi ON oi.order_id = o.id
         WHERE oi.snapshot->'referrer'->>'referrer_id' = $1
-          AND o.status = 'PAID'`,
+          AND o.status IN ('PAID', 'DELIVERED')`,
       [userId],
     );
     return {

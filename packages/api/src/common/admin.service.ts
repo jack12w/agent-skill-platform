@@ -345,6 +345,38 @@ export class AdminService {
   async deleteTeam(id: string) {
     const team = await this.teamRepo.findOneBy({ id });
     if (!team) throw new NotFoundException('Team not found');
+
+    // 2026-10-12 二轮质检 #2：后台删团此前**无任何前置检查**——旧代码直接
+    // teamRepo.delete，而 plugin_subscriptions.team_id（0035 NO ACTION FK）与
+    // skills.owner_team_id（0001 NO ACTION FK）任一引用该团都会 FK 23503 → 500。
+    // 与用户侧 teams.service.deleteTeam 对齐（第一轮只修了用户侧，后台漏了）：
+    // 插件订阅引用 → 明确拒绝；skills → 回落到原创作者；成员/申请 CASCADE 自动清。
+    const refs: Array<{ cnt: number }> = await this.teamRepo.query(
+      `SELECT COUNT(*)::int AS cnt FROM plugin_subscriptions WHERE team_id = $1`,
+      [id],
+    );
+    if (Number(refs[0]?.cnt || 0) > 0) {
+      throw new BadRequestException(
+        '该团队有生效中的插件订阅，不能删除；请先在「订阅管理」取消该团队订阅后再解散',
+      );
+    }
+
+    await this.skillRepo
+      .createQueryBuilder()
+      .update(Skill)
+      .set({ owner_team_id: null, owner_user_id: () => 'created_by' })
+      .where('owner_team_id = :teamId', { teamId: id })
+      .andWhere('created_by IS NOT NULL')
+      .execute();
+
+    await this.skillRepo
+      .createQueryBuilder()
+      .update(Skill)
+      .set({ owner_team_id: null, owner_user_id: team.owner_user_id })
+      .where('owner_team_id = :teamId', { teamId: id })
+      .andWhere('created_by IS NULL')
+      .execute();
+
     await this.teamRepo.delete({ id });
     return { ok: true };
   }
@@ -624,6 +656,7 @@ export class AdminService {
          LEFT JOIN users u ON u.id = o.user_id
          LEFT JOIN users r ON r.id::text = oi.snapshot->'referrer'->>'referrer_id'
         WHERE oi.snapshot->'referrer'->>'referrer_id' IS NOT NULL
+          AND o.status IN ('PAID', 'DELIVERED')
         ORDER BY o.created_at DESC
         LIMIT 200`,
     );

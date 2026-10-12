@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { BreadcrumbSchema } from '../../../lib/structured-data';
+import { BreadcrumbSchema, jsonLdHtml } from '../../../lib/structured-data';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://skills.rehomi.com';
 const API_BASE = `http://${process.env.API_HOST || 'localhost'}:${process.env.API_PORT || '3001'}`;
@@ -77,7 +77,7 @@ export default async function UserLayout({
           <script
             type="application/ld+json"
             dangerouslySetInnerHTML={{
-              __html: JSON.stringify({
+              __html: jsonLdHtml({
                 '@context': 'https://schema.org',
                 '@type': 'Person',
                 name: user.name,

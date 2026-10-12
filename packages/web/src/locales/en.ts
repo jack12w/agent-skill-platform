@@ -994,6 +994,9 @@ const en = {
     cancelledHint: 'Renewal stopped; your access is kept until {date}. Click Renew to extend it.',
     cancelDone: 'Renewal stopped; access kept until {date}.',
     cancelFailed: 'Cancel failed. Check your network and retry (your subscription is unchanged).',
+    /* 2026-10-12 QA: fallback when the b2b tier product is missing for a team-tier renewal —
+       never silently charge the personal price (9.9 for 99 worth of access = loss). */
+    b2bMissing: 'The Business tier product is not configured yet, so renewal is temporarily unavailable. Please contact the administrator.',
     expired: 'Expired',
     active: 'Active',
     myTitle: 'My Plugin Subscriptions',

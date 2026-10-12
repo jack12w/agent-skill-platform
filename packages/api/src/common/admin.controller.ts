@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Delete, UseGuards, HttpCode, HttpException, HttpStatus, Query, Body, Param, Request } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, UseGuards, HttpCode, HttpException, HttpStatus, Query, Body, Param, Request, Header } from '@nestjs/common';
 import { StatsAggregationService } from '../stats-aggregation.service';
 import { AdminService } from './admin.service';
 import { AdminGuard } from './admin.guard';
@@ -78,6 +78,7 @@ export class AdminController {
 
   // ── 邀请推广归因（迁移 0034）：邀请关系 + 已归因付费订阅 ──
   @Get('referrals')
+  @Header('Cache-Control', 'no-store')
   listReferrals() { return this.adminService.listReferrals(); }
 
   @Patch('users/:id')

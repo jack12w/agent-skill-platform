@@ -145,8 +145,12 @@ export default function MyPluginsPage() {
          * 「已授权 N/M 台设备」只能显示兜底值 `?? 0` / `?? 2` —— 用户看到「0/2」，
          * 点开却变成真实的「1/1」，第一反应是「数字不对/有 bug」。
          * 这里对所有**权益仍有效**的订阅各拉一次（只读接口），让收起时也是真值；
-         * 失效订阅那块面板本来就不渲染，不请求。 */
-        preloadDevices(mine.filter((s) => isEntitled(s)).map((s) => s.plugin_id));
+         * 失效订阅那块面板本来就不渲染，不请求。
+         * 2026-10-12 质检：按 plugin_id 去重 —— 同一用户可同时持有个人行+团队行
+         * （0035），两条行的 plugin_id 相同，旧实现会对同一插件并发打两次 /devices。
+         * （indexOf 去重而非 Set 展开：tsconfig target 低于 es2015。） */
+        const preloadIds = mine.filter((s) => isEntitled(s)).map((s) => s.plugin_id);
+        preloadDevices(preloadIds.filter((id, i) => preloadIds.indexOf(id) === i));
       } else {
         setError(t('plugins.loadFailed'));
       }
@@ -693,6 +697,14 @@ export default function MyPluginsPage() {
                         const b2b = Object.values(plugins).find(
                           (x) => x.slug === 'alibaba-toolkit-b2b',
                         );
+                        // 2026-10-12 质检：tier=team 但 b2b 档位商品缺失（配置事故/
+                        // 数据异常）时，旧实现会静默走 else 按个人价 ¥9.9 下单 ——
+                        // 用户花 9.9 却拿到团队权益（资损），或订单商品与权益错配。
+                        // 必须显式拦住并说明，绝不静默错价下单。
+                        if (s.tier === 'team' && !b2b) {
+                          setNotice(t('plugins.b2bMissing'));
+                          return;
+                        }
                         if (s.tier === 'team' && b2b) {
                           setPayInfo({
                             id: b2b.id,
