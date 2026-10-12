@@ -637,9 +637,19 @@ export class PluginsService {
     subId: string,
     body: any,
   ): Promise<PluginSubscription> {
+    const plugin = await this.adminGet(pluginId);
+    // 0036 归属映射：在 b2b 档位商品页编辑 → 目标行在主插件行（团队行都挂在主行上，
+    // 与列表筛选/新增入口同规）。少了这层映射，b2b 页点编辑会被
+    // 「该订阅不属于当前插件」误杀（行本身就在主插件行上）。
+    let targetPluginId = pluginId;
+    if (plugin.slug === B2B_TIER_SLUG) {
+      const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
+      if (main) targetPluginId = main.id;
+    }
+
     const sub = await this.subRepo.findOne({ where: { id: subId } });
     if (!sub) throw new NotFoundException('订阅记录不存在');
-    if (sub.plugin_id !== pluginId) {
+    if (sub.plugin_id !== targetPluginId) {
       throw new BadRequestException('该订阅不属于当前插件，请刷新后重试');
     }
 
@@ -654,6 +664,31 @@ export class PluginsService {
     if (body?.tier !== undefined) {
       sub.tier = this.parseTierInput(body, sub.tier || 'personal');
     }
+
+    // 席位制（0035）：后台编辑席位数 / 每成员设备数。
+    // 加席即时生效（邀请时实时查 MAX(seats)，无缓存）；缩席只拦新邀请、
+    // 不剔除已入成员——避免改数字就把付费用户的权益掐了（拍板 2026-10-12）。
+    if (body?.seats !== undefined && body?.seats !== null && body?.seats !== '') {
+      sub.seats = Math.max(1, Math.round(Number(body.seats)));
+    }
+    if (
+      body?.max_devices_per_member !== undefined &&
+      body?.max_devices_per_member !== null &&
+      body?.max_devices_per_member !== ''
+    ) {
+      sub.max_devices_per_member = Math.max(1, Math.round(Number(body.max_devices_per_member)));
+    }
+    // 个人行直接编辑成团队行：补建团（与新增入口、支付回调行为一致），
+    // 否则权益解析按 team_members 实时查，无 team_id 的团队行等于团长独享。
+    if (sub.tier === 'team' && sub.team_id == null) {
+      const team = await ensureOwnerTeam(this.subRepo.manager, sub.user_id, body?.team_name);
+      sub.team_id = team.id;
+      if (sub.seats == null) {
+        sub.seats = Math.max(1, Math.round(Number(body?.seats) || plugin.team_seats || 3));
+      }
+      if (sub.max_devices_per_member == null) sub.max_devices_per_member = 1;
+    }
+
     await this.subRepo.save(sub);
     return sub;
   }

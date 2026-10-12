@@ -500,7 +500,11 @@ const en = {
     subTierPersonal: 'Personal',
     subTierTeam: 'Team',
     /* 0035 seat model: hint shown in admin when Team tier selected (auto team creation) */
-    subTierTeamHint: 'Selecting “Team” auto-creates a team owned by this user; entitlement covers all current members, 1 device per member by default.',
+    subTierTeamHint: 'Selecting “Team” auto-creates a team owned by this user; entitlement covers all current members. Seats and per-member devices are editable below and take effect immediately.',
+    subSeatsLabel: 'Seats (incl. owner)',
+    subSeatsHint: 'Raise the number and save to add seats (effective instantly). Lowering only blocks new invites; existing members are kept.',
+    subMaxDevicesLabel: 'Devices per member',
+    subMaxDevicesHint: 'Devices each member can authorize (default 1).',
     subSeats: 'seats',
     subThActions: 'Actions',
     subSourcePaid: 'Paid',

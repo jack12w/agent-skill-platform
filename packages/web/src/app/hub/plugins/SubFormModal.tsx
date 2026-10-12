@@ -60,6 +60,14 @@ export default function SubFormModal({ mode, pluginId, sub, defaultDays, onClose
   const [days, setDays] = useState(String(defaultDays ?? 30));
   const [pickDate, setPickDate] = useState('');
 
+  /* ---------------- 席位制（0035）：团队订阅的席位数 / 每成员设备数 ----------------
+   * 编辑态回填现有值；新增态默认 3 席 / 每成员 1 台（与后端默认一致）。
+   * 用户要加席位时，管理员在这个弹窗直接改大数字保存即可（实时生效）。 */
+  const [seats, setSeats] = useState<string>(isEdit ? String(sub?.seats ?? 3) : '3');
+  const [maxDevices, setMaxDevices] = useState<string>(
+    isEdit ? String(sub?.max_devices_per_member ?? 1) : '1',
+  );
+
   /** 用户搜索（400ms 防抖）；失败保留上次结果，不清空 */
   useEffect(() => {
     if (isEdit) return;
@@ -95,6 +103,13 @@ export default function SubFormModal({ mode, pluginId, sub, defaultDays, onClose
     }
 
     const body: Record<string, unknown> = { status, tier };
+
+    // 席位制：选了团队版就带上席位参数（后端缺省回落 3 席 / 每成员 1 台，
+    // 这里显式提交，保证「改了数字就一定生效」而不是被默认值吞掉）。
+    if (tier === 'team') {
+      body.seats = Math.max(1, Math.round(Number(seats) || 3));
+      body.max_devices_per_member = Math.max(1, Math.round(Number(maxDevices) || 1));
+    }
 
     if (isEdit) {
       if (!day) {
@@ -324,6 +339,39 @@ export default function SubFormModal({ mode, pluginId, sub, defaultDays, onClose
               </span>
             )}
           </label>
+
+          {/* 席位制（0035）：团队版才显示。加席位 = 用户要扩容时管理员直接改大保存，
+              实时生效（邀请时查 MAX(seats)）；减席只拦新邀请、不剔除已入成员。 */}
+          {tier === 'team' && (
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="text-xs text-neutral-500">{t('admin.subSeatsLabel')}</span>
+                <input
+                  className={`${field} mt-1`}
+                  type="number"
+                  min="1"
+                  value={seats}
+                  onChange={(e) => setSeats(e.target.value)}
+                />
+                <span className="block mt-1 text-[11px] text-neutral-400">
+                  {t('admin.subSeatsHint')}
+                </span>
+              </label>
+              <label className="block">
+                <span className="text-xs text-neutral-500">{t('admin.subMaxDevicesLabel')}</span>
+                <input
+                  className={`${field} mt-1`}
+                  type="number"
+                  min="1"
+                  value={maxDevices}
+                  onChange={(e) => setMaxDevices(e.target.value)}
+                />
+                <span className="block mt-1 text-[11px] text-neutral-400">
+                  {t('admin.subMaxDevicesHint')}
+                </span>
+              </label>
+            </div>
+          )}
 
           {/* 状态 */}
           <label className="block">

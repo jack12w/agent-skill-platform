@@ -501,7 +501,11 @@ const zh = {
     subTierPersonal: '个人版',
     subTierTeam: '团队版',
     /* 0035 席位制：后台选团队版时的行为提示（自动建团 + 覆盖成员） */
-    subTierTeamHint: '选择「团队版」将自动为该用户创建团队（其本人为团长），权益覆盖团队全部在册成员；每成员默认 1 台设备。',
+    subTierTeamHint: '选择「团队版」将自动为该用户创建团队（其本人为团长），权益覆盖团队全部在册成员；席位与每成员设备数可在下方直接调整，保存后即时生效。',
+    subSeatsLabel: '席位数（含团长）',
+    subSeatsHint: '用户要加席位时改大保存即可，实时生效；改小只拦新邀请，不剔除已入成员。',
+    subMaxDevicesLabel: '每成员设备数',
+    subMaxDevicesHint: '团队内每个成员可授权的设备数（默认 1 台）。',
     subSeats: '席位',
     subThActions: '操作',
     subSourcePaid: '付费',
