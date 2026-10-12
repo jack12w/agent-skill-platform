@@ -943,6 +943,8 @@ const en = {
     subscribed: 'Subscribed',
     validUntil: 'Valid until',
     perMonth: '¥/mo',
+    /* Unit follows the plugin's subscription duration: ≥365 days → per year. */
+    perYear: '¥/yr',
     promoBadge: 'Limited offer',
     manage: 'Manage',
     freeDownloadTip: 'Download the client for free; log in and authorize to use it.',

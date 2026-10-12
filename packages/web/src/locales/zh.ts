@@ -948,6 +948,9 @@ const zh = {
     subscribed: '已订阅',
     validUntil: '有效期至',
     perMonth: '元/月',
+    /* 2026-10-12：价格单位跟商品走——商品的订阅有效期 ≥365 天显示「元/年」，
+       其余显示「元/月」。见 app/plugins/page.tsx 的 priceUnit()。 */
+    perYear: '元/年',
     promoBadge: '限时特惠',
     manage: '管理订阅',
     freeDownloadTip: '下载客户端免费，登录授权后使用',

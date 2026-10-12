@@ -20,6 +20,8 @@ interface Plugin {
   list_price_monthly_cents?: number | null;
   /** 促销截止；null = 促销静态生效（不自动回价） */
   promo_ends_at?: string | null;
+  /** 订阅有效期（天）；30=包月，365=包年。价格单位按它切（见 priceUnit） */
+  subscription_duration_days?: number | null;
   /** 商品含的功能点 */
   features?: string[] | null;
   status: string;
@@ -183,6 +185,13 @@ export default function PluginsPage() {
     const list = Number(p.list_price_monthly_cents || 0);
     return list > payCents(p) && promoActive(p) ? list : 0;
   };
+  // 价格单位跟商品走（2026-10-12）：订阅有效期 ≥365 天 → 「元/年」，其余（默认 30）→ 「元/月」。
+  // 后端 /api/plugins 的 stripPublic 是整实体展开，subscription_duration_days 已随列表返回，
+  // 前端只做展示切换，不用动后端。
+  const priceUnit = (p: Plugin) =>
+    (Number(p.subscription_duration_days) || 30) >= 365
+      ? t('plugins.perYear')
+      : t('plugins.perMonth');
 
   // ── 收银台档位下拉（2026-10-09）──
   // 选项 = 当前全部上架插件（个人版/企业版），价格沿用促销判定；
@@ -517,7 +526,7 @@ export default function PluginsPage() {
                         <span className="text-2xl font-extrabold text-neutral-900 shrink-0">
                           ¥{yuan(payCents(p))}
                         </span>
-                        <span className="text-sm text-neutral-400 shrink-0">{t('plugins.perMonth')}</span>
+                        <span className="text-sm text-neutral-400 shrink-0">{priceUnit(p)}</span>
                         {!!strike && (
                           <span className="rounded-md bg-red-50 border border-red-200 px-1.5 py-0.5 text-[10px] font-semibold text-red-600 shrink-0 whitespace-nowrap">
                             {t('plugins.promoBadge')}
