@@ -84,6 +84,14 @@ export class Plugin {
   @Column({ type: 'int', default: 2 })
   max_activations: number;
 
+  /**
+   * 订阅有效期（天）（0033）——本款插件新开/续费订阅的**默认时长**。
+   * 付费开通（fulfillPluginSubscription）与后台手动开通都以它为准；后台逐款可调。
+   * 默认 30 = 原「包月 30 天」行为；年付等长周期档位落地前，先靠它按款配置。
+   */
+  @Column({ type: 'int', default: 30 })
+  subscription_duration_days: number;
+
   /** 出品方（团队），可为空表示平台直营 */
   @Column({ type: 'uuid', nullable: true })
   owner_team_id: string;

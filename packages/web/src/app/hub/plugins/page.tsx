@@ -23,6 +23,8 @@ interface PluginItem {
   status: string;
   sort_order: number;
   max_activations: number;
+  /** 订阅有效期（天）：本款插件新开/续费订阅的默认时长 */
+  subscription_duration_days: number;
   download_key: string | null;
   download_filename: string | null;
   /** 使用这款插件的用户数（已授权设备口径，按 user_id 去重） */
@@ -44,6 +46,7 @@ interface FormState {
   featuresText: string;
   sort_order: string;
   max_activations: string;
+  subscription_duration_days: string;
   status: string;
   download_key: string;
   download_filename: string;
@@ -62,6 +65,7 @@ const EMPTY_FORM: FormState = {
   featuresText: '',
   sort_order: '0',
   max_activations: '2',
+  subscription_duration_days: '30',
   status: 'active',
   download_key: '',
   download_filename: '',
@@ -199,6 +203,7 @@ export default function HubPluginsPage() {
       featuresText: (p.features || []).join('\n'),
       sort_order: String(p.sort_order ?? 0),
       max_activations: String(p.max_activations ?? 2),
+      subscription_duration_days: String(p.subscription_duration_days ?? 30),
       status: p.status || 'active',
       download_key: p.download_key || '',
       download_filename: p.download_filename || '',
@@ -233,6 +238,10 @@ export default function HubPluginsPage() {
         .filter(Boolean),
       sort_order: Number(form.sort_order) || 0,
       max_activations: Math.max(1, Math.round(Number(form.max_activations) || 2)),
+      subscription_duration_days: Math.max(
+        1,
+        Math.round(Number(form.subscription_duration_days) || 30),
+      ),
       status: form.status,
       download_key: form.download_key.trim() || null,
       download_filename: form.download_filename.trim() || null,
@@ -639,6 +648,20 @@ export default function HubPluginsPage() {
                   />
                   <span className="block mt-1 text-[11px] text-neutral-400">
                     {t('admin.fieldMaxActivationsHint')}
+                  </span>
+                </label>
+                <label className="block">
+                  <span className="text-xs text-neutral-500">{t('admin.fieldDuration')}</span>
+                  <input
+                    className={field}
+                    type="number"
+                    min="1"
+                    max="3650"
+                    value={form.subscription_duration_days}
+                    onChange={(e) => setForm({ ...form, subscription_duration_days: e.target.value })}
+                  />
+                  <span className="block mt-1 text-[11px] text-neutral-400">
+                    {t('admin.fieldDurationHint')}
                   </span>
                 </label>
                 <label className="block">

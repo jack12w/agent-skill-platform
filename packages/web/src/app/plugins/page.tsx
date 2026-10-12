@@ -358,20 +358,28 @@ export default function PluginsPage() {
             {t('plugins.page.fLead')}
           </p>
 
-          <div className="mt-8 overflow-hidden rounded-2xl border border-neutral-200 bg-white">
-            <table className="w-full text-left text-sm">
-              <tbody>
-                {fields.map(([n, d], i) => (
-                  <tr key={n} className={i % 2 ? 'bg-neutral-50' : 'bg-white'}>
-                    <td className="w-1/3 px-5 py-3.5 font-semibold text-neutral-900 border-b border-neutral-100">
-                      {n}
-                    </td>
-                    <td className="px-5 py-3.5 text-neutral-600 border-b border-neutral-100">{d}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/* 2026-10-12：字段表收口——首屏只留一句价值话术（fLead），完整表格折叠。
+              结构与 FAQ 的 details 一致，样式复用同一套圆角卡片。 */}
+          <details className="mt-8 group rounded-2xl border border-neutral-200 bg-white px-5 py-4">
+            <summary className="cursor-pointer list-none text-sm font-semibold text-brand-700 marker:hidden">
+              {t('plugins.page.fFull')}
+              <span className="float-right text-neutral-400 transition group-open:rotate-45">＋</span>
+            </summary>
+            <div className="mt-4 overflow-hidden rounded-xl border border-neutral-200">
+              <table className="w-full text-left text-sm">
+                <tbody>
+                  {fields.map(([n, d], i) => (
+                    <tr key={n} className={i % 2 ? 'bg-neutral-50' : 'bg-white'}>
+                      <td className="w-1/3 px-5 py-3.5 font-semibold text-neutral-900 border-b border-neutral-100">
+                        {n}
+                      </td>
+                      <td className="px-5 py-3.5 text-neutral-600 border-b border-neutral-100">{d}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
         </section>
 
         {/* ==================== 订阅前后差别 ==================== */}
@@ -552,6 +560,31 @@ export default function PluginsPage() {
               <p className="text-xs text-neutral-400">{t('plugins.page.pNote')}</p>
             </div>
           )}
+        </section>
+
+        {/* ==================== 更新日志（2026-10-12 新增） ==================== */}
+        {/* 既是「持续更新」的活广告，也是以后每次加工作条的固定落点：
+            加页只改 locale 的 cl* 条目，不再动正文结构。 */}
+        <section className="mt-16">
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-neutral-900 tracking-tight">
+            {t('plugins.page.clTitle')}
+          </h2>
+          <p className="mt-3 text-sm sm:text-base text-neutral-600 leading-relaxed">
+            {t('plugins.page.clLead')}
+          </p>
+          <div className="mt-8 border-l-2 border-brand-100 ml-2">
+            {[
+              [t('plugins.page.cl1Date'), t('plugins.page.cl1Desc')],
+              [t('plugins.page.cl2Date'), t('plugins.page.cl2Desc')],
+              [t('plugins.page.cl3Date'), t('plugins.page.cl3Desc')],
+            ].map(([date, desc]) => (
+              <div key={date} className="relative pl-6 pb-6 last:pb-0">
+                <span className="absolute -left-[7px] top-1 h-3 w-3 rounded-full bg-brand-600" />
+                <div className="text-xs font-semibold text-neutral-400">{date}</div>
+                <p className="mt-1 text-sm text-neutral-600 leading-relaxed">{desc}</p>
+              </div>
+            ))}
+          </div>
         </section>
 
         {/* ==================== 三步上手 ==================== */}

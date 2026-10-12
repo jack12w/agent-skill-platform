@@ -382,6 +382,8 @@ const en = {
     fieldOrder: 'Sort order (smaller first)',
     fieldMaxActivations: 'Authorized devices',
     fieldMaxActivationsHint: 'Max devices per account (1-50, default 2). Raise it for team plans.',
+    fieldDuration: 'Subscription validity (days)',
+    fieldDurationHint: 'Default duration for new/renewed subscriptions of this plugin (1-3650, default 30). Also used as the default when manually granting a subscription.',
     promoExpired: 'Promo ended — original price applies',
     fieldStatus: 'Status',
     fieldPackage: 'Install package',
@@ -1067,9 +1069,12 @@ const en = {
     /* 插件市场页「长文介绍」正文（2026-09-27 起 /plugins 页改造）。
        与 zh.ts#plugins.page 逐键对应，改动必须同步两边。 */
     page: {
-      badge: '外贸工具箱 · Three essentials for IC operations',
+      badge: '外贸工具箱 · Growth plugin for Alibaba.com',
       title: 'Do sourcing, scraping and store review inside your browser',
-      subtitle: 'Store product collection · RFQ lead mining · public-sea buyer extraction. Three routine jobs in one extension — straight into Excel, no more screenshots and side-by-side sheets.',
+      /* 2026-10-12 revamp: dropped the “seven page types” counting style (page count keeps
+         changing; hardcoding it goes stale). Hero never shows “N pages covered” — buyers
+         care about their workflow, not the page count. */
+      subtitle: 'One extension covering the full sourcing · collection · review workflow on Alibaba.com: store products, RFQ leads, public-sea and visitor buyers in one pass — straight into Excel, no more screenshots and side-by-side sheets.',
       tag1: 'No extra back-office tabs',
       tag2: 'No manual copy-paste',
       tag3: 'One-time activation, long-term use',
@@ -1079,26 +1084,31 @@ const en = {
       heroManage: 'Manage subscription',
       heroNote: 'The installer is free; login activation unlocks the full feature set.',
 
-      ovTitle: 'Seven page types, three daily workflows',
-      ovLead: 'The extension shows one work bar on the page you are on: collect on store and product pages, mine RFQ leads, extract public-sea buyers, and use search-page readouts for sourcing.',
+      ovTitle: 'Three daily workflows, fully covered',
+      ovLead: 'The extension floats a work bar on the page you are on: collect on product pages, mine RFQ leads, extract buyers on customer pages — works out of the box, no change to your habits.',
       ov1Name: 'Store & product collection',
       ov1Desc: 'Four entry points — listing, detail, growth console and ranking — to pull competitor products and store operation data.',
-      ov1p1: 'Listing page: bulk-collect store products and download images / videos / operation sheets',
-      ov1p2: 'Detail page: collect a single product, download media, view product and category data',
-      ov1p3: 'Growth console / ranking: analyze best sellers and collect hot / best / top-ranking lists',
+      ov1p1: 'Listing page: bulk-collect store products, download images / videos / operation sheets in one click',
+      ov1p2: 'Detail page: product + category data, full media package download',
+      ov1p3: 'Growth console / ranking: best-seller analysis, full capture of hot / best / top-review lists',
       ov2Name: 'RFQ lead mining',
       ov2Desc: 'Full capture of RFQ detail and list pages, exported for quotation plans and market-demand analysis.',
       ov2p1: 'Real-time RFQ list capture, export straight into your follow-up sheet, then pick it up with [RFQ Market Analysis](https://skills.rehomi.com/skills/40226de1-fff7-4877-a519-be079ef74cae) and [RFQ Quoting](https://skills.rehomi.com/skills/2386401e-8444-4638-951b-228edcf71eb0)',
       ov2p2: 'Queue multiple keywords — one run after another',
       ov2p3: 'Failures are flagged automatically and can be re-run individually',
-      ov3Name: 'Public-sea buyers + search sourcing',
-      ov3Desc: 'Bulk-extract public-sea buyers and export CSV; use search-page readouts to aid sourcing decisions.',
-      ov3p1: 'Public-sea page: reuses the page’s own internal API to pull the full set at once',
-      ov3p2: 'Public-sea page: field-level CSV export, ready to import into your CRM, then pick it up with [Public-Sea Customer Recall](https://skills.rehomi.com/skills/78454041-ed10-4140-9d40-0641d37f5440)',
-      ov3p3: 'Search page: product count, supplier count and suggestion words, no login required',
+      /* 2026-10-12: group 3 renamed to “Buyer leads & customer follow-up”, now covering the
+         Golden Supplier / Visitors / Chat-message work bars (the old copy missed them). */
+      ov3Name: 'Buyer leads & customer follow-up',
+      ov3Desc: 'Full capture and export of buyer data from public-sea, Golden Supplier, visitor and chat-message pages; search-page readouts aid sourcing.',
+      ov3p1: 'Public-sea page: reuses the page’s own internal API to pull the full buyer set at once, field-level CSV export ready for your CRM',
+      ov3p2: 'Golden Supplier / Visitors / Chat pages: premium buyer lists, store visitors and chat history — all collectable and exportable',
+      ov3p3: 'Search page: live readouts of product count, supplier count and suggestion words — sourcing reference without login',
 
-      fTitle: 'What gets collected is what you export',
-      fLead: 'No more checking each product page by hand. These are the fields actually written to storage — subscribe and export them to get the table you want.',
+      /* 2026-10-12: field table collapsed — one value line up front, full table behind
+         fFull. f1-f8 stay as the detail rows inside the collapsed block. */
+      fTitle: 'What you collect is the sheet you need',
+      fLead: 'Covers 20+ core fields: 180-day sales, 30-day visitors, inquiries & conversion, category & supplier data, price range & MOQ, main / SKU / description images & videos, ratings and photo reviews — export is what you get, no more page-by-page checking.',
+      fFull: 'View the full field list',
       f1Name: 'Sales (180 days)',
       f1Desc: 'From the listing page’s structured data; detail-page text only as fallback',
       f2Name: 'Orders',
@@ -1116,12 +1126,12 @@ const en = {
       f8Name: 'Product reviews',
       f8Desc: 'Rating and review text, including photo reviews',
 
-      gTitle: 'What you can do without a subscription, and what unlocked',
+      gTitle: 'What is free, and what unlocks after subscribing',
       gLead: 'The rules are stated up front — no “I thought I could export it” moments.',
-      gFreeTitle: 'No subscription · still usable',
+      gFreeTitle: 'No subscription · free to use',
       gFree1: 'Collect on listing / growth / ranking / RFQ / public-sea pages (data stays local)',
       gFree2: 'Search-page readouts: product count, supplier count, suggestions',
-      gFree3: 'Free installer download',
+      gFree3: 'Free installer download, any time',
       gPaidTitle: 'Subscribed · full capability',
       gPaid1: 'CSV / Excel export and one-click image / video download',
       gPaid2: 'Detail-page product data: visitors, orders, inquiries, conversion',
@@ -1132,13 +1142,26 @@ const en = {
       /* No auto-renew / periodic WeChat deduction is implemented. PluginSubscription only has
          status + expires_at; after expiry it simply becomes expired. So we must not say “stops
          renewing” — we say “manual renewal required”. */
-      pLead: 'Monthly purchase; after expiry you need to renew manually. The current paid subscription cannot be cancelled.',
-      pNote: 'Each plugin is priced separately; subscribing and downloading are independent.',
+      pLead: 'Renew manually after expiry; the current paid subscription is non-refundable.',
+      pNote: 'The installer is free and collecting works without a subscription (data stays local); export / media / detail-page metrics require a subscription. Each plugin is billed separately; subscribing and downloading are independent.',
+
+      /* Changelog (added 2026-10-12): doubles as a living “keeps improving” ad and the
+         fixed landing spot for every new work bar — add pages here only, never the body. */
+      clTitle: 'Changelog',
+      clLead: 'New capabilities every month — one subscription, all updates included.',
+      cl1Date: '2026-10',
+      cl1Desc: 'Added Golden Supplier, Visitors and Chat-message work bars; subscription duration is now configurable per plugin.',
+      cl2Date: '2026-09',
+      cl2Desc: 'RFQ multi-keyword queueing with auto-flagged retries; field-level CSV export for public-sea buyers.',
+      cl3Date: '2026-08',
+      cl3Desc: 'Device authorization launched: log in once and keep working across machines without losing data.',
 
       sTitle: 'Three steps to start',
       sLead: 'Install, activate, work — no key to copy anywhere.',
       s1Title: 'Download and install the extension',
-      s1Desc: 'Open the Chrome extensions page, add “外贸工具箱” and enable it.',
+      /* Aligned with q5a (extract → developer mode → load unpacked): the plugin ships
+         as .zip, not .crx, so the full steps must be spelled out. */
+      s1Desc: 'Download the .zip and extract it to a folder, open chrome://extensions, enable “Developer mode” and load the unpacked folder.',
       s2Title: 'Log in and activate on the page',
       s2Desc: 'Open any international-station page, click “Login” on the work bar and confirm the code on the web page.',
       s3Title: 'Pick a page, collect, export',
@@ -1150,10 +1173,10 @@ const en = {
       q5a: 'Download the .zip from the “Download installer” button at the top and extract it to a folder. Then open chrome://extensions, tick “Developer mode” in the top-right corner, choose “Load unpacked” and select the extracted folder. Once installed, open any international-station page, click “Login” on the work bar and confirm the code on the web page to activate. If Chrome says the same extension already exists, uninstall the old one first.',
       q1q: 'Can I use it without a subscription?',
       q1a: 'Yes. Collecting on listing / growth / ranking / RFQ / public-sea pages works, and search-page readouts are free. Export, media download and detail-page metrics unlock after subscribing. Data you already collected is kept and can be exported later.',
-      q2q: 'How does billing work, and can I cancel?',
-      q2a: 'Monthly purchase; after expiry you need to renew manually. The current paid subscription cannot be cancelled.',
+      q2q: 'How does billing work, and can I get a refund?',
+      q2a: 'Renew manually after expiry; the current paid subscription is non-refundable.',
       q4q: 'Do I pay again on a new computer?',
-      q4a: 'No. The subscription is tied to your account — log in and activate once on the new device to reuse it.',
+      q4a: 'No. The subscription is tied to your account — log in and activate once on the new device to reuse it (device count is limited by the quota of your plan).',
       q6q: 'How can enterprise data be used by AI?',
       q6a: 'Two steps: 1) Enable data push in each workbar\'s "Settings" (can be combined with auto-collect); 2) Generate a key under Account → My Plugins → Key Management, then add the MCP call method in your AI workspace (supports ACCIO WORK and WorkBuddy).',
 

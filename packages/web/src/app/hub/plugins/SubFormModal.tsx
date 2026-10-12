@@ -19,6 +19,8 @@ interface Props {
   pluginId: string;
   /** 编辑态必传 */
   sub?: SubRow;
+  /** 新增态默认时长（天）：取插件的「订阅有效期」，不传回落 30 */
+  defaultDays?: number;
   onClose: () => void;
   /** 保存成功（父组件负责关弹窗、提示、刷新列表） */
   onSaved: () => void;
@@ -31,7 +33,7 @@ interface Props {
  *  · 状态默认值与白名单只有一处；
  *  · 「只改状态不碰到期时间」这条规则不会在某个入口被漏掉。
  */
-export default function SubFormModal({ mode, pluginId, sub, onClose, onSaved }: Props) {
+export default function SubFormModal({ mode, pluginId, sub, defaultDays, onClose, onSaved }: Props) {
   const { t } = useTranslation();
   const isEdit = mode === 'edit';
 
@@ -54,7 +56,8 @@ export default function SubFormModal({ mode, pluginId, sub, onClose, onSaved }: 
 
   /* ---------------- 新增：时长 ---------------- */
   const [expiryMode, setExpiryMode] = useState<'days' | 'date'>('days');
-  const [days, setDays] = useState('30');
+  // 默认天数取插件的「订阅有效期」（defaultDays）；弹窗每次打开都重新挂载，初始化必然生效
+  const [days, setDays] = useState(String(defaultDays ?? 30));
   const [pickDate, setPickDate] = useState('');
 
   /** 用户搜索（400ms 防抖）；失败保留上次结果，不清空 */

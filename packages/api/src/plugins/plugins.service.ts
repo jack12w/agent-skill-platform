@@ -267,6 +267,7 @@ export class PluginsService {
       status: body?.status === 'hidden' ? 'hidden' : 'active',
       sort_order: Number(body?.sort_order) || 0,
       max_activations: this.normalizeActivations(body?.max_activations),
+      subscription_duration_days: this.normalizeDuration(body?.subscription_duration_days),
       download_key: body?.download_key ?? null,
       download_filename: body?.download_filename ?? null,
       owner_team_id: body?.owner_team_id || null,
@@ -305,6 +306,9 @@ export class PluginsService {
     if (body?.sort_order !== undefined) plugin.sort_order = Number(body.sort_order) || 0;
     if (body?.max_activations !== undefined) {
       plugin.max_activations = this.normalizeActivations(body.max_activations);
+    }
+    if (body?.subscription_duration_days !== undefined) {
+      plugin.subscription_duration_days = this.normalizeDuration(body.subscription_duration_days);
     }
     if (body?.price_monthly_cents !== undefined) {
       plugin.price_monthly_cents = this.normalizePrice(body.price_monthly_cents);
@@ -627,6 +631,16 @@ export class PluginsService {
     const n = Math.round(Number(v));
     if (!Number.isFinite(n) || n < 1) return 2;
     return Math.min(n, 50);
+  }
+
+  /**
+   * 订阅有效期归一化：1-3650 的整数（天），非法/缺失回落 30（包月）。
+   * 上限与 MAX_SUB_DAYS（手动续期单次上限）对齐，防止手滑把 30 打成 30000 变成永久授权。
+   */
+  private normalizeDuration(v: any): number {
+    const n = Math.round(Number(v));
+    if (!Number.isFinite(n) || n < 1) return 30;
+    return Math.min(n, PluginsService.MAX_SUB_DAYS);
   }
 
   /** 由名称生成 ascii slug；名称含中文时退化为随机短串 */

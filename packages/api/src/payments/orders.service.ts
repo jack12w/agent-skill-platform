@@ -470,9 +470,9 @@ export class OrdersService implements OnModuleInit {
   }
 
   /**
-   * 授予/顺延插件订阅（包月 30 天）。
-   * 幂等：**仍有权**（active / cancelled 且未到期）→ 在现有 expires_at 基础上 +30 天；
-   * 已到期或被终止 → 重新激活（started_at=now, expires_at=now+30d）；不存在 → 新建。
+   * 授予/顺延插件订阅（时长取所购插件的 subscription_duration_days，默认 30 天）。
+   * 幂等：**仍有权**（active / cancelled 且未到期）→ 在现有 expires_at 基础上顺延一个周期；
+   * 已到期或被终止 → 重新激活（started_at=now, expires_at=now+周期）；不存在 → 新建。
    *
    * ⚠️ 顺延判据必须是 `isSubscriptionEntitled`，**不能写 `status === 'active'`**：
    *    cancelled（「到期不再续费」）的用户续费时，剩余天数还应当被保留 ——
@@ -491,13 +491,14 @@ export class OrdersService implements OnModuleInit {
     priceCents: number,
     orderId: string,
   ) {
-    const MONTH = 30 * 86400_000;
     const now = Date.now();
 
     // 企业版订单 → 权益映射到主插件行；其余商品照旧落在自己的行上
     let targetPluginId = pluginId;
     let tier = 'personal';
     const ordered = await this.pluginRepo.findOne({ where: { id: pluginId } });
+    // 订阅时长取所购商品的「订阅有效期（天）」（0033，后台逐款可配）；未配回落 30 = 原包月行为
+    const MONTH = (ordered?.subscription_duration_days ?? 30) * 86400_000;
     if (ordered?.slug === B2B_TIER_SLUG) {
       const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
       if (main) {

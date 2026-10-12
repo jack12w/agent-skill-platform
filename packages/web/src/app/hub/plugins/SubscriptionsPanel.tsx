@@ -18,6 +18,8 @@ export interface PluginOption {
   id: string;
   name: string;
   slug: string;
+  /** 订阅有效期（天）：手动开通订阅时作为默认时长（可缺省，回落 30） */
+  subscription_duration_days?: number;
 }
 
 type ModalState = { mode: 'add' } | { mode: 'edit'; sub: SubRow } | null;
@@ -296,6 +298,7 @@ export default function SubscriptionsPanel({ plugins }: { plugins: PluginOption[
           mode={modal.mode}
           pluginId={pluginId}
           sub={modal.mode === 'edit' ? modal.sub : undefined}
+          defaultDays={plugins.find((p) => p.id === pluginId)?.subscription_duration_days}
           onClose={() => setModal(null)}
           onSaved={handleSaved}
         />
