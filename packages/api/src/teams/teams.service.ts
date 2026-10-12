@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { Team } from './team.entity';
 import { TeamMember } from './team-member.entity';
 import { TeamJoinRequest } from './team-join-request.entity';
@@ -74,12 +74,44 @@ export class TeamsService {
 
   // ── 团队订阅席位上限（0035）──
   /**
-   * 该团队当前有效团队订阅的席位数上限（取最大 seats；含团长）。
-   * 无团队订阅 → null（不限制，团队功能本身免费可用）。
+   * 事务内席位校验（0035/2026-10-12 质检）：超员抛错。
    * 席位拦在「加入成员」环节：超员拦邀请，不拦已入成员的权益（拍板 2026-10-12）。
    */
-  private async seatCap(teamId: string): Promise<number | null> {
-    const rows: Array<{ cap: number | null }> = await this.teamRepository.query(
+  private async assertSeatAvailable(m: EntityManager, teamId: string) {
+    const cap = await this.seatCapInTx(m, teamId);
+    if (cap == null) return;
+    const rows: Array<{ cnt: number }> = await m.query(
+      `SELECT COUNT(*)::int AS cnt FROM team_members WHERE team_id = $1`,
+      [teamId],
+    );
+    if (Number(rows[0]?.cnt || 0) >= cap) {
+      throw new BadRequestException(
+        `团队订阅席位已满（${cap} 席，含团长），请先移除成员或升级席位后再添加`,
+      );
+    }
+  }
+
+  /**
+   * 事务内锁住 team 行（pessimistic_write，0035/2026-10-12 质检）：
+   * 同一团队的所有「加入成员」操作（邮箱邀请 / 加入申请审批）在此串行化，
+   * 配合 assertSeatAvailable 做到「查数+插入」原子——旧实现在事务外
+   * check-then-insert，同时批两个申请可超卖 1 席（多出的成员免费获得权益）。
+   */
+  private async lockTeamRow(m: EntityManager, teamId: string) {
+    await m.getRepository(Team).findOne({
+      where: { id: teamId },
+      lock: { mode: 'pessimistic_write' },
+    });
+  }
+
+  /**
+   * 该团队当前有效团队订阅的席位数上限（取最大 seats；含团长）。
+   * 无团队订阅 → null（不限制，团队功能本身免费可用）。
+   * ⚠️ 查询走传入的事务管理器 m：必须与 lockTeamRow + 插成员同事务同连接，
+   * 行锁才挡得住并发（2026-10-12 质检修正）。
+   */
+  private async seatCapInTx(m: EntityManager, teamId: string): Promise<number | null> {
+    const rows: Array<{ cap: number | null }> = await m.query(
       `SELECT MAX(seats) AS cap
          FROM plugin_subscriptions
         WHERE team_id = $1
@@ -89,17 +121,6 @@ export class TeamsService {
     );
     const cap = rows[0]?.cap;
     return cap == null ? null : Number(cap);
-  }
-
-  private async assertSeatAvailable(teamId: string) {
-    const cap = await this.seatCap(teamId);
-    if (cap == null) return;
-    const count = await this.memberRepository.count({ where: { team_id: teamId } });
-    if (count >= cap) {
-      throw new BadRequestException(
-        `团队订阅席位已满（${cap} 席，含团长），请先移除成员或升级席位后再添加`,
-      );
-    }
   }
 
   // 按邮箱直接添加成员：查到已注册用户后直接加入并指定角色（无需对方确认）
@@ -117,11 +138,23 @@ export class TeamsService {
     const existing = await this.memberRepository.findOne({ where: { team_id: teamId, user_id: user.id } });
     if (existing) throw new BadRequestException('该用户已是团队成员');
 
-    // 团队订阅席位上限（0035）
-    await this.assertSeatAvailable(teamId);
-
-    const member = this.memberRepository.create({ team_id: teamId, user_id: user.id, role: effectiveRole });
-    return this.memberRepository.save(member);
+    // 事务 + team 行锁（0035/2026-10-12 质检）：锁行 → 复查重复 → 席位校验 → 插入，
+    // 全部在同一事务同连接完成。旧实现在事务外 check-then-insert，同时邀请两人
+    // 可超卖 1 席（多出的成员凭 team_members 实时校验免费获得插件权益）。
+    return this.teamRepository.manager.transaction(async (m) => {
+      await this.lockTeamRow(m, teamId);
+      const dup = await m.getRepository(TeamMember).findOne({
+        where: { team_id: teamId, user_id: user.id },
+      });
+      if (dup) throw new BadRequestException('该用户已是团队成员');
+      await this.assertSeatAvailable(m, teamId);
+      const member = m.getRepository(TeamMember).create({
+        team_id: teamId,
+        user_id: user.id,
+        role: effectiveRole,
+      });
+      return m.getRepository(TeamMember).save(member);
+    });
   }
 
   async updateMemberRole(teamId: string, userId: string, role: MemberRole, operatorId: string) {
@@ -218,13 +251,21 @@ export class TeamsService {
       return { ok: true, status: 'rejected' };
     }
 
-    // approve：加入成员（若已存在成员不重复插入）；团队订阅席位上限（0035）在准入时拦截
-    if (!(await this.memberRepository.findOne({ where: { team_id: teamId, user_id: userId } }))) {
-      await this.assertSeatAvailable(teamId);
-      await this.memberRepository.save(
-        this.memberRepository.create({ team_id: teamId, user_id: userId, role: effectiveRole }),
-      );
-    }
+    // approve：加入成员（若已存在成员不重复插入）。
+    // 事务 + team 行锁（0035/2026-10-12 质检）：与「按邮箱邀请」同款串行化，
+    // 两个审批并发不再超卖席位；席位校验与成员插入原子完成。
+    await this.teamRepository.manager.transaction(async (m) => {
+      await this.lockTeamRow(m, teamId);
+      const dup = await m.getRepository(TeamMember).findOne({
+        where: { team_id: teamId, user_id: userId },
+      });
+      if (!dup) {
+        await this.assertSeatAvailable(m, teamId);
+        await m.getRepository(TeamMember).save(
+          m.getRepository(TeamMember).create({ team_id: teamId, user_id: userId, role: effectiveRole }),
+        );
+      }
+    });
     req.status = 'approved';
     req.role = effectiveRole;
     await this.joinRequestRepository.save(req);
