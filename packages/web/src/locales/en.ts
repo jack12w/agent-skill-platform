@@ -969,7 +969,7 @@ const en = {
     expired: 'Expired',
     active: 'Active',
     myTitle: 'My Plugin Subscriptions',
-    navLabel: 'Plugin Devices',
+    navLabel: 'Plugin Management',
     myHint: 'Manage your subscribed plugins and authorized devices; cancel anytime.',
     descLabel: 'Features',
     renew: 'Renew',

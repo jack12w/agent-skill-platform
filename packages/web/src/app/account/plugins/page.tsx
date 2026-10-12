@@ -445,6 +445,15 @@ export default function MyPluginsPage() {
             // 团长 vs 成员：团长看「团队版」+ 管理入口；成员看「由团队提供」。
             // 之前统一显示「由团队提供」，团长误以为买的还是个人版（2026-10-12 实测反馈）。
             const teamOwner = viaTeam && (!!s.is_team_owner || s.user_id === getUserId());
+            // 卡片标题按购买档位显示商品名（2026-10-12 用户反馈）：团队订阅行存储在
+            // 主插件行上，直接读主插件名会显示「体验版」让人以为买错了；
+            // tier=team 的行应显示企业版档位商品（b2b）的名字，与下单时所见一致。
+            const displayName =
+              s.tier === 'team'
+                ? Object.values(plugins).find((x) => x.slug === 'alibaba-toolkit-b2b')?.name ||
+                  p?.name ||
+                  s.plugin_id
+                : p?.name || s.plugin_id;
             const dd = deviceData[s.plugin_id];
             const open = deviceOpen === s.plugin_id;
             return (
@@ -452,7 +461,7 @@ export default function MyPluginsPage() {
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="font-semibold text-neutral-900 truncate">
-                      {p?.name || s.plugin_id}
+                      {displayName}
                       {teamOwner ? (
                         <span className="ml-2 align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 border border-violet-200">
                           {t('plugins.teamBadge')}
