@@ -55,6 +55,50 @@ export function setAuthCookie(token: string, userJson: string, maxAgeDays = 7) {
   document.cookie = `user=${encodeURIComponent(userJson)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
 }
 
+// ── 邀请归因（迁移 0034，2026-10-12）──
+// 链路：邀请链接 /plugins?ref=CODE → captureReferral 存 30 天 →
+//   ① 邮箱注册：/auth 注册请求直接带上（getPendingReferral）；
+//   ② 微信路径：建号时拿不到 ref，登录态就绪后由 AuthProvider 轮询 claim 补绑。
+const REFERRAL_KEY = 'referral_pending';
+const REFERRAL_TTL = 30 * 86400_000; // 归因窗口 30 天
+
+/** 捕获邀请码（落地页读 ?ref= 后调用）；带时间戳，30 天过期 */
+export function captureReferral(code: string) {
+  if (typeof window === 'undefined' || !code) return;
+  try {
+    localStorage.setItem(
+      REFERRAL_KEY,
+      JSON.stringify({ code: code.slice(0, 32), ts: Date.now() }),
+    );
+  } catch {
+    /* 隐私模式等 localStorage 不可用 → 放弃归因，不影响主流程 */
+  }
+}
+
+/** 读取未过期的邀请码；无/已过期 → null（过期时顺手清理） */
+export function getPendingReferral(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(REFERRAL_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data?.code || Date.now() - Number(data.ts || 0) > REFERRAL_TTL) {
+      localStorage.removeItem(REFERRAL_KEY);
+      return null;
+    }
+    return String(data.code);
+  } catch {
+    return null;
+  }
+}
+
+/** 消费邀请码：绑定成功或确定失败后调用，避免重复请求 */
+export function clearPendingReferral() {
+  try {
+    localStorage.removeItem(REFERRAL_KEY);
+  } catch {}
+}
+
 /**
  * 全局 401 拦截器：监听所有 fetch 请求，当后端返回 401 时自动清除本地 token
  * 并跳转到登录页。
@@ -133,6 +177,34 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
         }
       } catch {}
     }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 邀请归因补绑（迁移 0034）：微信注册路径建号时拿不到 ref，登录态就绪后由这里补绑。
+  // 仅当本地有待消费邀请码时才发请求；后端幂等（只绑 referred_by IS NULL 且注册 7 天内账号，
+  // 不能自邀），重复调用无副作用。200（无论 bound 与否）和 4xx 都是确定结果 → 清码；
+  // 5xx/网络错误保留待下次。interval 常驻但空转成本只是读一次 localStorage。
+  useEffect(() => {
+    const tryClaim = () => {
+      try {
+        const token = localStorage.getItem('token');
+        const code = getPendingReferral();
+        if (!token || !code) return;
+        fetch('/api/auth/referral/claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ referral_code: code }),
+        })
+          .then((res) => {
+            if (res.status < 500) clearPendingReferral();
+          })
+          .catch(() => {
+            /* 网络错误 → 保留邀请码等下轮 */
+          });
+      } catch {}
+    };
+    tryClaim();
+    const timer = setInterval(tryClaim, 5000);
     return () => clearInterval(timer);
   }, []);
 

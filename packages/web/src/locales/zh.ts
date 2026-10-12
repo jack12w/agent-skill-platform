@@ -352,6 +352,7 @@ const zh = {
   admin: {
     title: '管理后台',
     plugins: '插件管理',
+    referrals: '邀请推广',
     pluginsDesc: '上架、编辑、下架平台自研插件；月价与下载文件在此维护',
     addPlugin: '新增插件',
     editPluginTitle: '编辑插件',

@@ -48,6 +48,45 @@ export default function AccountPage() {
   const [pwd, setPwd] = useState('');
   const [pwdLoading, setPwdLoading] = useState(false);
 
+  // 邀请推广（迁移 0034）：懒生成邀请码 + 归因统计
+  const [referral, setReferral] = useState<{
+    referral_code: string;
+    invited_count: number;
+    subscribed_count: number;
+  } | null>(null);
+  const [refCopied, setRefCopied] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    fetch('/api/auth/me/referral', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setReferral(d))
+      .catch(() => {});
+  }, []);
+
+  const referralLink =
+    referral?.referral_code && typeof window !== 'undefined'
+      ? `${window.location.origin}/plugins?ref=${referral.referral_code}`
+      : '';
+
+  const handleCopyReferral = async () => {
+    if (!referralLink) return;
+    try {
+      await navigator.clipboard.writeText(referralLink);
+    } catch {
+      // 剪贴板 API 不可用（http 环境等）→ 退化用 execCommand
+      const ta = document.createElement('textarea');
+      ta.value = referralLink;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setRefCopied(true);
+    setTimeout(() => setRefCopied(false), 2000);
+  };
+
   const reloadMe = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) return;
@@ -261,6 +300,30 @@ export default function AccountPage() {
             <span className="px-3 py-1 bg-neutral-100 text-neutral-400 rounded-full text-sm">未启用</span>
           )}
         </div>
+      </section>
+
+      <section className="bg-white border rounded-lg p-5 mb-4">
+        <h2 className="font-semibold text-neutral-900">邀请好友</h2>
+        <p className="text-sm text-neutral-500 mt-0.5">
+          把你的专属链接发给同行，通过链接注册的用户会记入你的邀请；对方订阅插件后可在后台看到归因，推荐奖励计划另行通知。
+        </p>
+        <div className="mt-3 flex gap-2">
+          <input
+            readOnly
+            value={referralLink || (referral ? '邀请码生成失败，请刷新重试' : '生成中…')}
+            className="flex-1 min-w-0 px-3 py-2 border rounded-lg text-sm bg-neutral-50 text-neutral-600 truncate"
+          />
+          <button
+            onClick={handleCopyReferral}
+            disabled={!referralLink}
+            className="px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50 shrink-0"
+          >
+            {refCopied ? '已复制' : '复制链接'}
+          </button>
+        </div>
+        <p className="text-xs text-neutral-400 mt-2">
+          已邀请 {referral ? referral.invited_count : '-'} 人 · 其中 {referral ? referral.subscribed_count : '-'} 人已订阅插件
+        </p>
       </section>
 
       <section className="bg-white border rounded-lg p-5 mb-4">

@@ -601,4 +601,32 @@ export class AdminService {
     await this.fbRepo.delete({ id });
     return { ok: true };
   }
+
+  // ── 邀请推广归因（迁移 0034，2026-10-12）──
+  /** 管理端邀请总览：邀请关系 + 已归因的付费插件订阅（快照在 order_items.snapshot） */
+  async listReferrals() {
+    const invites: any[] = await this.userRepo.query(
+      `SELECT i.id, i.name, i.email, i.created_at,
+              r.id AS referrer_id, r.name AS referrer_name, r.referral_code AS referrer_code
+         FROM users i
+         LEFT JOIN users r ON r.id = i.referred_by
+        WHERE i.referred_by IS NOT NULL
+        ORDER BY i.created_at DESC
+        LIMIT 200`,
+    );
+    const orders: any[] = await this.userRepo.query(
+      `SELECT o.order_no, o.total_cents, o.status, o.paid_at, o.created_at,
+              u.name AS buyer_name,
+              r.id AS referrer_id, r.name AS referrer_name, r.referral_code AS referrer_code,
+              oi.snapshot->'referrer' AS referral_snapshot
+         FROM orders o
+         JOIN order_items oi ON oi.order_id = o.id
+         LEFT JOIN users u ON u.id = o.user_id
+         LEFT JOIN users r ON r.id = oi.snapshot->>'referrer_id'
+        WHERE oi.snapshot->>'referrer_id' IS NOT NULL
+        ORDER BY o.created_at DESC
+        LIMIT 200`,
+    );
+    return { invites, orders };
+  }
 }

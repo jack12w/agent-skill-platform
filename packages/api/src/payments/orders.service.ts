@@ -131,7 +131,11 @@ export class OrdersService implements OnModuleInit {
     // 先取用户（决定支付方式 NATIVE/JSAPI/H5，并用于复用订单的通道一致性判断）
     // JSAPI 的付款人 openid 必须是公众号命名空间（支付 AppID=公众号）→ 读 wechat_openid_oa，
     // 且它是 select:false 字段，必须显式 select，否则永远 undefined、JSAPI 永远走不通。
-    const user = await this.userRepo.findOne({ where: { id: userId }, select: ['id', 'wechat_openid_oa'] });
+    // referred_by：邀请归因（迁移 0034），下单时快照进 order_items.snapshot，历史归因不可变。
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      select: ['id', 'wechat_openid_oa', 'referred_by'],
+    });
     const desiredTradeType: 'NATIVE' | 'JSAPI' | 'H5' =
       input.tradeType === 'JSAPI' && user?.wechat_openid_oa ? 'JSAPI' : input.tradeType === 'H5' ? 'H5' : 'NATIVE';
 
@@ -212,13 +216,25 @@ export class OrdersService implements OnModuleInit {
       total = effectivePluginPrice(plugin);
       if (!total || total <= 0) throw new BadRequestException('插件定价异常');
       description = `插件订阅:${plugin.name}`;
+      // 邀请归因快照（迁移 0034）：买家被谁邀请 → 写进 item.snapshot->>'referrer_id'。
+      // 不动 orders 表结构；快照后历史归因与 users.referred_by 的后续变化解耦。
+      let referral: { referrer_id: string; referrer_code: string | null } | null = null;
+      if (user?.referred_by) {
+        const referrer = await this.userRepo.findOne({
+          where: { id: user.referred_by },
+          select: ['id', 'referral_code'],
+        });
+        if (referrer) {
+          referral = { referrer_id: referrer.id, referrer_code: referrer.referral_code || null };
+        }
+      }
       item = {
         subject_type: 'plugin',
         subject_id: input.pluginId,
         seller_user_id: null,
         unit_cents: total,
         qty: 1,
-        snapshot: { pluginId: input.pluginId, name: plugin.name },
+        snapshot: { pluginId: input.pluginId, name: plugin.name, referrer: referral },
       };
     } else {
       const plan = input.plan || 'monthly';

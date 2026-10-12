@@ -5,6 +5,7 @@ import Link from 'next/link';
 import useTranslation from '../../hooks/useTranslation';
 import PluginCheckoutModal from '../components/PluginCheckoutModal';
 import RichText from '../components/RichText';
+import { captureReferral } from '../components/AuthProvider';
 
 interface Plugin {
   id: string;
@@ -101,6 +102,17 @@ export default function PluginsPage() {
     load();
     loadMine();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 邀请归因捕获（迁移 0034）：邀请链接统一落在本页 ?ref=CODE，存 localStorage 30 天。
+  // 消费点两处：邮箱注册随请求带上；微信路径登录后由 AuthProvider 轮询 claim 补绑。
+  useEffect(() => {
+    try {
+      const ref = new URLSearchParams(window.location.search).get('ref');
+      if (ref) captureReferral(ref);
+    } catch {
+      /* 静默：归因失败不影响主流程 */
+    }
   }, []);
 
   const categories = useMemo(() => {

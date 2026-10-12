@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import useTranslation from '../../hooks/useTranslation';
 import { isWechat } from '../../lib/auth';
-import { setAuthCookie } from '../components/AuthProvider';
+import { setAuthCookie, getPendingReferral } from '../components/AuthProvider';
 
 // 健壮关闭微信弹窗：跨域 302（open.weixin.qq.com）后部分浏览器会收回「脚本可关闭」标记。
 // 弹窗落地页本身也会自关，这里父窗口再尝试一次作为辅助；若关不掉也不阻塞主流程跳转。
@@ -120,7 +120,14 @@ export default function AuthPage() {
       const endpoint = tab === 'login' ? '/api/auth/login' : '/api/auth/register';
       const body = tab === 'login'
         ? { email: form.email, password: form.password }
-        : { email: form.email, password: form.password, name: form.name, code: form.code };
+        : {
+            email: form.email,
+            password: form.password,
+            name: form.name,
+            code: form.code,
+            // 邀请归因（迁移 0034）：本地有未消费邀请码就随注册绑定一次（后端终身不变）
+            referral_code: getPendingReferral() || undefined,
+          };
       const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`);

@@ -10,7 +10,8 @@ export class AuthController {
 
   @Post('register')
   register(@Body() body: any) {
-    return this.authService.register(body.email, body.password, body.name, body.code);
+    // referral_code：邀请归因（迁移 0034）。注册时绑定一次终身不变；码无效静默忽略不挡注册。
+    return this.authService.register(body.email, body.password, body.name, body.code, body.referral_code);
   }
 
   @HttpCode(HttpStatus.OK)
@@ -29,6 +30,21 @@ export class AuthController {
   @Get('me')
   getMe(@Request() req: any) {
     return this.authService.getMe(req.user.sub);
+  }
+
+  // ── 邀请推广（迁移 0034）──────────────────
+  // 路由放 /auth 下（复用 auth 模块的 User 仓库），不另开 users 模块接线。
+  @UseGuards(AuthGuard)
+  @Get('me/referral')
+  getMyReferral(@Request() req: any) {
+    return this.authService.getMyReferral(req.user.sub);
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('referral/claim')
+  @HttpCode(HttpStatus.OK)
+  claimReferral(@Request() req: any, @Body() body: { referral_code?: string }) {
+    return this.authService.claimReferral(req.user.sub, body?.referral_code);
   }
 
   @UseGuards(AuthGuard)

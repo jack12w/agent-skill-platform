@@ -76,6 +76,10 @@ export class AdminController {
   @Get('users')
   listUsers(@Query() q: any) { return this.adminService.listUsers(q); }
 
+  // ── 邀请推广归因（迁移 0034）：邀请关系 + 已归因付费订阅 ──
+  @Get('referrals')
+  listReferrals() { return this.adminService.listReferrals(); }
+
   @Patch('users/:id')
   async updateUser(@Param('id') id: string, @Body() b: any, @Request() req: any) {
     const result = await this.adminService.updateUser(id, b);

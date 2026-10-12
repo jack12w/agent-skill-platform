@@ -47,6 +47,17 @@ export class User {
   @Column({ nullable: true, select: false })
   wechat_openid_site: string;
 
+  // ── 邀请推广（迁移 0034，2026-10-12）──
+  // 本人的邀请码：懒生成（首次打开邀请页才生成），唯一；迁移里是普通 UNIQUE 索引（多 NULL 合法）。
+  @Column({ type: 'varchar', length: 12, unique: true, nullable: true })
+  referral_code: string;
+
+  // 被谁邀请（users.id 自引用）：注册（邮箱直接带码）或登录后补绑（微信路径）时绑定一次，
+  // 终身不变；补绑仅限「注册 7 天内」账号，防老用户点链接被误绑（拍板 4）。
+  // select:false：默认查询不带出，邀请统计/归因处显式读取，未跑 0034 时老查询不受影响。
+  @Column({ type: 'uuid', nullable: true, select: false })
+  referred_by: string;
+
   @CreateDateColumn()
   created_at: Date;
 

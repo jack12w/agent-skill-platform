@@ -352,6 +352,7 @@ const en = {
   admin: {
     title: 'Admin Hub',
     plugins: 'Plugins',
+    referrals: 'Referrals',
     pluginsDesc: 'Publish, edit and unpublish platform plugins; manage monthly price and download files here',
     addPlugin: 'New Plugin',
     editPluginTitle: 'Edit Plugin',

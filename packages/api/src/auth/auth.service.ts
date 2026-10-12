@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
-import { Repository, DataSource, EntityManager } from 'typeorm';
+import { Repository, DataSource, EntityManager, IsNull } from 'typeorm';
 import { User } from './user.entity';
 import { VerificationCode } from './verification-code.entity';
 import { Skill } from '../skills/skill.entity';
@@ -39,7 +39,7 @@ export class AuthService {
   /** 绑定态额外记录发起绑定的 userId，回调据此把 openid 落到正确账号 */
   private readonly wechatBindStates = new WechatStateStore<{ userId: string }>('wx:bind:state');
 
-  async register(email: string, pass: string, name: string, code?: string) {
+  async register(email: string, pass: string, name: string, code?: string, referralCode?: string) {
     // 验证码必填，防止绕过邮箱验证直接注册
     if (!code) throw new BadRequestException('验证码必填');
     // 事务包裹：校验并消费验证码 + 创建用户。任一步失败整体回滚，
@@ -49,9 +49,18 @@ export class AuthService {
       // 提前拦截重复注册：给出明确提示而非靠唯一约束抛 500，且不会烧掉验证码
       const existing = await manager.getRepository(User).findOne({ where: { email } });
       if (existing) throw new BadRequestException('该邮箱已注册，请直接登录');
+      // 邀请归因（迁移 0034）：注册时绑定一次终身不变。码无效就静默忽略（不挡注册），
+      // 新用户此时还没有自己的邀请码，天然不存在自邀。
+      let referred_by: string | null = null;
+      if (referralCode) {
+        const referrer = await manager
+          .getRepository(User)
+          .findOne({ where: { referral_code: referralCode } });
+        if (referrer) referred_by = referrer.id;
+      }
       const salt = await bcrypt.genSalt();
       const password_hash = await bcrypt.hash(pass, salt);
-      const user = manager.getRepository(User).create({ email, password_hash, name });
+      const user = manager.getRepository(User).create({ email, password_hash, name, referred_by });
       const saved = await manager.getRepository(User).save(user);
       const payload = { sub: saved.id, email: saved.email, role: saved.role };
       return {
@@ -497,6 +506,86 @@ export class AuthService {
   }
 
   // ── 未读评论通知 ────────────────────────
+  // ── 邀请推广（迁移 0034，2026-10-12）──
+  // 归因链路：邀请链接 ?ref=CODE → 前端存 localStorage → ①邮箱注册时随请求绑定；
+  // ②微信路径登录后由前端调 claimReferral 补绑（收口点：AuthProvider 轮询）。
+  // 佣金（referral_rewards）本期只建表不写入，按订单人工月结。
+
+  /** 生成 8 位邀请码。去掉易混淆字符（0/O/1/I），码空间 32^8 ≈ 1.1 万亿 */
+  private genReferralCode(): string {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let s = '';
+    for (let i = 0; i < 8; i++) s += alphabet[crypto.randomInt(alphabet.length)];
+    return s;
+  }
+
+  /**
+   * 我的邀请信息。邀请码懒生成：首次调用才落库，存量用户零迁移成本。
+   * 统计口径：invited_count = 通过我注册的人数；subscribed_count = 其中已支付插件订阅的人数
+   * （按 order_items.snapshot->>'referrer_id' 归因——下单时快照，历史归因不受后续绑定变更影响）。
+   */
+  async getMyReferral(userId: string) {
+    const me = await this.userRepository.findOne({ where: { id: userId } });
+    if (!me) throw new NotFoundException('User not found');
+    if (!me.referral_code) {
+      // 唯一索引冲突重试（概率极低，3 次足够；全失败则本次返回空码，下次再生成）
+      for (let i = 0; i < 3; i++) {
+        try {
+          me.referral_code = this.genReferralCode();
+          await this.userRepository.update(me.id, { referral_code: me.referral_code });
+          break;
+        } catch {
+          /* unique 冲突 → 换一个码重试 */
+        }
+      }
+    }
+    const invited = await this.userRepository.count({ where: { referred_by: userId } });
+    const rows: { cnt: number }[] = await this.userRepository.query(
+      `SELECT COUNT(DISTINCT o.user_id)::int AS cnt
+         FROM orders o
+         JOIN order_items oi ON oi.order_id = o.id
+        WHERE oi.snapshot->>'referrer_id' = $1
+          AND o.status = 'PAID'`,
+      [userId],
+    );
+    return {
+      referral_code: me.referral_code,
+      invited_count: Number(invited || 0),
+      subscribed_count: Number(rows[0]?.cnt || 0),
+    };
+  }
+
+  /**
+   * 登录后补绑邀请关系（微信注册路径的收口：PC 扫码 / 公众号静默登录建号时拿不到 ref）。
+   * 规则（2026-10-12 拍板）：绑定一次终身不变；仅「注册 7 天内」的新账号可补绑（老用户点
+   * 别人链接不被误归因）；不能自邀；码无效静默返回不报错（前端据此清理 localStorage）。
+   * update 带 referred_by IS NULL 条件：并发/重复调用天然幂等。
+   */
+  async claimReferral(userId: string, referralCode?: string) {
+    if (!referralCode) return { bound: false, reason: 'missing_code' };
+    const me = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'referral_code', 'referred_by', 'created_at'],
+    });
+    if (!me) throw new NotFoundException('User not found');
+    if (me.referred_by) return { bound: false, reason: 'already_bound' };
+    if (Date.now() - new Date(me.created_at).getTime() > 7 * 86400_000) {
+      return { bound: false, reason: 'account_too_old' };
+    }
+    if (me.referral_code && me.referral_code === referralCode) {
+      return { bound: false, reason: 'self_invite' };
+    }
+    const referrer = await this.userRepository.findOne({
+      where: { referral_code: referralCode },
+    });
+    if (!referrer || referrer.id === me.id) return { bound: false, reason: 'code_not_found' };
+    await this.userRepository.update(
+      { id: me.id, referred_by: IsNull() },
+      { referred_by: referrer.id },
+    );
+    return { bound: true, referrer_id: referrer.id };
+  }
+
   async getUnreadComments(userId: string, since?: string) {
     const qb = this.commentRepository
       .createQueryBuilder('c')
