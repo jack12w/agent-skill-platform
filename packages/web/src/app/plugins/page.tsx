@@ -64,6 +64,30 @@ function isAuthed(): boolean {
   }
 }
 
+/** 与后端 isSubscriptionEntitled 对齐：active/cancelled 且未到期 → 有权 */
+function rowEntitled(s: MySub): boolean {
+  return (
+    (s.status === 'active' || s.status === 'cancelled') &&
+    new Date(s.expires_at).getTime() > Date.now()
+  );
+}
+
+/**
+ * 同一插件多行订阅（个人行 + 团队行）的选行优先级，与后端
+ * resolvePluginSubscription 的 ORDER BY 口径逐条对齐：
+ *   有权 > 团队 > expires_at 晚。
+ * 不一致的后果：市场页对已购团队版的用户显示「订阅」按钮 → 重复付费。
+ */
+function betterSub(a: MySub, b: MySub): boolean {
+  const ea = rowEntitled(a);
+  const eb = rowEntitled(b);
+  if (ea !== eb) return ea;
+  const ta = a.tier === 'team' || !!a.via_team;
+  const tb = b.tier === 'team' || !!b.via_team;
+  if (ta !== tb) return ta;
+  return new Date(a.expires_at).getTime() > new Date(b.expires_at).getTime();
+}
+
 export default function PluginsPage() {
   const { t } = useTranslation();
   const [plugins, setPlugins] = useState<Plugin[]>([]);
@@ -92,7 +116,14 @@ export default function PluginsPage() {
       if (res.ok) {
         const list: MySub[] = await res.json();
         const map: Record<string, MySub> = {};
-        for (const s of list) map[s.plugin_id] = s;
+        // ⚠️ 同一用户可同时持有个人行+团队行（0035），后端按 started_at DESC 返回。
+        // 旧实现 for 循环直接覆盖 = **最旧的行胜出**：过期个人行会遮住有效团队行，
+        // 用户看到「订阅」按钮点进去重复付费（正是 0035 注释声称要避免的场景）。
+        // 选行口径与后端 resolvePluginSubscription 对齐：有权 → 团队 → 到期晚。
+        for (const s of list) {
+          const cur = map[s.plugin_id];
+          if (!cur || betterSub(s, cur)) map[s.plugin_id] = s;
+        }
         setSubs(map);
       }
     } catch {
@@ -199,13 +230,15 @@ export default function PluginsPage() {
     const list = Number(p.list_price_monthly_cents || 0);
     return list > payCents(p) && promoActive(p) ? list : 0;
   };
-  // 价格单位跟商品走（2026-10-12）：订阅有效期 ≥365 天 → 「元/年」，其余（默认 30）→ 「元/月」。
-  // 后端 /api/plugins 的 stripPublic 是整实体展开，subscription_duration_days 已随列表返回，
-  // 前端只做展示切换，不用动后端。
-  const priceUnit = (p: Plugin) =>
-    (Number(p.subscription_duration_days) || 30) >= 365
-      ? t('plugins.perYear')
-      : t('plugins.perMonth');
+  // 价格单位跟商品走（2026-10-12）：≥365 天 → 「元/年」；30 天 → 「元/月」；
+  // 其余（90/180 天等中间配置）→ 「元/{n}天」。旧实现把非 365 的一律显示
+  // 「元/月」，配 90 天的商品会被用户按月付理解（质检修正）。
+  const priceUnit = (p: Plugin) => {
+    const d = Number(p.subscription_duration_days) || 30;
+    if (d >= 365) return t('plugins.perYear');
+    if (d === 30) return t('plugins.perMonth');
+    return t('plugins.perDays', { n: d });
+  };
 
   // ── 收银台档位下拉（2026-10-09）──
   // 选项 = 当前全部上架插件（个人版/企业版），价格沿用促销判定；

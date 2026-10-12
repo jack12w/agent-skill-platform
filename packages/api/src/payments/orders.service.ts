@@ -218,7 +218,9 @@ export class OrdersService implements OnModuleInit {
       total = effectivePluginPrice(plugin);
       if (!total || total <= 0) throw new BadRequestException('插件定价异常');
       description = `插件订阅:${plugin.name}`;
-      // 邀请归因快照（迁移 0034）：买家被谁邀请 → 写进 item.snapshot->>'referrer_id'。
+      // 邀请归因快照（迁移 0034）：买家被谁邀请 → 写进 item.snapshot.referrer
+      //（嵌套对象 {referrer_id, referral_code}；读取侧必须走 snapshot->'referrer'->>'referrer_id'，
+      // 2026-10-12 质检修正过两处读错成顶层 referrer_id 的查询）。
       // 不动 orders 表结构；快照后历史归因与 users.referred_by 的后续变化解耦。
       let referral: { referrer_id: string; referrer_code: string | null } | null = null;
       if (user?.referred_by) {
@@ -496,6 +498,10 @@ export class OrdersService implements OnModuleInit {
    *    cancelled（「到期不再续费」）的用户续费时，剩余天数还应当被保留 ——
    *    旧写法会走 else 分支把到期日重置成 now+30d，等于把他没用的十几天直接吞掉。
    * deliver 仅在 markPaymentPaid 原子抢占成功后调用，故本方法单笔支付只跑一次。
+   * ⚠️ 2026-10-12 质检修正：抢占成功后若 deliver 中途失败，订单保持非 DELIVERED，
+   *   回调重推 / 查单补发会再次调用 deliver → fulfillPluginSubscription 再跑一遍。
+   *   本方法**不幂等**（顺延 expires_at），故开头加 `order_id` 判重闸门：
+   *   同订单重入直接返回，续费（新 orderId）不受影响。
    *
    * 企业版档位商品只是收银台的一个价格档位，**权益实体不在它自己身上**：
    * 扩展端 auth_core.js 写死 DEFAULT_SLUG='alibaba-toolkit'（设备激活/下载只认主插件行），
@@ -533,7 +539,9 @@ export class OrdersService implements OnModuleInit {
     if (tier === 'team') {
       const team = await ensureOwnerTeam(this.pluginSubRepo.manager, userId);
       teamId = team.id;
-      seats = ordered?.team_seats ?? 3;
+      // 与 admin 路径一致的下限钳制（2026-10-12 质检）：team_seats 配 0 会让
+      // seatCap 返回 0 → 全团任何人 都加不进来，等于卖了个假团队版。
+      seats = Math.max(1, ordered?.team_seats ?? 3);
       maxPerMember = 1;
     }
 
@@ -545,6 +553,11 @@ export class OrdersService implements OnModuleInit {
           ? { user_id: userId, plugin_id: targetPluginId, team_id: Not(IsNull()) }
           : { user_id: userId, plugin_id: targetPluginId, team_id: IsNull() },
     });
+    // 订单级幂等闸门（2026-10-12 质检）：deliver 可被「回调重推 / 查单补发」
+    // 重复调用（claimed=false 且订单未 DELIVERED 时会再 deliver 一次），而本方法
+    // 本身不幂等（每次调用都顺延 expires_at）——没有这道闸门，补发一次=白送一个
+    // 周期。同订单重入直接返回；续费是新订单（orderId 不同），不受影响。
+    if (existing && existing.order_id === orderId) return;
     if (existing) {
       if (isSubscriptionEntitled(existing, now)) {
         existing.expires_at = new Date(existing.expires_at.getTime() + MONTH);

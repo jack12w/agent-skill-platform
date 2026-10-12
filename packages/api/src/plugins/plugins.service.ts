@@ -77,9 +77,10 @@ export class PluginsService {
          FROM plugin_subscriptions s
          LEFT JOIN teams t ON t.id = s.team_id
         WHERE s.user_id = $1
-           OR (s.team_id IS NOT NULL AND EXISTS (
-                 SELECT 1 FROM team_members m
-                  WHERE m.team_id = s.team_id AND m.user_id = $1))
+           OR (s.team_id IS NOT NULL AND s.status IN ('active', 'cancelled') AND s.expires_at > now()
+               AND EXISTS (
+                     SELECT 1 FROM team_members m
+                      WHERE m.team_id = s.team_id AND m.user_id = $1))
         ORDER BY s.started_at DESC`,
       [userId],
     );
@@ -143,8 +144,11 @@ export class PluginsService {
    * 本方法本身无需改动（只翻标记），改动在权益判定侧。
    */
   async cancel(userId: string, pluginId: string) {
+    // ⚠️ 只取消**个人订阅行**（team_id IS NULL，2026-10-12 质检）：0035 之后同一用户
+    // 可同时持有个人行+团队行，旧实现不带条件 findOne，PG 不保证返回行序——
+    // 可能把团队行置 cancelled（全团被标「到期不再续费」）。
     const sub = await this.subRepo.findOne({
-      where: { user_id: userId, plugin_id: pluginId },
+      where: { user_id: userId, plugin_id: pluginId, team_id: IsNull() },
     });
     if (!sub) throw new NotFoundException('未找到订阅记录');
     if (sub.status === 'cancelled') return sub;   // 幂等：重复点不再写库
@@ -663,6 +667,14 @@ export class PluginsService {
     }
     if (body?.tier !== undefined) {
       sub.tier = this.parseTierInput(body, sub.tier || 'personal');
+      // 降级必须摘团队关系（2026-10-12 质检）：只改 tier 不摘 team_id 的话，
+      // resolvePluginSubscription 仍走团队分支（team_id 非空）→ 成员照常有权益、
+      // AI 门禁照旧放行 team 功能，「降级」只在列表页生效，是假的。
+      if (sub.tier === 'personal' && sub.team_id != null) {
+        sub.team_id = null;
+        sub.seats = null;
+        sub.max_devices_per_member = null;
+      }
     }
 
     // 席位制（0035）：后台编辑席位数 / 每成员设备数。

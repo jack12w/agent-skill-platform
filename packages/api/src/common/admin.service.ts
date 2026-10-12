@@ -622,8 +622,8 @@ export class AdminService {
          FROM orders o
          JOIN order_items oi ON oi.order_id = o.id
          LEFT JOIN users u ON u.id = o.user_id
-         LEFT JOIN users r ON r.id = oi.snapshot->>'referrer_id'
-        WHERE oi.snapshot->>'referrer_id' IS NOT NULL
+         LEFT JOIN users r ON r.id::text = oi.snapshot->'referrer'->>'referrer_id'
+        WHERE oi.snapshot->'referrer'->>'referrer_id' IS NOT NULL
         ORDER BY o.created_at DESC
         LIMIT 200`,
     );

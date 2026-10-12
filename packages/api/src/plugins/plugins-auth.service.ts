@@ -503,6 +503,21 @@ export class PluginsAuthService {
           message: `你还没有订阅「${plugin.name}」，请先在插件市场完成订阅`,
         };
       }
+      // 锁内复查团队成员关系（0035，2026-10-12 质检 L7）：resolve 之后、拿锁之前
+      // 被移出团的用户，本次授权仍要拒绝——否则刚被团长移除的成员还能落地一台设备
+      // （下一次 entitlement 会因实时校验失权，但令牌已经签出去了）。
+      if (locked.team_id) {
+        const mem: Array<{ ok: number }> = await m.query(
+          `SELECT 1 AS ok FROM team_members WHERE team_id = $1 AND user_id = $2 LIMIT 1`,
+          [locked.team_id, userId],
+        );
+        if (!mem || mem.length === 0) {
+          return {
+            reason: 'NO_SUBSCRIPTION',
+            message: `你已不在「${plugin.name}」的订阅团队中，请联系团长邀请`,
+          };
+        }
+      }
       if (!isSubscriptionEntitled(locked)) {
         return {
           reason: 'EXPIRED_SUBSCRIPTION',

@@ -11,6 +11,15 @@
 
 ALTER TABLE teams ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'skill';
 
+-- kind 白名单约束（2026-10-12 质检补）：拼错值会让 ensureOwnerTeam 认不出 plugin 团
+-- 而反复建团。DO block 保证可重复执行。
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'teams_kind_check') THEN
+    ALTER TABLE teams ADD CONSTRAINT teams_kind_check CHECK (kind IN ('skill', 'plugin'));
+  END IF;
+END $$;
+
 DO $$
 DECLARE
   rec RECORD;

@@ -111,7 +111,10 @@ export default function MyPluginsPage() {
   // 子 TAB：我的插件订阅 | 密钥管理（T302：AI 取数密钥，AiKeysPanel 自包含）
   const [view, setView] = useState<'subs' | 'keys'>('subs');
 
-  // 设备面板：按插件懒加载，展开时才请求
+  // 设备面板：按订阅**行**懒加载（展开时才请求）。
+  // ⚠️ 键是订阅行 id 而非 plugin_id（2026-10-12 质检）：同一用户可同时持有个人行+
+  // 团队行（同插件），用 plugin_id 会让两张卡的展开态/busy 态互相串联。
+  // 数据本身仍按 plugin_id 存（设备就是按 user+plugin 隔离的，两卡看到同一份是对的）。
   const [deviceOpen, setDeviceOpen] = useState<string | null>(null);
   const [deviceData, setDeviceData] = useState<
     Record<string, { devices: DeviceRow[]; max_devices: number }>
@@ -205,8 +208,8 @@ export default function MyPluginsPage() {
     );
   };
 
-  const toggleDevices = async (pluginId: string) => {
-    const next = deviceOpen === pluginId ? null : pluginId;
+  const toggleDevices = async (subId: string, pluginId: string) => {
+    const next = deviceOpen === subId ? null : subId;
     setDeviceOpen(next);
     if (next) await loadDevices(pluginId);
   };
@@ -240,10 +243,10 @@ export default function MyPluginsPage() {
    * 失败必须说出来 —— 改名静默失败，用户会以为已经改好，下次登录看到旧名再改一次，
    * 而「改了没生效」这件事本身没有任何可观测的地方。
    */
-  const renameDevice = async (pluginId: string, deviceId: string, name: string) => {
+  const renameDevice = async (subId: string, pluginId: string, deviceId: string, name: string) => {
     const clean = name.trim();
     if (!clean) return;
-    const key = `${pluginId}:${deviceId}`;
+    const key = `${subId}:${deviceId}`;
     setDeviceBusy(key);
     try {
       const res = await apiFetch(
@@ -293,9 +296,9 @@ export default function MyPluginsPage() {
    * 既不知道是没解绑成功还是界面没刷新，插件那边也还持有有效令牌继续能用。
    * 现在按 HTTP 状态码给可操作文案（与 cancel / rename 同一条约定）。
    */
-  const revokeDevice = async (pluginId: string, deviceId: string) => {
+  const revokeDevice = async (subId: string, pluginId: string, deviceId: string) => {
     if (!confirm(t('plugins.revokeConfirm'))) return;
-    setDeviceBusy(`${pluginId}:${deviceId}`);
+    setDeviceBusy(`${subId}:${deviceId}`);
     try {
       const res = await apiFetch(
         `/api/plugins/${pluginId}/devices/${encodeURIComponent(deviceId)}`,
@@ -318,9 +321,9 @@ export default function MyPluginsPage() {
     }
   };
 
-  const revokeAll = async (pluginId: string) => {
+  const revokeAll = async (subId: string, pluginId: string) => {
     if (!confirm(t('plugins.resetDevicesConfirm'))) return;
-    setDeviceBusy(`${pluginId}:all`);
+    setDeviceBusy(`${subId}:all`);
     try {
       const res = await apiFetch(`/api/plugins/${pluginId}/reset-devices`, {
         method: 'POST',
@@ -455,7 +458,7 @@ export default function MyPluginsPage() {
                   s.plugin_id
                 : p?.name || s.plugin_id;
             const dd = deviceData[s.plugin_id];
-            const open = deviceOpen === s.plugin_id;
+            const open = deviceOpen === s.id;
             return (
               <div key={s.id} className="bg-white border border-neutral-200 rounded-xl p-4">
                 <div className="flex items-center justify-between gap-3">
@@ -520,7 +523,7 @@ export default function MyPluginsPage() {
                         )}
                       </div>
                       <button
-                        onClick={() => toggleDevices(s.plugin_id)}
+                        onClick={() => toggleDevices(s.id, s.plugin_id)}
                         className="shrink-0 text-xs text-brand-600 border border-brand-200 rounded-md px-2.5 py-1 hover:bg-brand-50"
                       >
                         {open ? t('plugins.hideDevices') : t('plugins.manageDevices')}
@@ -540,7 +543,7 @@ export default function MyPluginsPage() {
                         ) : (
                           <ul className="space-y-2">
                             {dd.devices.map((d) => {
-                              const rowKey = `${s.plugin_id}:${d.device_id}`;
+                              const rowKey = `${s.id}:${d.device_id}`;
                               const editing = renameKey === rowKey;
                               const rowBusy = deviceBusy === rowKey;
                               return (
@@ -557,7 +560,7 @@ export default function MyPluginsPage() {
                                         onChange={(e) => setRenameValue(e.target.value)}
                                         onKeyDown={(e) => {
                                           if (e.key === 'Enter') {
-                                            renameDevice(s.plugin_id, d.device_id, renameValue);
+                                            renameDevice(s.id, s.plugin_id, d.device_id, renameValue);
                                           } else if (e.key === 'Escape') {
                                             setRenameKey(null);
                                             setRenameValue('');
@@ -601,7 +604,7 @@ export default function MyPluginsPage() {
                                       <>
                                         <button
                                           onClick={() =>
-                                            renameDevice(s.plugin_id, d.device_id, renameValue)
+                                            renameDevice(s.id, s.plugin_id, d.device_id, renameValue)
                                           }
                                           disabled={rowBusy || !renameValue.trim()}
                                           className="text-[11px] text-white bg-brand-600 rounded-md px-2 py-1 hover:bg-brand-700 disabled:opacity-50"
@@ -631,7 +634,7 @@ export default function MyPluginsPage() {
                                           {t('plugins.rename')}
                                         </button>
                                         <button
-                                          onClick={() => revokeDevice(s.plugin_id, d.device_id)}
+                                          onClick={() => revokeDevice(s.id, s.plugin_id, d.device_id)}
                                           disabled={rowBusy}
                                           className="text-[11px] text-red-600 border border-red-200 rounded-md px-2 py-1 hover:bg-red-50 disabled:opacity-50"
                                         >
@@ -649,11 +652,11 @@ export default function MyPluginsPage() {
                         {!!dd?.devices?.length && (
                           <div className="mt-3 flex justify-end">
                             <button
-                              onClick={() => revokeAll(s.plugin_id)}
-                              disabled={deviceBusy === `${s.plugin_id}:all`}
+                              onClick={() => revokeAll(s.id, s.plugin_id)}
+                              disabled={deviceBusy === `${s.id}:all`}
                               className="text-[11px] text-neutral-500 border border-neutral-200 rounded-md px-2 py-1 hover:bg-neutral-100 disabled:opacity-50"
                             >
-                              {deviceBusy === `${s.plugin_id}:all`
+                              {deviceBusy === `${s.id}:all`
                                 ? t('plugins.revoking')
                                 : t('plugins.resetDevices')}
                             </button>
@@ -675,9 +678,12 @@ export default function MyPluginsPage() {
                       {t('plugins.manageTeam')}
                     </Link>
                   )}
-                  {/* 席位制（0035）：团队覆盖的成员不显示续费——订阅实体在团长/团队行上，
-                      成员续费个人档不会延长团队权益，只会造成「付了钱没效果」的客诉。 */}
-                  {!viaTeam && (
+                  {/* 席位制（0035）：团队覆盖的**成员**不显示续费——订阅实体在团长/团队行上，
+                      成员续费个人档不会延长团队权益，只会造成「付了钱没效果」的客诉。
+                      ⚠️ 2026-10-12 质检：团长本人的团队行 via_team 也是 true（team_id
+                      非空），旧条件 !viaTeam 把团长一起藏了 → 全站没有任何入口能再下
+                      团队版的单（市场页对团长也只显示「已订阅」）。故加 || teamOwner。 */}
+                  {(!viaTeam || teamOwner) && (
                     <button
                       onClick={() => {
                         // 企业版（tier=team）订阅的权益实体在主插件行上（支付回调映射，

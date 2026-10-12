@@ -53,10 +53,14 @@ export class AuthService {
       // 新用户此时还没有自己的邀请码，天然不存在自邀。
       let referred_by: string | null = null;
       if (referralCode) {
-        const referrer = await manager
-          .getRepository(User)
-          .findOne({ where: { referral_code: referralCode } });
-        if (referrer) referred_by = referrer.id;
+        // 大小写/空白容错，与 claimReferral 同口径（2026-10-12 质检）
+        const code = String(referralCode).trim().toUpperCase();
+        if (code) {
+          const referrer = await manager
+            .getRepository(User)
+            .findOne({ where: { referral_code: code } });
+          if (referrer) referred_by = referrer.id;
+        }
       }
       const salt = await bcrypt.genSalt();
       const password_hash = await bcrypt.hash(pass, salt);
@@ -528,23 +532,28 @@ export class AuthService {
     const me = await this.userRepository.findOne({ where: { id: userId } });
     if (!me) throw new NotFoundException('User not found');
     if (!me.referral_code) {
-      // 唯一索引冲突重试（概率极低，3 次足够；全失败则本次返回空码，下次再生成）
+      // 唯一索引冲突重试（概率极低，3 次足够；全失败则本次返回空码，下次再生成）。
+      // ⚠️ 绝不能把没落库的码返回给用户——那会生成一条永远无法归因的死邀请链接
+      // （2026-10-12 质检发现：旧实现 break 后仍返回内存中的码）。
+      let saved = false;
       for (let i = 0; i < 3; i++) {
         try {
           me.referral_code = this.genReferralCode();
           await this.userRepository.update(me.id, { referral_code: me.referral_code });
+          saved = true;
           break;
         } catch {
           /* unique 冲突 → 换一个码重试 */
         }
       }
+      if (!saved) me.referral_code = null;
     }
     const invited = await this.userRepository.count({ where: { referred_by: userId } });
     const rows: { cnt: number }[] = await this.userRepository.query(
       `SELECT COUNT(DISTINCT o.user_id)::int AS cnt
          FROM orders o
          JOIN order_items oi ON oi.order_id = o.id
-        WHERE oi.snapshot->>'referrer_id' = $1
+        WHERE oi.snapshot->'referrer'->>'referrer_id' = $1
           AND o.status = 'PAID'`,
       [userId],
     );
@@ -563,6 +572,10 @@ export class AuthService {
    */
   async claimReferral(userId: string, referralCode?: string) {
     if (!referralCode) return { bound: false, reason: 'missing_code' };
+    // 邀请码大小写/空白容错（2026-10-12 质检）：码按大写字母表生成，用户手打小写或带
+    // 空格时应静默归一而不是判失效——否则用户分享出去对方输错大小写就静默不归因。
+    const code = String(referralCode).trim().toUpperCase();
+    if (!code) return { bound: false, reason: 'missing_code' };
     const me = await this.userRepository.findOne({
       where: { id: userId },
       select: ['id', 'referral_code', 'referred_by', 'created_at'],
@@ -572,11 +585,11 @@ export class AuthService {
     if (Date.now() - new Date(me.created_at).getTime() > 7 * 86400_000) {
       return { bound: false, reason: 'account_too_old' };
     }
-    if (me.referral_code && me.referral_code === referralCode) {
+    if (me.referral_code && me.referral_code === code) {
       return { bound: false, reason: 'self_invite' };
     }
     const referrer = await this.userRepository.findOne({
-      where: { referral_code: referralCode },
+      where: { referral_code: code },
     });
     if (!referrer || referrer.id === me.id) return { bound: false, reason: 'code_not_found' };
     await this.userRepository.update(

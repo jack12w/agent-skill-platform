@@ -37,10 +37,18 @@ export default function HubReferralsPage() {
   const [invites, setInvites] = useState<InviteRow[]>([]);
   const [orders, setOrders] = useState<AttributedOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  // 2026-10-12 质检：旧实现失败时静默走空分支（渲染「暂无邀请记录」= 把失败
+  // 伪装成空数据，管理员无法区分）；且无 token 时 return 在 setLoading(false)
+  // 之前 → 永久转圈。两者都必须显式报错。
+  const [err, setErr] = useState('');
 
   const load = useCallback(async () => {
     const token = getToken();
-    if (!token) return;
+    if (!token) {
+      setErr('未登录或登录已过期，请重新登录后再试');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const r = await fetch('/api/admin/referrals', {
@@ -50,9 +58,13 @@ export default function HubReferralsPage() {
         const d = await r.json();
         setInvites(d.invites || []);
         setOrders(d.orders || []);
+        setErr('');
+      } else {
+        setErr(`加载失败（HTTP ${r.status}），请刷新重试`);
       }
     } catch (e) {
       console.error(e);
+      setErr('网络错误，请检查连接后重试');
     }
     setLoading(false);
   }, []);
@@ -75,6 +87,15 @@ export default function HubReferralsPage() {
       <p className="text-sm text-neutral-500 mb-4">
         谁邀请了谁、哪些付费插件订阅来自邀请。归因在下单时快照（order_items.snapshot），历史数据不受后续绑定变更影响。
       </p>
+
+      {err && (
+        <div className="mb-4 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center justify-between gap-3">
+          <span>{err}</span>
+          <button onClick={load} className="shrink-0 underline">
+            重试
+          </button>
+        </div>
+      )}
 
       {/* 邀请关系 */}
       <h2 className="text-sm font-semibold text-neutral-700 mb-2">邀请关系（最近 200 条）</h2>

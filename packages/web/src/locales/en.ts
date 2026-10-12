@@ -953,6 +953,8 @@ const en = {
     perMonth: '¥/mo',
     /* Unit follows the plugin's subscription duration: ≥365 days → per year. */
     perYear: '¥/yr',
+    /* QA 2026-10-12: odd durations (90/180 days) must not read as per-month. */
+    perDays: '¥/{n}d',
     promoBadge: 'Limited offer',
     manage: 'Manage',
     freeDownloadTip: 'Download the client for free; log in and authorize to use it.',

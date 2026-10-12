@@ -111,8 +111,15 @@ export class Plugin {
 }
 
 /**
- * 用户插件订阅（包月）。同一用户同一插件仅一条记录（续费顺延 expires_at）。
+ * 用户插件订阅（包月）。同一用户同一插件仅一条**个人**记录（续费顺延 expires_at）；
+ * 席位制（0035）起团长可同时持有个人行（team_id NULL）+ 团队行，见下方注释。
  * 付费墙判定：status='active' 且 expires_at > now 即为有效。
+ *
+ * ⚠️ 唯一性**不由本装饰器承担**：0035 迁移已把 DB 唯一约束换成部分唯一索引
+ * `uq_plugin_subs_user_plugin_personal WHERE team_id IS NULL`（只约束个人行）。
+ * 此处保留 @Unique 仅为兼容旧文档描述，synchronize:false 下无运行时影响；
+ * **任何环境都不要开 schema 同步**——那会按本装饰器重建全列唯一约束，
+ * 直接挡掉「团长个人+团队双行」这一 0035 核心设计。
  */
 @Entity('plugin_subscriptions')
 @Unique(['user_id', 'plugin_id'])

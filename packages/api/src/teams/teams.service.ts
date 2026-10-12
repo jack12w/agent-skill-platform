@@ -361,6 +361,19 @@ export class TeamsService {
       throw new ForbiddenException('Only the team owner can delete it');
     }
 
+    // 插件订阅引用拦截（0035/2026-10-12 质检）：plugin_subscriptions.team_id 是
+    // NO ACTION 外键，直接删团必现 FK 23503 → 500。且删团=全团成员立刻失去插件
+    // 权益（team_members 实时解析），必须显式拦截让管理员先处理订阅。
+    const refs: Array<{ cnt: number }> = await this.teamRepository.query(
+      `SELECT COUNT(*)::int AS cnt FROM plugin_subscriptions WHERE team_id = $1`,
+      [teamId],
+    );
+    if (Number(refs[0]?.cnt || 0) > 0) {
+      throw new BadRequestException(
+        '该团队有生效中的插件订阅，不能删除；请先在「订阅管理」取消该团队订阅后再解散',
+      );
+    }
+
     // Detach skills：回落到个人归属（原创作者 created_by），避免删团队后变成无主孤儿。
     // 主路径：owner_user_id 回填为原创作者；兜底：created_by 为空的极端情况落到团队 owner。
     await this.skillRepository
