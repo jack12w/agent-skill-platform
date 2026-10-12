@@ -26,6 +26,14 @@ interface MySub {
   /** 席位制（0035）：true = 权益来自所在团队订阅（本人不是团长，仅成员）。
    *  此类行不显示续费/取消（只有团长能续），显示「由团队提供」徽标。 */
   via_team?: boolean;
+  /** true = 本人就是这张团队订阅行的团长（user_id 即本人），显示「团队版」+ 管理入口 */
+  is_team_owner?: boolean;
+  /** 团队行关联的团名（后端 leftJoin teams 带出；个人行为 null） */
+  team_name?: string | null;
+  /** 团队行 id：团长凭它跳 /teams/[id] 邀请成员（0035 补漏：此前全站无入口） */
+  team_id?: string | null;
+  /** 订阅行归属用户 id（团队行上=团长本人），配合 via_team 判断是否团长 */
+  user_id?: string;
 }
 
 interface DeviceRow {
@@ -434,6 +442,9 @@ export default function MyPluginsPage() {
             const valid = isEntitled(s);
             const cancelled = s.status === 'cancelled';
             const viaTeam = !!s.via_team;
+            // 团长 vs 成员：团长看「团队版」+ 管理入口；成员看「由团队提供」。
+            // 之前统一显示「由团队提供」，团长误以为买的还是个人版（2026-10-12 实测反馈）。
+            const teamOwner = viaTeam && (!!s.is_team_owner || s.user_id === getUserId());
             const dd = deviceData[s.plugin_id];
             const open = deviceOpen === s.plugin_id;
             return (
@@ -442,12 +453,22 @@ export default function MyPluginsPage() {
                   <div className="min-w-0">
                     <div className="font-semibold text-neutral-900 truncate">
                       {p?.name || s.plugin_id}
-                      {viaTeam && (
+                      {teamOwner ? (
+                        <span className="ml-2 align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 border border-violet-200">
+                          {t('plugins.teamBadge')}
+                        </span>
+                      ) : viaTeam ? (
                         <span className="ml-2 align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded bg-brand-50 text-brand-700 border border-brand-100">
                           {t('plugins.providedByTeam')}
                         </span>
-                      )}
+                      ) : null}
                     </div>
+                    {/* 团队行显示团名：让团长确认权益挂在哪支团队上（自动建团可能复用旧团） */}
+                    {viaTeam && s.team_name && (
+                      <div className="text-xs text-neutral-500 mt-0.5 truncate">
+                        {t('plugins.teamLabel')}: {s.team_name}
+                      </div>
+                    )}
                     <div className="text-xs text-neutral-400 mt-0.5">
                       {valid
                         ? `${t('plugins.validUntil')} ${fmtDate(s.expires_at)}`
@@ -635,6 +656,16 @@ export default function MyPluginsPage() {
                 )}
 
                 <div className="mt-3 flex items-center justify-end gap-2">
+                  {/* 0035 补漏：团长在订阅卡上直达团队管理页（邀请/移除成员、改团名）。
+                      此前 /teams/[id] 全站无入口，团长买完团队版无处添加成员。 */}
+                  {teamOwner && s.team_id && valid && (
+                    <Link
+                      href={`/teams/${s.team_id}`}
+                      className="text-xs text-brand-600 border border-brand-200 rounded-lg px-3 py-1.5 hover:bg-brand-50"
+                    >
+                      {t('plugins.manageTeam')}
+                    </Link>
+                  )}
                   {/* 席位制（0035）：团队覆盖的成员不显示续费——订阅实体在团长/团队行上，
                       成员续费个人档不会延长团队权益，只会造成「付了钱没效果」的客诉。 */}
                   {!viaTeam && (

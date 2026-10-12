@@ -67,10 +67,15 @@ export class PluginsService {
   async mySubscriptions(userId: string): Promise<PluginSubscription[]> {
     // 席位制（0035）：除本人订阅外，还要带出「所在团队的有效覆盖行」——否则成员在
     // 市场页/账号页看到的是「订阅」按钮，点进去重复付费（与 b2b tier 映射同坑）。
-    // 每行附带 via_team 标记，前端据此显示「由团队提供」并隐藏取消/续费。
+    // 每行附带 via_team / is_team_owner / team_name，前端据此渲染：
+    //   团长 → 「团队版」徽标 + 团名 + 「管理团队」入口；成员 → 「由团队提供」徽标。
     const rows: any[] = await this.subRepo.query(
-      `SELECT s.*, (s.team_id IS NOT NULL) AS via_team
+      `SELECT s.*,
+              (s.team_id IS NOT NULL) AS via_team,
+              (s.team_id IS NOT NULL AND s.user_id = $1) AS is_team_owner,
+              t.name AS team_name
          FROM plugin_subscriptions s
+         LEFT JOIN teams t ON t.id = s.team_id
         WHERE s.user_id = $1
            OR (s.team_id IS NOT NULL AND EXISTS (
                  SELECT 1 FROM team_members m

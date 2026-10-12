@@ -958,6 +958,10 @@ const en = {
     cancelledUntil: 'Ends at period end',
     /* 0035 seat model: badge for subscription rows provided via team membership */
     providedByTeam: 'Team seat',
+    /* 0035: badge/prefix/manage link for the owner's own team subscription row */
+    teamBadge: 'Team',
+    teamLabel: 'Team',
+    manageTeam: 'Manage team',
     /* 2026-09-28：no auto-renewal exists, so “Auto-renewal is off” was inaccurate. */
     cancelledHint: 'Renewal stopped; your access is kept until {date}. Click Renew to extend it.',
     cancelDone: 'Renewal stopped; access kept until {date}.',
