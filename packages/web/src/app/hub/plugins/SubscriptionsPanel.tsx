@@ -142,6 +142,16 @@ export default function SubscriptionsPanel({ plugins }: { plugins: PluginOption[
     await loadSubs();
   };
 
+  /**
+   * 有效状态（2026-10-28 修正）：`status=active` 但 `expires_at` 已过 → 对运营而言
+   * 就是已过期。后端有 60s 惰性收敛（plugins.service.sweepExpiredSubscriptions），
+   * 但显示不能依赖它跑没跑 —— 否则就会出现用户反馈的
+   * 「状态=生效中 + 到期时间 2026-10-25（已过）」自相矛盾。
+   * 判权口径 isSubscriptionEntitled 同样是「active/cancelled 且未到期」，此处与之对齐。
+   */
+  const effectiveStatus = (s: { status: string; expires_at?: string | null }) =>
+    s.status === 'active' && isPast(s.expires_at) ? 'expired' : s.status;
+
   const statusBadge = (s: string) => {
     const label =
       s === 'active'
@@ -266,7 +276,7 @@ export default function SubscriptionsPanel({ plugins }: { plugins: PluginOption[
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-center">{statusBadge(s.status)}</td>
+                  <td className="px-4 py-3 text-center">{statusBadge(effectiveStatus(s))}</td>
                   <td className="px-4 py-3 text-center">
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${tierBadgeClass(s.tier)}`}>
                       {s.tier === 'team' ? t('admin.subTierTeam') : t('admin.subTierPersonal')}

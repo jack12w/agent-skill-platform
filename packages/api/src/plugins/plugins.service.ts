@@ -71,6 +71,49 @@ export class PluginsService {
   }
 
   /** 我的订阅（纯订阅记录，插件详情由前端用 /plugins 列表合并） */
+  /** 过期收敛的节流时间戳（ms） */
+  private lastExpireSweepAt = 0;
+
+  /**
+   * 把「status='active' 但 expires_at 已过」的订阅行收敛为 'expired'。
+   *
+   * ── 为什么需要 ────────────────────────────────────────────────────────
+   * 判权 `isSubscriptionEntitled()` 同时看 status 与 expires_at，所以**权益从不出错**；
+   * 但**显示与筛选只看 status** —— 后台订阅列表于是出现「状态=生效中 + 到期时间已过」
+   * （还挂着「已过期待同步」小字），按「已过期」筛选又会漏掉这批人。
+   * 平台没有自动续费，到期后状态理应就是 expired，不该长期停在 active。
+   *
+   * ── 为什么惰性而不是定时任务 ──────────────────────────────────────────
+   * 项目现有风格是 setInterval / 惰性（见 orders.service.ts 的补偿任务），不引入
+   * @nestjs/schedule。查订阅必经这两个读方法，故收敛一定被触发，不依赖进程常驻时长；
+   * 60s 节流保证不是每个请求都写库（条件幂等，第二次起影响 0 行）。
+   *
+   * ── 为什么不动 cancelled ──────────────────────────────────────────────
+   * `cancelled` 的语义是「用户主动取消、权益到本周期结束」，与自然到期不同，
+   * 它到期后由同一判权函数识别为无权，但状态本身应保留以便追溯。
+   *
+   * ── 对续费无影响 ──────────────────────────────────────────────────────
+   * 发放/续期查找 existing 时**不带 status 条件**（orders.service.ts、adminAdd），
+   * 顺延与否只由 `isSubscriptionEntitled(existing)` 决定 —— 已收回的行会正确地
+   * 从今天重新起算，不会被当成「仍在有效期内」而多送一个周期。
+   */
+  private async sweepExpiredSubscriptions(): Promise<void> {
+    const nowMs = Date.now();
+    if (nowMs - this.lastExpireSweepAt < 60_000) return;
+    this.lastExpireSweepAt = nowMs;
+    try {
+      await this.subRepo.query(
+        `UPDATE plugin_subscriptions
+            SET status = 'expired'
+          WHERE status = 'active'
+            AND expires_at <= now()`,
+      );
+    } catch {
+      // 收敛失败不能拖垮查询：显示层已按判权口径兜底（SubscriptionsPanel），
+      // 且下次读请求（≥60s 后）会重试，单次失败不影响最终一致性。
+    }
+  }
+
   async mySubscriptions(userId: string): Promise<PluginSubscription[]> {
     // 席位制（0035）：除本人订阅外，还要带出「所在团队的有效覆盖行」——否则成员在
     // 市场页/账号页看到的是「订阅」按钮，点进去重复付费（与 b2b tier 映射同坑）。
@@ -82,6 +125,7 @@ export class PluginsService {
     //   旧实现（0041）按商品族折叠是为了掩盖归档行重复，那是旧模型的症状；
     //   新模型下同一商品只可能有 1 条个人行（唯一索引保证），折叠反而会吞掉用户
     //   买过的档位 —— 正是用户反馈「我的基础版不见了」的根因。
+    await this.sweepExpiredSubscriptions();
     const rows: any[] = await this.subRepo.query(
       `SELECT s.*,
               (s.team_id IS NOT NULL) AS via_team,
@@ -566,6 +610,8 @@ export class PluginsService {
   async adminListSubscriptions(pluginId: string, q: any) {
     // 仅用于校验商品存在（不存在时 adminGet 抛 404），返回值本方法不再使用
     await this.adminGet(pluginId);
+    // 先收敛过期行，否则「状态」筛选会把实际已到期的人算进「生效中」
+    await this.sweepExpiredSubscriptions();
 
     // 归属映射（0042，一档一行）：**恒按所购商品精确匹配** `plugin_id`。
     //
