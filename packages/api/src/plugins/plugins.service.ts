@@ -564,16 +564,19 @@ export class PluginsService {
    * plugins.module.ts 的 ENTITIES 里加 User，漏一处就是 api 502（本项目踩过）。
    */
   async adminListSubscriptions(pluginId: string, q: any) {
-    const plugin = await this.adminGet(pluginId);
+    // 仅用于校验商品存在（不存在时 adminGet 抛 404），返回值本方法不再使用
+    await this.adminGet(pluginId);
 
-    // 归属映射（0042，一档一行）——**不再需要任何猜测**：
-    //   筛某个具体商品（基础版 / Pro / 试用 / 独立商品）
-    //     → plugin_id = 该商品。用户当初买的就是这一行，精准命中，不会漏也不会混。
-    //   筛主插件（alibaba-toolkit）
-    //     → root_plugin_id = 主插件，即该插件的**全部**订阅（含所有档位）。
-    // 旧实现靠 source_plugin_id 反推归属，猜不到的用户直接消失（用户实测反馈）。
-    const isMainPage = plugin.slug === MAIN_PLUGIN_SLUG && !isTierLikePlugin(plugin);
-    const filterByRoot = isMainPage;
+    // 归属映射（0042，一档一行）：**恒按所购商品精确匹配** `plugin_id`。
+    //
+    // ⚠️ 2026-10-28 修正（用户实测反馈）：初版让「主插件页」按 `root_plugin_id` 汇总
+    //    该插件的**全部档位**订阅，本意是给运营一个总览，结果观感是重复 ——
+    //    买「Team 专业版」的王祭司同时出现在「基础版」列表和「Team 专业版」列表里，
+    //    运营无法判断他到底买的是哪一档。
+    //    一档一行的直觉就是「打开哪个商品，只看买了这个商品的人」，故取消汇总：
+    //      基础版页 → 只有 plugin_id = 基础版 的人
+    //      专业版页 → 只有 plugin_id = -b2b 的人
+    //    想看全量用主插件的「全部状态」+ 搜索，不要靠 root 汇总。
     const wherePluginId = pluginId;
 
     const page = Math.max(1, Math.floor(Number(q?.page) || 1));
@@ -583,11 +586,7 @@ export class PluginsService {
 
     // 把过滤条件抽成函数：items 与 total 必须走**完全相同**的 where，否则分页数会对不上
     const applyFilters = (qb: any) => {
-      if (filterByRoot) {
-        qb.where('s.root_plugin_id = :pluginId', { pluginId: wherePluginId });
-      } else {
-        qb.where('s.plugin_id = :pluginId', { pluginId: wherePluginId });
-      }
+      qb.where('s.plugin_id = :pluginId', { pluginId: wherePluginId });
       // 0042：不再按 tier 拆个人/团队两个桶。
       // 站在商品维度，买了它的人（个人行或团队行）都该出现；列表已带 team_name 列，
       // 运营一眼能分辨。旧实现把个人桶收紧为 team_id IS NULL，会让团队行在商品页消失。
