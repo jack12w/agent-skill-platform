@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Not, Repository } from 'typeorm';
+import { Brackets, IsNull, Not, Repository } from 'typeorm';
 import { Plugin, PluginSubscription } from './plugin.entity';
 import { User } from '../auth/user.entity';
 import { ensureOwnerTeam } from '../teams/ensure-owner-team';
@@ -76,19 +76,42 @@ export class PluginsService {
     // 市场页/账号页看到的是「订阅」按钮，点进去重复付费（与 b2b tier 映射同坑）。
     // 每行附带 via_team / is_team_owner / team_name，前端据此渲染：
     //   团长 → 「团队版」徽标 + 团名 + 「管理团队」入口；成员 → 「由团队提供」徽标。
+    //
+    // ⚠️ 2026-10-28：**必须先按商品族去重再返回**。0041 迁移把错落在试用/档位商品上的
+    //    订阅行归档（status='expired' 但保留行），这些历史行与权益行同属一族；不过滤的话
+    //    账号中心会把「同一份权益」渲染成两张一模一样的卡片（用户实测：两个「新用户试用」
+    //    都显示已过期，而他原本的基础版卡片看起来消失了）。
+    //    去重口径与权益解析（plugin-entitlement-resolve）保持一致：
+    //      · 分组键 = 商品族（COALESCE(p.parent_plugin_id, p.id)）+ 归属形态（个人 / 团队）
+    //      · 排序 = 有权优先 > 团队优先 > 到期更晚 > 开始更晚
+    //    正常数据（一族一个人行）行为完全不变；只有异常/归档行被折叠。
     const rows: any[] = await this.subRepo.query(
-      `SELECT s.*,
-              (s.team_id IS NOT NULL) AS via_team,
-              (s.team_id IS NOT NULL AND s.user_id = $1) AS is_team_owner,
-              t.name AS team_name
-         FROM plugin_subscriptions s
-         LEFT JOIN teams t ON t.id = s.team_id
-        WHERE s.user_id = $1
-           OR (s.team_id IS NOT NULL AND s.status IN ('active', 'cancelled') AND s.expires_at > now()
-               AND EXISTS (
-                     SELECT 1 FROM team_members m
-                      WHERE m.team_id = s.team_id AND m.user_id = $1))
-        ORDER BY s.started_at DESC`,
+      `WITH base AS (
+         SELECT s.*,
+                (s.team_id IS NOT NULL) AS via_team,
+                (s.team_id IS NOT NULL AND s.user_id = $1) AS is_team_owner,
+                t.name AS team_name,
+                COALESCE(p.parent_plugin_id, p.id) AS family_id
+           FROM plugin_subscriptions s
+           LEFT JOIN teams t   ON t.id = s.team_id
+           LEFT JOIN plugins p ON p.id = s.plugin_id
+          WHERE s.user_id = $1
+             OR (s.team_id IS NOT NULL AND s.status IN ('active', 'cancelled') AND s.expires_at > now()
+                 AND EXISTS (
+                       SELECT 1 FROM team_members m
+                        WHERE m.team_id = s.team_id AND m.user_id = $1))
+       ), ranked AS (
+         SELECT base.*,
+                ROW_NUMBER() OVER (
+                  PARTITION BY family_id, (team_id IS NOT NULL)
+                  ORDER BY COALESCE(status IN ('active', 'cancelled') AND expires_at > now(), false) DESC,
+                           (COALESCE(tier, 'personal') = 'team') DESC,
+                           expires_at DESC NULLS LAST,
+                           started_at DESC NULLS LAST
+                ) AS rn
+           FROM base
+       )
+       SELECT * FROM ranked WHERE rn = 1 ORDER BY started_at DESC NULLS LAST`,
       [userId],
     );
     return rows as PluginSubscription[];
@@ -578,12 +601,24 @@ export class PluginsService {
     let sourcePluginId: string | null = null;
     /** true = 主行页：source 为 NULL 的历史行也算「主行直购」，一并显示 */
     let includeNullSource = false;
+    /**
+     * true = 在档位/试用商品页：除「权益行（落主行 + source 指向本商品）」外，
+     * 还要带出**归档在商品自己 id 上的历史行**。
+     *
+     * ⚠️ 2026-10-28（0041 后实测反馈）：迁移把落错行的订阅归位到主行后，那些被合并的
+     * 试用行会留在商品自己的 id 上并置 expired。若仍按「plugin_id = 主行」硬筛，
+     * 后台在「新用户试用」下就再也看不到这批用户（例如杨：权益依据仍是主行原购买，
+     * source 保持 NULL，于是既不匹配 source 也匹配不到主行）——运营会以为数据丢了。
+     * 站在这款商品的角度，这些行是**真实发生过的购买/领取记录**，必须可见。
+     */
+    let includeArchivedOnTier = false;
     if (isTierLikePlugin(plugin)) {
       const main = await resolveEntitlementParent(this.pluginRepo, plugin);
       if (main) {
         wherePluginId = main.id;
         rowKind = tierOfPlugin(plugin) === 'team' ? 'team' : 'personal';
         sourcePluginId = pluginId;
+        includeArchivedOnTier = true;
       }
     } else if (plugin.slug === MAIN_PLUGIN_SLUG) {
       rowKind = 'personal';
@@ -598,7 +633,18 @@ export class PluginsService {
 
     // 把过滤条件抽成函数：items 与 total 必须走**完全相同**的 where，否则分页数会对不上
     const applyFilters = (qb: any) => {
-      qb.where('s.plugin_id = :pluginId', { pluginId: wherePluginId });
+      if (includeArchivedOnTier && sourcePluginId) {
+        // (权益行：落主行且 source 指向本商品) OR (归档行：仍挂在商品自己 id 上)
+        qb.where(
+          new Brackets((w) => {
+            w.where('s.plugin_id = :pluginId', { pluginId: wherePluginId })
+              .andWhere('s.source_plugin_id = :srcId', { srcId: sourcePluginId })
+              .orWhere('s.plugin_id = :archivedId', { archivedId: sourcePluginId });
+          }),
+        );
+      } else {
+        qb.where('s.plugin_id = :pluginId', { pluginId: wherePluginId });
+      }
       // 归属过滤（0036 + 二轮质检 #4 防御）：团队筛选放宽到「挂了团**或** tier=team」
       // （覆盖 0035 前成交、team_id 为 NULL 的历史 b2b 行——虽然当前生产无此数据，
       // 但口径上 tier=team 就是团队档）；个人筛选收紧为互补条件。两者互斥不漏。
@@ -610,7 +656,8 @@ export class PluginsService {
       }
       // 购买档位过滤（0040）：精确匹配「用户当初买的是这一档」。
       // 主行页额外放行 NULL（历史行无法还原购买档位 → 归主行，避免老数据消失）。
-      if (sourcePluginId) {
+      // 档位/试用页已在上面 Brackets 内完成两路匹配，这里不再叠加。
+      if (sourcePluginId && !includeArchivedOnTier) {
         if (includeNullSource) {
           qb.andWhere('(s.source_plugin_id IS NULL OR s.source_plugin_id = :srcId)', {
             srcId: sourcePluginId,
