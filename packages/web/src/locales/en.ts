@@ -395,6 +395,24 @@ const en = {
     fieldMaxActivationsHint: 'Max accounts that can activate this plugin (1-50, default 2). Raise it for team plans.',
     fieldDuration: 'Subscription validity (days)',
     fieldDurationHint: 'Default duration for new/renewed subscriptions of this plugin (1-3650, default 30). Also used as the default when manually granting a subscription.',
+    fieldKind: 'Product type',
+    fieldKindHint:
+      'Standalone = entitlement lives on this row. Tier / trial = entitlement is granted on the parent plugin row (the extension only checks the parent). Choosing "trial" pre-fills 1 purchase per user and disables renewal.',
+    kindStandard: 'Standalone (regular sale)',
+    kindTier: 'Price tier (another price of the same plugin)',
+    kindTrial: 'Trial (one-off)',
+    fieldParent: 'Parent plugin',
+    fieldParentHint:
+      'Tier / trial entitlements are granted on this row. Leaving it empty or wrong means "user paid but the extension cannot find the entitlement".',
+    parentPick: 'Select the parent plugin',
+    fieldPurchaseLimit: 'Purchases per user',
+    fieldPurchaseLimitHint:
+      'Empty = unlimited. 1 = each user can buy only once (typical for a new-user trial). Refunds return the quota.',
+    fieldRenewAllowed: 'Allow renewal',
+    fieldRenewAllowedHint:
+      'When off, the account page hides the renew button and users must pick a plan from the marketplace. Trials must be off, otherwise renewal charges the trial price forever.',
+    renewYes: 'Renewable',
+    renewNo: 'Not renewable',
     promoExpired: 'Promo ended — original price applies',
     fieldStatus: 'Status',
     fieldPackage: 'Install package',
@@ -1032,6 +1050,11 @@ const en = {
     mineLoadFailed: 'Could not load your subscription status. Subscribe buttons are temporarily disabled to avoid a duplicate purchase — please refresh and retry.',
     /* QA 2026-10-12 round 4: label for the disabled button when the status is unknown. */
     subsUnknown: 'Status unknown',
+    /* 0041: purchase limit per user (e.g. one-time new-user trial). */
+    limitBadge: 'Limit ',
+    limitUnit: ' purchase(s)',
+    limitReached: 'Already claimed',
+    limitReachedHint: 'This product can be purchased only once per user — you have reached the limit.',
     expired: 'Expired',
     active: 'Active',
     myTitle: 'My Plugin Subscriptions',
@@ -1039,6 +1062,7 @@ const en = {
     myHint: 'Manage your subscribed plugins and authorized devices; cancel anytime.',
     descLabel: 'Features',
     renew: 'Renew',
+    renewDisabled: 'One-time entitlement — not renewable. Pick a regular plan from the marketplace when it expires.',
     resubscribe: 'Resubscribe',
     loading: 'Loading…',
     needLogin: 'Please ',

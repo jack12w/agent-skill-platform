@@ -14,9 +14,10 @@ import { isSubscriptionEntitled } from './plugin-auth.util';
 import {
   OrdersService,
   MAIN_PLUGIN_SLUG,
-  isMainPluginTierSlug,
-  tierOfTierSlug,
   mergeSeatsFloor,
+  isTierLikePlugin,
+  tierOfPlugin,
+  resolveEntitlementParent,
 } from '../payments/orders.service';
 import { OssService } from '../storage/oss.service';
 
@@ -93,6 +94,46 @@ export class PluginsService {
     return rows as PluginSubscription[];
   }
 
+  /**
+   * 我的「限购名额」快照（0041）：市场页据此把已达上限的商品卡片置灰、按钮改「已领取」。
+   *
+   * 只返回**配置了上限**的商品，不把全量商品 id 塞给前端。
+   * 统计口径与下单拦截（orders.countPaidPluginPurchases）逐字一致：
+   * PAID/DELIVERED 且未退款，COUNT(DISTINCT o.id)。
+   * 口径一旦不一致就会出现「卡片说还能买、点下单被拒」的矛盾。
+   */
+  async purchaseLimits(
+    userId: string,
+  ): Promise<Record<string, { used: number; limit: number; exhausted: boolean }>> {
+    const limited = await this.pluginRepo.find({
+      where: { status: 'active', max_purchases_per_user: Not(IsNull()) },
+    });
+    if (!limited.length) return {};
+
+    const rows: any[] = await this.subRepo.manager.query(
+      `SELECT i.subject_id AS plugin_id, COUNT(DISTINCT o.id) AS c
+         FROM orders o
+         JOIN order_items i ON i.order_id = o.id
+        WHERE o.user_id = $1
+          AND i.subject_type = 'plugin'
+          AND i.subject_id = ANY($2::uuid[])
+          AND o.status IN ('PAID','DELIVERED')
+          AND COALESCE(o.refunded_cents, 0) = 0
+        GROUP BY i.subject_id`,
+      [userId, limited.map((p) => p.id)],
+    );
+    const used: Record<string, number> = {};
+    for (const r of rows) used[String(r.plugin_id)] = Number(r.c ?? 0);
+
+    const out: Record<string, { used: number; limit: number; exhausted: boolean }> = {};
+    for (const p of limited) {
+      const u = used[p.id] ?? 0;
+      const limit = Number(p.max_purchases_per_user);
+      out[p.id] = { used: u, limit, exhausted: u >= limit };
+    }
+    return out;
+  }
+
   /** 订阅下单（包月，微信 Native） */
   async subscribe(userId: string, pluginId: string) {
     const plugin = await this.pluginRepo.findOne({ where: { id: pluginId } });
@@ -120,8 +161,10 @@ export class PluginsService {
      * b2b 商品没单独配 download_key 时回退主插件的，避免已购企业版用户点下载报
      * 「暂未配置下载文件」。
      */
-    if (!plugin.download_key && isMainPluginTierSlug(plugin.slug)) {
-      const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
+    if (!plugin.download_key && isTierLikePlugin(plugin)) {
+      // 0041：显式 parent_plugin_id 优先，slug 前缀兜底（试用商品的 slug 曾被填成
+      // `7testing` 这类无前缀值，前缀判据会漏）
+      const main = await resolveEntitlementParent(this.pluginRepo, plugin);
       if (main?.download_key) plugin = main;
     }
     if (!plugin.download_key) {
@@ -278,6 +321,20 @@ export class PluginsService {
     const exists = await this.pluginRepo.findOne({ where: { slug } });
     if (exists) throw new ConflictException('slug 已存在');
 
+    /**
+     * 商品类型与档位归属（0041，2026-10-28 事故后的强制约束）。
+     *
+     * 事故：运营建「新用户试用」时 slug 填了 `7testing`，权益映射靠 slug 前缀判定 →
+     * 不认 → 订阅落在试用行 → 扩展端按主行查不到 → 用户买了用不了。
+     * 现在改为显式 `parent_plugin_id`，且 kind 为 tier/trial 时**必须**有归属，
+     * 不再允许「靠命名约定碰运气」。
+     */
+    const kind = this.normalizeKind(body?.kind);
+    const parentId = await this.resolveParentInput(body?.parent_plugin_id, kind, slug);
+    // 试用默认值：每人 1 次、不可续费（后台仍可显式覆盖）
+    const defaultLimit = kind === 'trial' ? 1 : null;
+    const defaultRenew = kind !== 'trial';
+
     const plugin = this.pluginRepo.create({
       slug,
       name,
@@ -296,6 +353,13 @@ export class PluginsService {
       sort_order: Number(body?.sort_order) || 0,
       max_activations: this.normalizeActivations(body?.max_activations),
       subscription_duration_days: this.normalizeDuration(body?.subscription_duration_days),
+      kind,
+      parent_plugin_id: parentId,
+      max_purchases_per_user:
+        body?.max_purchases_per_user === undefined
+          ? defaultLimit
+          : this.normalizePurchaseLimit(body.max_purchases_per_user),
+      renew_allowed: this.normalizeRenewAllowed(body?.renew_allowed, defaultRenew),
       download_key: body?.download_key ?? null,
       download_filename: body?.download_filename ?? null,
       owner_team_id: body?.owner_team_id || null,
@@ -337,6 +401,32 @@ export class PluginsService {
     }
     if (body?.subscription_duration_days !== undefined) {
       plugin.subscription_duration_days = this.normalizeDuration(body.subscription_duration_days);
+    }
+    /**
+     * 商品类型 / 档位归属 / 限购 / 续费（0041）。
+     * 切到 trial 时补默认值（限购 1 次、不可续费）；显式传了就尊重显式值。
+     */
+    if (body?.kind !== undefined) {
+      plugin.kind = this.normalizeKind(body.kind);
+      if (plugin.kind === 'trial') {
+        if (body?.max_purchases_per_user === undefined && plugin.max_purchases_per_user == null) {
+          plugin.max_purchases_per_user = 1;
+        }
+        if (body?.renew_allowed === undefined) plugin.renew_allowed = false;
+      }
+    }
+    if (body?.parent_plugin_id !== undefined) {
+      plugin.parent_plugin_id = await this.resolveParentInput(
+        body.parent_plugin_id,
+        plugin.kind || 'standard',
+        plugin.slug,
+      );
+    }
+    if (body?.max_purchases_per_user !== undefined) {
+      plugin.max_purchases_per_user = this.normalizePurchaseLimit(body.max_purchases_per_user);
+    }
+    if (body?.renew_allowed !== undefined) {
+      plugin.renew_allowed = this.normalizeRenewAllowed(body.renew_allowed, true);
     }
     if (body?.price_monthly_cents !== undefined) {
       plugin.price_monthly_cents = this.normalizePrice(body.price_monthly_cents);
@@ -488,11 +578,11 @@ export class PluginsService {
     let sourcePluginId: string | null = null;
     /** true = 主行页：source 为 NULL 的历史行也算「主行直购」，一并显示 */
     let includeNullSource = false;
-    if (isMainPluginTierSlug(plugin.slug)) {
-      const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
+    if (isTierLikePlugin(plugin)) {
+      const main = await resolveEntitlementParent(this.pluginRepo, plugin);
       if (main) {
         wherePluginId = main.id;
-        rowKind = tierOfTierSlug(plugin.slug) === 'team' ? 'team' : 'personal';
+        rowKind = tierOfPlugin(plugin) === 'team' ? 'team' : 'personal';
         sourcePluginId = pluginId;
       }
     } else if (plugin.slug === MAIN_PLUGIN_SLUG) {
@@ -591,8 +681,9 @@ export class PluginsService {
     // **没人读的死行**上——扩展端与 AI 门禁只认主行 slug，落错行 = 后台显示已开通、
     // 用户实际无权益。旧实现只识别 `-b2b`，故 `-year` 手动开通同样会落死行。
     let targetPluginId = pluginId;
-    if (isMainPluginTierSlug(plugin.slug)) {
-      const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
+    // 0041：判定改用「显式 parent_plugin_id 优先、slug 前缀兜底」，见 isTierLikePlugin
+    if (isTierLikePlugin(plugin)) {
+      const main = await resolveEntitlementParent(this.pluginRepo, plugin);
       if (main) targetPluginId = main.id;
     }
 
@@ -703,8 +794,9 @@ export class PluginsService {
     // 与列表筛选/新增入口同规）。少了这层映射，b2b 页点编辑会被
     // 「该订阅不属于当前插件」误杀（行本身就在主插件行上）。
     let targetPluginId = pluginId;
-    if (isMainPluginTierSlug(plugin.slug)) {
-      const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
+    // 0041：判定改用「显式 parent_plugin_id 优先、slug 前缀兜底」，见 isTierLikePlugin
+    if (isTierLikePlugin(plugin)) {
+      const main = await resolveEntitlementParent(this.pluginRepo, plugin);
       if (main) targetPluginId = main.id;
     }
 
@@ -879,6 +971,70 @@ export class PluginsService {
     const n = Math.round(Number(v));
     if (!Number.isFinite(n) || n < 1) return 30;
     return Math.min(n, PluginsService.MAX_SUB_DAYS);
+  }
+
+  /**
+   * 商品类型归一化（0041）：非法/缺失一律回落 'standard'（独立商品）。
+   * 未知值不抛错是有意的——若将来加新类型，老前端提交旧表单不该 500。
+   */
+  private normalizeKind(v: any): 'standard' | 'tier' | 'trial' {
+    const s = String(v ?? '').trim();
+    return s === 'tier' || s === 'trial' ? s : 'standard';
+  }
+
+  /**
+   * 每用户限购次数归一化（0041）：NULL = 不限；非法/小于 1 → NULL。
+   * 上限 999 只为防手滑填 99999（真实场景值是 1~3）。
+   */
+  private normalizePurchaseLimit(v: any): number | null {
+    if (v === null || v === undefined || v === '') return null;
+    const n = Math.round(Number(v));
+    if (!Number.isFinite(n) || n < 1) return null;
+    return Math.min(n, 999);
+  }
+
+  /** 续费开关归一化：接受 boolean / 'true' / 'false' / 1 / 0；缺失用 fallback */
+  private normalizeRenewAllowed(v: any, fallback: boolean): boolean {
+    if (v === null || v === undefined) return fallback;
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v !== 0;
+    const s = String(v).trim().toLowerCase();
+    if (s === 'false' || s === '0' || s === 'no' || s === 'off') return false;
+    if (s === 'true' || s === '1' || s === 'yes' || s === 'on') return true;
+    return fallback;
+  }
+
+  /**
+   * 解析「所属主插件」（0041）。
+   *
+   * 规则：
+   *   · 显式传了 id → 校验存在性后采用
+   *   · 没传 + kind='standard' → null（独立商品，权益在自己身上）
+   *   · 没传 + kind 是 tier/trial → 按 slug 前缀猜主行（`alibaba-toolkit-*`）；
+   *     猜不到直接抛错。**不允许静默留空** —— 留空就是「用户付费后权益没人读」
+   *     那类事故（2026-10-28 试用商品落错行，以及 2026-10-12 年付档位同类问题）。
+   */
+  private async resolveParentInput(
+    v: any,
+    kind: 'standard' | 'tier' | 'trial',
+    slug: string,
+  ): Promise<string | null> {
+    const explicit = v === null || v === undefined ? '' : String(v).trim();
+    if (explicit) {
+      const parent = await this.pluginRepo.findOne({ where: { id: explicit } });
+      if (!parent) throw new BadRequestException('「所属主插件」不存在，请重新选择');
+      if (String(slug || '').trim() === parent.slug) {
+        throw new BadRequestException('「所属主插件」不能是商品自身');
+      }
+      return parent.id;
+    }
+    if (kind === 'standard') return null;
+
+    const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
+    if (main && String(slug || '').startsWith(`${MAIN_PLUGIN_SLUG}-`)) return main.id;
+    throw new BadRequestException(
+      '价格档位 / 试用商品必须指定「所属主插件」：扩展端只按主插件行读权益，留空会导致用户付费后无法使用',
+    );
   }
 
   /** 由名称生成 ascii slug；名称含中文时退化为随机短串 */

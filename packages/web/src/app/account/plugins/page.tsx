@@ -13,6 +13,10 @@ interface Plugin {
   name: string;
   category: string;
   price_monthly_cents: number;
+  /** 0041：是否允许续费。试用商品恒为 false → 卡片不渲染续费按钮 */
+  renew_allowed?: boolean;
+  /** 0041：商品类型，仅用于文案判断（trial 到期后要引导去市场重新选购） */
+  kind?: 'standard' | 'tier' | 'trial';
 }
 
 interface MySub {
@@ -701,7 +705,21 @@ export default function MyPluginsPage() {
                       ⚠️ 2026-10-12 质检：团长本人的团队行 via_team 也是 true（team_id
                       非空），旧条件 !viaTeam 把团长一起藏了 → 全站没有任何入口能再下
                       团队版的单（市场页对团长也只显示「已订阅」）。故加 || teamOwner。 */}
-                  {(!viaTeam || teamOwner) && (
+                  {(!viaTeam || teamOwner) &&
+                    (srcPlugin?.renew_allowed === false ? (
+                      /*
+                       * 0041（2026-10-28）：一次性权益（试用）不提供续费入口。
+                       *
+                       * 为什么必须在这一层拦：续费按 `source_plugin_id` 原档位下单，
+                       * 试用行的 source 就是试用商品 → 续费会按 ¥0.01 / 3 天 重新下单，
+                       * 等于让用户无限白用（资损）。限购只在**购买**路径生效，
+                       * 续费走的是同一个下单接口，但语义上属于「重复购买」，
+                       * 后端已按 max_purchases 拦；这里把入口直接收掉，避免用户点了报错。
+                       */
+                      <span className="text-[11px] leading-relaxed text-neutral-400">
+                        {t('plugins.renewDisabled')}
+                      </span>
+                    ) : (
                     <button
                       onClick={() => {
                         // 续费必须按「用户当初购买的那一档商品」下单（0040）：
@@ -764,7 +782,7 @@ export default function MyPluginsPage() {
                     >
                       {valid ? t('plugins.renew') : t('plugins.resubscribe')}
                     </button>
-                  )}
+                    ))}
                   {/* cancelled 后不再显示「取消订阅」：再点一次毫无意义，只会让用户
                       以为上次没生效。想恢复就点「续费」（会顺延，不吞剩余天数）。
                       另外受 SHOW_CANCEL_BUTTON 总开关控制（见文件顶部说明），当前为隐藏。 */}

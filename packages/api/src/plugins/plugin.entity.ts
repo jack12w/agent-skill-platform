@@ -99,6 +99,46 @@ export class Plugin {
   @Column({ type: 'int', nullable: true })
   team_seats: number | null;
 
+  /**
+   * 商品类型（0041，2026-10-28）：
+   *   standard = 独立商品（自己的权益实体，如基础版 alibaba-toolkit）
+   *   tier     = 同一插件的价格档位（Pro 年付 / Team 专业版），权益落在 parent_plugin_id
+   *   trial    = 试用，默认自带「限购 1 次 + 不可续费」
+   *
+   * 为什么不再靠 slug 前缀判定：运营手工建商品时把 slug 填成 `7testing`，
+   * `isMainPluginTierSlug()` 的前缀判据失效 → 试用订阅落错行 → 插件端读不到权益
+   * （2026-10-28 生产事故）。显式字段不依赖命名约定。
+   */
+  @Column({ type: 'text', default: 'standard' })
+  kind: 'standard' | 'tier' | 'trial';
+
+  /**
+   * 权益归属的主插件 id（0041）：kind 为 tier/trial 时必填。
+   * 扩展端 auth_core.js 写死 DEFAULT_SLUG='alibaba-toolkit'，设备注册/权益校验/AI 门禁
+   * 全部只认主插件行 —— 档位订单必须把订阅落在这里。
+   * NULL = 独立商品（kind='standard'）；为兼容 0041 之前的数据，判定时再回退 slug 前缀。
+   */
+  @Column({ type: 'uuid', nullable: true })
+  parent_plugin_id: string | null;
+
+  /**
+   * 每用户可购买次数上限（0041）。NULL = 不限。
+   * 1 = 一次性试用（每人只能买一次）；2/3 = 限量促销。
+   * 校验点：下单（orders.createOrder）与发货兜底（fulfillPluginSubscription）；
+   * 统计口径 = orders.status IN ('PAID','DELIVERED') 且 refunded_cents = 0 的订单数
+   * （退款归还名额，运营可手工退款重置）。
+   */
+  @Column({ type: 'int', nullable: true })
+  max_purchases_per_user: number | null;
+
+  /**
+   * 是否允许在账号中心「续费」（0041）。
+   * trial 商品恒为 false —— 试用期结束后必须回市场页重新选购，
+   * 否则 source_plugin_id 会让续费按试用价（¥0.01/3 天）下单，等于无限白用。
+   */
+  @Column({ type: 'boolean', default: true })
+  renew_allowed: boolean;
+
   /** 出品方（团队），可为空表示平台直营 */
   @Column({ type: 'uuid', nullable: true })
   owner_team_id: string;

@@ -145,6 +145,17 @@ export class PluginsController {
     return this.svc.mySubscriptions(this.uid(req));
   }
 
+  /**
+   * 我的限购名额（0041）：市场页把「每人只能买 N 次」的商品按已购次数置灰。
+   * 必须 no-store —— 用户刚付完款返回市场页就要看到「已领取」，缓存快照会让他
+   * 以为还能再买一次。
+   */
+  @Get('limits')
+  @Header('Cache-Control', 'no-store')
+  limits(@Req() req: Request) {
+    return this.svc.purchaseLimits(this.uid(req));
+  }
+
   /** 已授权设备列表（账户页展示 + 逐台吊销） */
   @Get(':id/devices')
   @Header('Cache-Control', 'no-store')

@@ -27,6 +27,12 @@ interface Plugin {
   features?: string[] | null;
   status: string;
   download_key?: string | null;
+  /* ── 0041（2026-10-28）：商品类型 / 档位归属 / 限购 / 续费 ── */
+  kind?: 'standard' | 'tier' | 'trial';
+  parent_plugin_id?: string | null;
+  /** 每用户限购次数；null/undefined = 不限 */
+  max_purchases_per_user?: number | null;
+  renew_allowed?: boolean;
 }
 
 interface MySub {
@@ -58,6 +64,18 @@ const B2B_TIER_SLUG = 'alibaba-toolkit-b2b';
 function isTierSlug(slug?: string | null): boolean {
   const s = String(slug ?? '');
   return s !== MAIN_PLUGIN_SLUG && s.startsWith(`${MAIN_PLUGIN_SLUG}-`);
+}
+
+/**
+ * 商品级判定（0041，与后端 isTierLikePlugin 逐条对齐）：显式字段优先、slug 前缀兜底。
+ *
+ * 2026-10-28 事故：试用商品的 slug 被运营填成 `7testing`，前缀判据失效 →
+ * 市场页把它当独立商品渲染，订阅状态与权益行对不上。显式 parent_plugin_id 修掉这个洞。
+ */
+function isTierPlugin(p: Plugin): boolean {
+  if (p.kind === 'tier' || p.kind === 'trial') return true;
+  if (p.parent_plugin_id) return true;
+  return isTierSlug(p.slug);
 }
 
 const EMOJI: Record<string, string> = {
@@ -119,6 +137,14 @@ export default function PluginsPage() {
   // 否则已付费用户看到可点的「订阅」→ 重复下单。2026-10-12 四轮质检：
   // 三轮只加了文案（声称「已暂停展示订阅按钮」）却没实现，属文案与行为不符。
   const [subsUnknown, setSubsUnknown] = useState(false);
+  /**
+   * 限购名额（0041）：`{ [pluginId]: {used, limit, exhausted} }`。
+   * 拉取失败时保持空对象 → 卡片不显示「已领取」；服务端下单拦截仍是最终防线，
+   * 所以这里**不**把整页切成错误态（否则一次统计接口抖动会让整个市场页不可用）。
+   */
+  const [limits, setLimits] = useState<
+    Record<string, { used: number; limit: number; exhausted: boolean }>
+  >({});
 
   const load = async () => {
     setLoading(true);
@@ -172,9 +198,22 @@ export default function PluginsPage() {
     }
   };
 
+  /** 限购名额（0041）：未登录 / 拉取失败都静默降级为空，服务端下单拦截兜底 */
+  const loadLimits = async () => {
+    if (!isAuthed()) return;
+    try {
+      const res = await fetch('/api/plugins/limits', { headers: authHeaders() });
+      if (!res.ok) return;
+      setLimits(await res.json());
+    } catch {
+      /* 静默：不影响浏览与购买主流程 */
+    }
+  };
+
   useEffect(() => {
     load();
     loadMine();
+    loadLimits();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -208,8 +247,9 @@ export default function PluginsPage() {
     // ⚠️ 已知取舍：订阅行不记录「买的是哪个档位商品」，所以个人行（体验版月付）与
     //    年付档位在数据上不可区分 —— 月付用户会看到年付卡片也是「已订阅」，
     //    即**没有月付→年付的升级入口**（需产品侧确认要不要补「升级」CTA）。
-    if (!s && isTierSlug(p.slug)) {
-      const mainId = plugins.find((x) => x.slug === MAIN_PLUGIN_SLUG)?.id;
+    if (!s && isTierPlugin(p)) {
+      const mainId =
+        p.parent_plugin_id || plugins.find((x) => x.slug === MAIN_PLUGIN_SLUG)?.id;
       const main = mainId ? subs[mainId] : null;
       if (main) {
         const wantTeam = p.slug === B2B_TIER_SLUG;
@@ -558,6 +598,8 @@ export default function PluginsPage() {
             <div className="space-y-4">
               {visible.map((p) => {
                 const sub = isActive(p);
+                // 0041：限购名额（后端只返回配置了上限的商品，其余为 undefined）
+                const lim = limits[p.id];
                 const emoji = p.icon_url ? null : EMOJI[p.category] || '🧩';
                 // 优先用商品自带的功能点；老数据没填时退回按「；」拆 description
                 const features =
@@ -592,6 +634,14 @@ export default function PluginsPage() {
                           <span className="rounded-lg bg-green-50 border border-green-200 px-2.5 py-0.5 text-[11px] font-semibold text-green-700">
                             {t('plugins.subscribed')} · {t('plugins.validUntil')}{' '}
                             {new Date(sub.expires_at).toLocaleDateString('zh-CN')}
+                          </span>
+                        )}
+                        {/* 0041：限购徽标 —— 让用户在点进去之前就知道「这个只能买一次」 */}
+                        {!!lim && (
+                          <span className="rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+                            {t('plugins.limitBadge')}
+                            {lim.limit}
+                            {t('plugins.limitUnit')}
                           </span>
                         )}
                       </div>
@@ -657,6 +707,17 @@ export default function PluginsPage() {
                             className="flex-1 rounded-lg border border-neutral-200 bg-neutral-100 py-2.5 text-sm font-semibold text-neutral-400 cursor-not-allowed"
                           >
                             {t('plugins.subsUnknown')}
+                          </button>
+                        ) : lim?.exhausted ? (
+                          // 0041：已达限购次数（如「新用户试用」每人 1 次）→ 置灰不可再下单。
+                          // 服务端下单接口同样拦截，这里只是把结果提前到点击之前。
+                          <button
+                            type="button"
+                            disabled
+                            title={t('plugins.limitReachedHint')}
+                            className="flex-1 rounded-lg border border-neutral-200 bg-neutral-100 py-2.5 text-sm font-semibold text-neutral-400 cursor-not-allowed"
+                          >
+                            {t('plugins.limitReached')}
                           </button>
                         ) : (
                           <button

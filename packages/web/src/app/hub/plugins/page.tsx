@@ -25,6 +25,15 @@ interface PluginItem {
   max_activations: number;
   /** 订阅有效期（天）：本款插件新开/续费订阅的默认时长 */
   subscription_duration_days: number;
+  /* ── 0041（2026-10-28）：商品类型 / 档位归属 / 限购 / 续费 ── */
+  /** standard=独立商品 / tier=价格档位 / trial=试用 */
+  kind: 'standard' | 'tier' | 'trial';
+  /** 权益归属的主插件 id（tier/trial 必填） */
+  parent_plugin_id: string | null;
+  /** 每用户限购次数；null = 不限 */
+  max_purchases_per_user: number | null;
+  /** 是否允许在账号中心续费（试用恒为 false） */
+  renew_allowed: boolean;
   download_key: string | null;
   download_filename: string | null;
   /** 使用这款插件的用户数（已授权设备口径，按 user_id 去重） */
@@ -50,6 +59,12 @@ interface FormState {
   status: string;
   download_key: string;
   download_filename: string;
+  /** 0041：商品类型 / 所属主插件 / 限购次数 / 允许续费 */
+  kind: 'standard' | 'tier' | 'trial';
+  parent_plugin_id: string;
+  /** 空字符串＝不限购（不是 0，0 会被当成非法值） */
+  max_purchases_per_user: string;
+  renew_allowed: boolean;
 }
 
 const EMPTY_FORM: FormState = {
@@ -69,6 +84,10 @@ const EMPTY_FORM: FormState = {
   status: 'active',
   download_key: '',
   download_filename: '',
+  kind: 'standard',
+  parent_plugin_id: '',
+  max_purchases_per_user: '',
+  renew_allowed: true,
 };
 
 /** ISO → 本地 datetime-local 输入值（YYYY-MM-DDTHH:mm） */
@@ -220,6 +239,11 @@ export default function HubPluginsPage() {
       status: p.status || 'active',
       download_key: p.download_key || '',
       download_filename: p.download_filename || '',
+      kind: p.kind || 'standard',
+      parent_plugin_id: p.parent_plugin_id || '',
+      max_purchases_per_user:
+        p.max_purchases_per_user == null ? '' : String(p.max_purchases_per_user),
+      renew_allowed: p.renew_allowed !== false,
     });
     setErr('');
     setUploadErr('');
@@ -258,6 +282,14 @@ export default function HubPluginsPage() {
       status: form.status,
       download_key: form.download_key.trim() || null,
       download_filename: form.download_filename.trim() || null,
+      /* 0041：商品类型与档位归属。parent 只在 tier/trial 时提交，
+         standard 显式传 null（后端据此清空，避免遗留的错误归属）。 */
+      kind: form.kind,
+      parent_plugin_id: form.kind === 'standard' ? null : form.parent_plugin_id || null,
+      max_purchases_per_user: form.max_purchases_per_user.trim()
+        ? Math.max(1, Math.round(Number(form.max_purchases_per_user) || 1))
+        : null,
+      renew_allowed: form.renew_allowed,
     };
     if (form.slug.trim()) payload.slug = form.slug.trim().toLowerCase();
 
@@ -602,6 +634,95 @@ export default function HubPluginsPage() {
                     value={form.category}
                     onChange={(e) => setForm({ ...form, category: e.target.value })}
                   />
+                </label>
+                {/*
+                  0041（2026-10-28）：商品类型。以前「是不是某个插件的档位/试用」靠 slug
+                  前缀 `alibaba-toolkit-` 判断，运营把试用商品的 slug 填成 `7testing`
+                  就整条链路失效（订阅落错行 → 扩展端查不到 → 用户付费后用不了）。
+                  现在改成显式选择，选「试用」还会自动带上限购 1 次 + 不可续费。
+                */}
+                <label className="block">
+                  <span className="text-xs text-neutral-500">{t('admin.fieldKind')}</span>
+                  <select
+                    className={field}
+                    value={form.kind}
+                    onChange={(e) => {
+                      const kind = e.target.value as FormState['kind'];
+                      setForm((f) => ({
+                        ...f,
+                        kind,
+                        // 切到试用：按后端的试用语义同步默认值（仍可手改）
+                        ...(kind === 'trial'
+                          ? {
+                              max_purchases_per_user: f.max_purchases_per_user || '1',
+                              renew_allowed: false,
+                            }
+                          : {}),
+                      }));
+                    }}
+                  >
+                    <option value="standard">{t('admin.kindStandard')}</option>
+                    <option value="tier">{t('admin.kindTier')}</option>
+                    <option value="trial">{t('admin.kindTrial')}</option>
+                  </select>
+                  <span className="block mt-1 text-[11px] text-neutral-400">
+                    {t('admin.fieldKindHint')}
+                  </span>
+                </label>
+                {form.kind !== 'standard' && (
+                  <label className="block">
+                    <span className="text-xs text-neutral-500">{t('admin.fieldParent')} *</span>
+                    <select
+                      className={field}
+                      value={form.parent_plugin_id}
+                      onChange={(e) => setForm({ ...form, parent_plugin_id: e.target.value })}
+                    >
+                      <option value="">{t('admin.parentPick')}</option>
+                      {items
+                        .filter((p) => p.kind !== 'tier' && p.kind !== 'trial' && p.id !== editingId)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}（{p.slug}）
+                          </option>
+                        ))}
+                    </select>
+                    <span className="block mt-1 text-[11px] text-neutral-400">
+                      {t('admin.fieldParentHint')}
+                    </span>
+                  </label>
+                )}
+                <label className="block">
+                  <span className="text-xs text-neutral-500">{t('admin.fieldPurchaseLimit')}</span>
+                  <input
+                    className={field}
+                    type="number"
+                    min="1"
+                    max="999"
+                    placeholder="留空＝不限"
+                    value={form.max_purchases_per_user}
+                    onChange={(e) =>
+                      setForm({ ...form, max_purchases_per_user: e.target.value })
+                    }
+                  />
+                  <span className="block mt-1 text-[11px] text-neutral-400">
+                    {t('admin.fieldPurchaseLimitHint')}
+                  </span>
+                </label>
+                <label className="block">
+                  <span className="text-xs text-neutral-500">{t('admin.fieldRenewAllowed')}</span>
+                  <select
+                    className={field}
+                    value={form.renew_allowed ? '1' : '0'}
+                    onChange={(e) =>
+                      setForm({ ...form, renew_allowed: e.target.value === '1' })
+                    }
+                  >
+                    <option value="1">{t('admin.renewYes')}</option>
+                    <option value="0">{t('admin.renewNo')}</option>
+                  </select>
+                  <span className="block mt-1 text-[11px] text-neutral-400">
+                    {t('admin.fieldRenewAllowedHint')}
+                  </span>
                 </label>
                 <label className="block">
                   <span className="text-xs text-neutral-500">{t('admin.fieldPrice')}</span>

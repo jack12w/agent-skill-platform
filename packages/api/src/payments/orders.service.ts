@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, Not, IsNull } from 'typeorm';
+import { Repository, LessThan, Not, IsNull, In } from 'typeorm';
 import {
   Order,
   OrderItem,
@@ -61,6 +61,58 @@ export function isMainPluginTierSlug(slug?: string | null): boolean {
  */
 export function tierOfTierSlug(slug?: string | null): 'personal' | 'team' {
   return String(slug ?? '') === B2B_TIER_SLUG ? 'team' : 'personal';
+}
+
+/**
+ * 该商品是否「把权益寄托在别的插件行上」（0041，2026-10-28 生产事故后的唯一判据）。
+ *
+ * 判定顺序（**显式字段优先，slug 前缀只作兜底**）：
+ *   1. `kind` = 'tier' / 'trial' → 是档位/试用
+ *   2. `parent_plugin_id` 非空   → 有明确归属
+ *   3. 回退：slug 前缀 `alibaba-toolkit-`（0041 之前的历史数据）
+ *
+ * 为什么不能只靠 slug：运营在后台把「新用户试用」的 slug 填成 `7testing`，
+ * 前缀判据失效 → 订阅落在试用商品自己的 id 上 → 扩展端按主行查不到 → 用户买了用不了。
+ * 显式字段不依赖命名约定，运营以后随便起名都安全。
+ */
+export function isTierLikePlugin(p?: Partial<Plugin> | null): boolean {
+  if (!p) return false;
+  if (p.kind === 'tier' || p.kind === 'trial') return true;
+  if (p.parent_plugin_id) return true;
+  return isMainPluginTierSlug(p.slug);
+}
+
+/** 档位/试用商品应落入的 tier（trial 恒为个人权益；team 只由 `-b2b` 决定） */
+export function tierOfPlugin(p?: Partial<Plugin> | null): 'personal' | 'team' {
+  if (p?.kind === 'trial') return 'personal';
+  return tierOfTierSlug(p?.slug);
+}
+
+/**
+ * 解析档位/试用商品的权益归属主插件行（0041）。
+ *
+ * 返回 null = 独立商品，权益落在它自己身上。
+ * 调用方拿到 null 但 `isTierLikePlugin(p) === true` 时，说明**配置事故**
+ * （parent_plugin_id 指向的行被删了 / 主插件行缺失）→ 必须显式拒绝发货，
+ * 不能静默按独立商品发放 —— 那会产生一条没人读的死行（2026-10-12 二轮质检 L-4）。
+ */
+export async function resolveEntitlementParent(
+  pluginRepo: Repository<Plugin>,
+  plugin?: Partial<Plugin> | null,
+): Promise<Plugin | null> {
+  if (!plugin) return null;
+  // 1) 显式归属字段
+  const parentId = plugin.parent_plugin_id;
+  if (parentId && parentId !== plugin.id) {
+    const parent = await pluginRepo.findOne({ where: { id: parentId } });
+    if (parent) return parent;
+    // 指向的行已不存在 → 落到第 2 步兜底，仍解析不到由调用方判定为配置事故
+  }
+  // 2) slug 前缀兜底（0041 之前的历史档位商品）
+  if (isMainPluginTierSlug(plugin.slug)) {
+    return await pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
+  }
+  return null;
 }
 
 /**
@@ -265,6 +317,48 @@ export class OrdersService implements OnModuleInit {
       if (!plugin || plugin.status !== 'active') {
         throw new BadRequestException('插件不存在或未上架');
       }
+
+      /**
+       * 限购（0041）：max_purchases_per_user 非空即生效。典型场景「新用户试用每人一次」。
+       *
+       * 为什么必须在**下单**就拦：只靠发货兜底会让用户先付钱再被拒（钱进了商户号，
+       * 得人工退款）。下单前拦是唯一不产生资金纠纷的顺序。
+       * 并发极端情况（同一用户同时开两笔待支付单）由发货侧再拦一次兜底。
+       */
+      if (plugin.max_purchases_per_user != null) {
+        const used = await this.countPaidPluginPurchases(userId, plugin.id);
+        if (used >= plugin.max_purchases_per_user) {
+          throw new BadRequestException(
+            `该商品每人限购 ${plugin.max_purchases_per_user} 次，你已购买 ${used} 次`,
+          );
+        }
+      }
+
+      /**
+       * 禁续费（0041）：trial 商品 renew_allowed=false。
+       *
+       * 判定看**整个商品族**（该商品 + 其归属主插件）是否已有订阅行：
+       *   · 首次购买试用 → 无行 → 放行
+       *   · 试用中/试用过期后再买 → 有行 → 拒绝（配合限购双保险）
+       *   · 已有基础版订阅的付费用户来买试用 → 也拒绝，试用本就只给新用户
+       *
+       * 为什么必须服务端拦：账号中心若因 `source_plugin_id = 试用商品` 渲染出续费按钮，
+       * 会按 ¥0.01/3 天 下单 —— 等于无限白用（资损）。
+       */
+      if (plugin.renew_allowed === false) {
+        const familyIds = [plugin.id];
+        const parent = await resolveEntitlementParent(this.pluginRepo, plugin);
+        if (parent) familyIds.push(parent.id);
+        const had = await this.pluginSubRepo.count({
+          where: { user_id: userId, plugin_id: In(familyIds) },
+        });
+        if (had > 0) {
+          throw new BadRequestException(
+            '该商品为一次性权益，不支持重复购买或续费，请到插件市场选购正式档位',
+          );
+        }
+      }
+
       // 实付价一律服务端计算（促销中取促销价；促销已结束回落到划线原价）。
       // 前端不传价，也无法影响这里的金额。
       total = effectivePluginPrice(plugin);
@@ -546,6 +640,34 @@ export class OrdersService implements OnModuleInit {
   }
 
   /**
+   * 统计该用户对某商品的**已支付且未退款**订单数（0041 限购口径）。
+   *
+   * 口径选择：
+   *   · 只算 PAID / DELIVERED —— PENDING_PAY、CLOSED 不占名额，用户放弃支付不消耗次数
+   *   · 退款归还名额（`refunded_cents = 0`）—— 运营给用户退款后名额回到 0，
+   *     符合「试用被误发/用户申诉撤销」的运维预期
+   *   · COUNT(DISTINCT o.id)：一单可能有多条 item，不能按 item 行数算次数
+   *   · excludeOrderId：发货兜底时当前订单已是 PAID，必须先排除自己再与上限比较
+   */
+  private async countPaidPluginPurchases(
+    userId: string,
+    pluginId: string,
+    excludeOrderId?: string,
+  ): Promise<number> {
+    const qb = this.orderRepo
+      .createQueryBuilder('o')
+      .innerJoin(OrderItem, 'i', 'i.order_id = o.id')
+      .where('o.user_id = :userId', { userId })
+      .andWhere("i.subject_type = 'plugin'")
+      .andWhere('i.subject_id = :pluginId', { pluginId })
+      .andWhere("o.status IN ('PAID','DELIVERED')")
+      .andWhere('COALESCE(o.refunded_cents, 0) = 0');
+    if (excludeOrderId) qb.andWhere('o.id <> :excludeOrderId', { excludeOrderId });
+    const row = await qb.select('COUNT(DISTINCT o.id)', 'c').getRawOne();
+    return Number(row?.c ?? 0);
+  }
+
+  /**
    * 授予/顺延插件订阅（时长取所购插件的 subscription_duration_days，默认 30 天）。
    * 幂等：**仍有权**（active / cancelled 且未到期）→ 在现有 expires_at 基础上顺延一个周期；
    * 已到期或被终止 → 重新激活（started_at=now, expires_at=now+周期）；不存在 → 新建。
@@ -573,27 +695,38 @@ export class OrdersService implements OnModuleInit {
   ) {
     const now = Date.now();
 
-    // 档位商品（企业版 / Pro 年付 等）→ 权益映射到主插件行；主行商品照旧落在自己的行上。
-    // ⚠️ 2026-10-12 四轮质检（高危）：旧实现只识别 `-b2b` 一个档位，运营在后台新建的
-    //    其它档位商品（如 `alibaba-toolkit-year` Pro 标准版）会把订阅行落在**档位商品
-    //    自己的 id** 上 → 扩展端/AI 门禁查主行查不到 → 用户付费后无权益。见 isMainPluginTierSlug。
+    // 档位商品（企业版 / Pro 年付 / 试用 等）→ 权益映射到主插件行；独立商品照旧落在自己的行上。
+    // 0041（2026-10-28）：判定改为「显式字段优先、slug 前缀兜底」，见 isTierLikePlugin。
+    // 事故复现：运营把试用商品 slug 填成 `7testing` → 前缀判据失效 → 订阅落在试用行上
+    // → 扩展端只查主行 → 用户买了试用却一直看到「基础版已过期」。
     let targetPluginId = pluginId;
     let tier = 'personal';
     const ordered = await this.pluginRepo.findOne({ where: { id: pluginId } });
     // 订阅时长取所购商品的「订阅有效期（天）」（0033，后台逐款可配）；未配回落 30 = 原包月行为
     const MONTH = (ordered?.subscription_duration_days ?? 30) * 86400_000;
-    if (ordered && isMainPluginTierSlug(ordered.slug)) {
-      const main = await this.pluginRepo.findOne({ where: { slug: MAIN_PLUGIN_SLUG } });
-      // 主插件行缺失 = 配置事故（2026-10-12 二轮质检 L-4）：旧代码静默把档位订单
+    if (ordered && isTierLikePlugin(ordered)) {
+      const main = await resolveEntitlementParent(this.pluginRepo, ordered);
+      // 解析不到 = 配置事故（2026-10-12 二轮质检 L-4）：旧代码静默把档位订单
       // 按个人版发到档位行上——没人读的死行 + 不建团，用户付费后无权益。
       // 必须显式拒绝发货，让订单卡在非 DELIVERED 等人工处理。
       if (!main) {
         throw new BadRequestException(
-          '档位商品配置异常：主插件行（alibaba-toolkit）缺失，已拒绝发货，请联系平台管理员',
+          '档位/试用商品配置异常：找不到其归属的主插件行，已拒绝发货，请联系平台管理员',
         );
       }
       targetPluginId = main.id;
-      tier = tierOfTierSlug(ordered.slug);
+      tier = tierOfPlugin(ordered);
+    }
+
+    // 限购兜底（0041）：下单时已拦一次，这里再拦一次防并发/绕过（例如同一用户开了两笔
+    // 待支付订单，回调先后到达）。统计时排除当前订单——它此刻已是 PAID。
+    if (ordered?.max_purchases_per_user != null) {
+      const used = await this.countPaidPluginPurchases(userId, pluginId, orderId);
+      if (used >= ordered.max_purchases_per_user) {
+        throw new BadRequestException(
+          `该商品每人限购 ${ordered.max_purchases_per_user} 次，已超限，已拒绝发货，请联系平台管理员`,
+        );
+      }
     }
 
     // 席位制（0035）：团队订单自动建团（购买者=团长，已有团复用），

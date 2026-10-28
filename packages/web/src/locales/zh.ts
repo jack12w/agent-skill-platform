@@ -394,6 +394,25 @@ const zh = {
     fieldMaxActivationsHint: '该插件可授权的账号数量上限（1-50，默认 2）。团队版可调大。',
     fieldDuration: '订阅有效期（天）',
     fieldDurationHint: '本款插件新开/续费订阅的默认时长（1-3650，默认 30）；手动开通订阅时也以此为默认天数。',
+    /* 0041（2026-10-28）：商品类型 / 档位归属 / 限购 / 续费 */
+    fieldKind: '商品类型',
+    fieldKindHint:
+      '独立商品＝权益在自己身上；价格档位 / 试用＝权益落到「所属主插件」那一行（扩展端写死只按主插件行校验授权）。选「试用」会自动带上限购 1 次 + 不可续费。',
+    kindStandard: '独立商品（普通售卖）',
+    kindTier: '价格档位（同一插件的另一档价格）',
+    kindTrial: '试用（一次性体验）',
+    fieldParent: '所属主插件',
+    fieldParentHint:
+      '价格档位 / 试用的权益会落到这一行。留空或选错会导致「用户付了钱、扩展端查不到权益」。',
+    parentPick: '请选择所属主插件',
+    fieldPurchaseLimit: '每用户限购次数',
+    fieldPurchaseLimitHint:
+      '留空＝不限。填 1 ＝每个用户只能购买一次（新用户试用的典型配置）。退款后名额归还。',
+    fieldRenewAllowed: '允许续费',
+    fieldRenewAllowedHint:
+      '关闭后账号中心不再提供续费入口，用户需回市场页重新选购。试用必须关闭，否则会按试用价无限续费。',
+    renewYes: '允许续费',
+    renewNo: '不可续费',
     promoExpired: '促销已结束，实付按原价',
     fieldStatus: '状态',
     fieldPackage: '安装包',
@@ -1041,6 +1060,12 @@ const zh = {
     /* 2026-10-12 四轮质检：订阅状态未知时按钮上的文案（按钮同时置灰）。
        三轮只加了上面那句提示却没真正禁用按钮，属「文案承诺了不存在的保护」。 */
     subsUnknown: '订阅状态未知',
+    /* 0041（2026-10-28）：每用户限购（如新用户试用每人 1 次）。
+       徽标由三片文案拼成「限购 + 1 + 次」，避免 t() 插值（t 只认字符串）。 */
+    limitBadge: '限购 ',
+    limitUnit: ' 次',
+    limitReached: '已领取',
+    limitReachedHint: '该商品每人只能购买一次，你已达到上限。',
     expired: '已过期',
     active: '生效中',
     myTitle: '我的插件订阅',
@@ -1050,6 +1075,8 @@ const zh = {
     myHint: '管理你已订阅的插件与已授权设备，可随时取消。',
     descLabel: '功能',
     renew: '续费',
+    /* 0041：一次性权益（试用）不提供续费入口，改显示这句 */
+    renewDisabled: '一次性权益，不支持续费；到期后请到插件市场选购正式档位。',
     resubscribe: '重新订阅',
     loading: '加载中…',
     needLogin: '请先',
