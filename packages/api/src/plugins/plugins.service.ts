@@ -126,11 +126,14 @@ export class PluginsService {
     //   新模型下同一商品只可能有 1 条个人行（唯一索引保证），折叠反而会吞掉用户
     //   买过的档位 —— 正是用户反馈「我的基础版不见了」的根因。
     await this.sweepExpiredSubscriptions();
+    // member_count：团队行的**在册成员数**（含团长）。账号中心用它显示「团队成员 N/席位」，
+    // 而不是显示设备数 —— 团队版卖的是席位（能加几个账号），设备只是每席自己的附属。
     const rows: any[] = await this.subRepo.query(
       `SELECT s.*,
               (s.team_id IS NOT NULL) AS via_team,
               (s.team_id IS NOT NULL AND s.user_id = $1) AS is_team_owner,
-              t.name AS team_name
+              t.name AS team_name,
+              (SELECT COUNT(*)::int FROM team_members m WHERE m.team_id = s.team_id) AS member_count
          FROM plugin_subscriptions s
          LEFT JOIN teams t ON t.id = s.team_id
         WHERE s.user_id = $1
@@ -264,45 +267,40 @@ export class PluginsService {
   /**
    * 后台列表：含下架，按排序。
    *
-   * 两个计数**语义不同，必须分开给**（2026-10-28 用户实测反馈后修正）：
-   *   · `user_count`        = **订阅数**：该商品的有效订阅行按 user_id 去重。
-   *                           团队行只算 1（user_id 是团长），因为「订阅客户」按付钱的人算，
-   *                           成员是靠席位覆盖的，不是独立客户。这是运营做卖货决策要看的数。
-   *   · `device_user_count` = **使用用户数**：plugin_devices 里未吊销设备的去重用户数。
+   * `user_count` = **订阅过的用户数**（去重 user_id）。
    *
-   * 为什么不能只留一个：设备行恒绑**主插件** id，所以档位商品（试用 / Pro / 团队版）
-   * 的设备口径永远是 0；而基础版的设备数又会把试用用户的设备混进来。
-   * 旧实现只给设备口径却挂着「用户数」的列名，于是 trial/b2b 显示 0、基础版数字虚高。
+   * 口径（2026-10-28 用户现场校正）：
+   *   · **不限 status、不限是否到期** —— 曾经买过 / 被手动开通过就算，包括已过期的历史行。
+   *     运营要的是「这个商品总共发展了多少客户」，不是「此刻还有多少人能用」。
+   *   · 手动后台开通与付费购买**一视同仁**（两者都是 plugin_subscriptions 里的一行）。
+   *   · 团队行按 `user_id`（团长）只算 1 个客户；成员靠席位覆盖，不是独立客户。
+   *
+   * ⚠️ 早期版本这列统计的是 plugin_devices 的设备授权用户数：设备行恒绑**主插件** id，
+   * 于是档位商品（试用 / Pro / 团队版）永远显示 0，基础版又把试用用户的设备混进来，
+   * 数字既不全也不准。现在彻底去掉设备口径。
    */
-  async adminList(): Promise<
-    Array<Plugin & { user_count: number; device_user_count: number }>
-  > {
-    const [plugins, subs, devices] = await Promise.all([
+  async adminList(): Promise<Array<Plugin & { user_count: number }>> {
+    const [plugins, subs] = await Promise.all([
       this.pluginRepo.find({ order: { sort_order: 'ASC', created_at: 'ASC' } }),
       this.subscriberCounts(),
-      this.userCounts(),
     ]);
     return plugins.map((p) => ({
       ...p,
       user_count: subs[p.id] ?? 0,
-      device_user_count: devices[p.id] ?? 0,
     }));
   }
 
   /**
-   * 各商品的「有效订阅用户数」聚合（0044 口径）。
+   * 各商品的「订阅过的用户数」聚合（去重 user_id，全状态全时效）。
    *
-   * 有效 = `status IN ('active','cancelled') AND expires_at > now()`，与判权函数
-   * `isSubscriptionEntitled()` 逐字一致 —— 口径一旦不同就会出现「列表说有人订阅、
-   * 实际点进去全过期」的矛盾。
-   * `COUNT(DISTINCT user_id)`：同一人同时持个人行与团队行只算 1 个客户。
+   * 与列表口径必须逐字一致：`COUNT(DISTINCT user_id) GROUP BY plugin_id`，
+   * 不加任何 WHERE —— 少了任何一类（过期行 / 手动开通行）都会出现
+   * 「列表说 3 个、后台订阅明细里明明有 4 个」的矛盾。
    */
   private async subscriberCounts(): Promise<Record<string, number>> {
     const rows: Array<{ plugin_id: string; cnt: number }> = await this.subRepo.query(
       `SELECT plugin_id, COUNT(DISTINCT user_id)::int AS cnt
          FROM plugin_subscriptions
-        WHERE status IN ('active', 'cancelled')
-          AND expires_at > now()
         GROUP BY plugin_id`,
     );
     const map: Record<string, number> = {};
@@ -311,36 +309,19 @@ export class PluginsService {
   }
 
   /**
-   * 各插件的「使用用户数」聚合（一次 GROUP BY 全量算完，避免 N+1）。
-   * 口径与后台列表「用户数」列、以及 :id/users 弹窗完全一致：
-   * plugin_devices 中 revoked_at IS NULL，按 user_id 去重。
+   * 后台：某商品的「订阅过的用户」列表（distinct user_id，join users 取邮箱/昵称）。
    *
-   * ⚠️ 用原始 SQL 片段 `.where('d.revoked_at IS NULL')` —— 不要用 `where: { revoked_at: null }`
-   * 对象写法（TypeORM 0.3 默认会把裸 null 条件静默丢弃，见项目 memory）。
-   */
-  private async userCounts(): Promise<Record<string, number>> {
-    const rows = await this.deviceRepo
-      .createQueryBuilder('d')
-      .select('d.plugin_id', 'plugin_id')
-      .addSelect('COUNT(DISTINCT d.user_id)', 'cnt')
-      .where('d.revoked_at IS NULL')
-      .groupBy('d.plugin_id')
-      .getRawMany();
-    const map: Record<string, number> = {};
-    for (const r of rows) map[r.plugin_id] = Number(r.cnt) || 0;
-    return map;
-  }
-
-  /**
-   * 后台：某插件的「使用用户」列表（distinct 已授权设备用户，join users 取邮箱/昵称）。
+   * 口径与列表「订阅数」列完全一致：**只要有订阅行就算**（不限 status、不限是否到期，
+   * 手动后台开通与付费购买同权）。一个用户可能有多条行（个人行 + 团队行），聚合成一行：
+   *   · start_date = 最早一次订阅 started_at（首次开通）
+   *   · expire_date= 最晚一次到期 expires_at
+   *   · valid_cnt  = 其中仍在期的行数（>0 即当前有效，前端据此打标）
    *
-   * 口径与列表页「用户数」列一致：plugin_devices 中 revoked_at IS NULL，按 user_id 去重；
-   * 一个用户可能有多台设备，这里聚合成一行：
-   *   · start_date  = 该用户最早一次设备授权 created_at（首次开始使用）
-   *   · recent_date = 该用户最近活跃 last_seen_at（未上报过则为 NULL，前端显示「—」）
+   * ⚠️ 旧实现查 plugin_devices（设备授权用户）：设备恒绑主插件 id，导致试用 / Pro /
+   * 团队版点开是空的、基础版又混进别档用户 —— 2026-10-28 用户实测反馈后改为订阅口径。
    *
-   * 复用 adminListSubscriptions 的写法：devices 表用构造函数注入的 deviceRepo，
-   * users 走 `leftJoin(User, ...)`（与订阅列表同构，避免往 module ENTITIES 加 User 触发 502）。
+   * 复用 adminListSubscriptions 的写法：users 走 `leftJoin(User, ...)`
+   * （避免往 module ENTITIES 加 User 触发 502）。
    */
   async adminListUsers(pluginId: string, q: any) {
     await this.adminGet(pluginId); // 插件不存在 → 直接 404
@@ -351,7 +332,7 @@ export class PluginsService {
 
     // items 与 total 必须走**完全相同**的 where，否则分页数会对不上
     const apply = (qb: any) => {
-      qb.where('d.plugin_id = :pluginId', { pluginId }).andWhere('d.revoked_at IS NULL');
+      qb.where('s.plugin_id = :pluginId', { pluginId });
       if (search) {
         qb.andWhere('(u.email ILIKE :kw OR u.name ILIKE :kw)', { kw: `%${search}%` });
       }
@@ -359,27 +340,30 @@ export class PluginsService {
     };
 
     const items = await apply(
-      this.deviceRepo.createQueryBuilder('d').leftJoin(User, 'u', 'u.id = d.user_id'),
+      this.subRepo.createQueryBuilder('s').leftJoin(User, 'u', 'u.id = s.user_id'),
     )
       .select([
-        'd.user_id AS user_id',
+        's.user_id AS user_id',
         'u.email AS user_email',
         'u.name AS user_name',
-        'MIN(d.created_at) AS start_date',
-        'MAX(d.last_seen_at) AS recent_date',
+        'MIN(s.started_at) AS start_date',
+        'MAX(s.expires_at) AS expire_date',
+        // 仍在期 = 与 isSubscriptionEntitled 同口径（status 有效 + 未到期）
+        `COUNT(*) FILTER (WHERE s.status IN ('active', 'cancelled') AND s.expires_at > now())::int AS valid_cnt`,
+        'COUNT(*)::int AS row_cnt',
       ])
-      .groupBy('d.user_id')
+      .groupBy('s.user_id')
       .addGroupBy('u.email')
       .addGroupBy('u.name')
-      .orderBy('recent_date', 'DESC', 'NULLS LAST')
+      .orderBy('expire_date', 'DESC', 'NULLS LAST')
       .offset((page - 1) * size)
       .limit(size)
       .getRawMany();
 
     const totalRow = await apply(
-      this.deviceRepo.createQueryBuilder('d').leftJoin(User, 'u', 'u.id = d.user_id'),
+      this.subRepo.createQueryBuilder('s').leftJoin(User, 'u', 'u.id = s.user_id'),
     )
-      .select('COUNT(DISTINCT d.user_id)', 'c')
+      .select('COUNT(DISTINCT s.user_id)', 'c')
       .getRawOne();
 
     return { items, total: Number(totalRow?.c ?? 0), page, size };

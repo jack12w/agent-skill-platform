@@ -601,12 +601,40 @@ export class PluginsAuthService {
 
   // ─────────────────────────── 设备管理（账户页） ───────────────────────────
 
+  /**
+   * 设备 id 归一：把「账号中心卡片上的商品 id」换算成「设备实际挂载的插件 id」。
+   *
+   * ★ 为什么必须归一（2026-10-28 事故）：
+   *   扩展端发起授权时上报的 slug 恒为**主插件**（auth_core.js 的 DEFAULT_SLUG），
+   *   所以 `plugin_devices.plugin_id` 永远写的是主插件 id；权益也按主插件族解析。
+   *   而 0042「一档一行」之后，账号中心的每张卡片拿的是**用户买的那个商品** id
+   *   （trial / -year / -b2b）。不归一时：卡片用商品 id 去查设备 → 恒为 0，
+   *   「管理设备」里解绑 / 改名也会 404 —— 用户以为设备被清空、解绑点了没反应。
+   *
+   * 归一规则与权益判定同源：`root_plugin_id = COALESCE(parent_plugin_id, id)`。
+   */
+  private async resolveDevicePluginId(pluginId: string): Promise<string> {
+    const p = await this.pluginRepo.findOne({ where: { id: pluginId } });
+    if (!p) return pluginId;
+    return p.parent_plugin_id ?? p.id;
+  }
+
   async listDevices(userId: string, pluginId: string) {
+    const rootId = await this.resolveDevicePluginId(pluginId);
+    const plugin = await this.pluginRepo.findOne({ where: { id: rootId } });
     const devices = await this.deviceRepo.find({
-      where: { user_id: userId, plugin_id: pluginId, revoked_at: IsNull() },
+      where: { user_id: userId, plugin_id: rootId, revoked_at: IsNull() },
       order: { created_at: 'DESC' },
     });
-    const plugin = await this.pluginRepo.findOne({ where: { id: pluginId } });
+    // 上限口径必须与 approve() 逐字一致，否则界面说「还能再绑 1 台」、实际授权时被拒：
+    // 个人权益 → 商品 max_activations；团队席位 → 订阅行快照的每成员上限（默认 1）。
+    const resolved = plugin
+      ? await resolvePluginSubscription(this.subRepo.manager, userId, rootId)
+      : null;
+    const maxDevices =
+      resolved?.via === 'team'
+        ? resolved.sub.max_devices_per_member ?? 1
+        : plugin?.max_activations ?? 2;
     return {
       devices: devices.map((d) => ({
         device_id: d.device_id,
@@ -619,14 +647,15 @@ export class PluginsAuthService {
         // 尚未取走令牌 = 已批准但插件没完成激活
         pending: !d.token_hash,
       })),
-      max_devices: plugin?.max_activations ?? 2,
+      max_devices: maxDevices,
     };
   }
 
   /** 吊销单台设备：令牌立即失效，下次启动插件需重新授权 */
   async revokeDevice(userId: string, pluginId: string, deviceId: string) {
+    const rootId = await this.resolveDevicePluginId(pluginId);
     const d = await this.deviceRepo.findOne({
-      where: { user_id: userId, plugin_id: pluginId, device_id: deviceId },
+      where: { user_id: userId, plugin_id: rootId, device_id: deviceId },
     });
     if (!d) throw new NotFoundException('未找到该设备授权记录');
     if (d.revoked_at) return { ok: true, already: true };
@@ -639,8 +668,9 @@ export class PluginsAuthService {
 
   /** 全清：换机/重装前的粗粒度操作，等价于逐台吊销 */
   async revokeAllDevices(userId: string, pluginId: string) {
+    const rootId = await this.resolveDevicePluginId(pluginId);
     await this.deviceRepo.update(
-      { user_id: userId, plugin_id: pluginId, revoked_at: IsNull() },
+      { user_id: userId, plugin_id: rootId, revoked_at: IsNull() },
       { revoked_at: new Date(), token_hash: null, token_issued_at: null },
     );
     return { ok: true };
@@ -663,8 +693,9 @@ export class PluginsAuthService {
     // 那个值只在 approve 请求里出现，服务端没留底，做不到。
     if (!clean) throw new BadRequestException('设备名不能为空');
 
+    const rootId = await this.resolveDevicePluginId(pluginId);
     const d = await this.deviceRepo.findOne({
-      where: { user_id: userId, plugin_id: pluginId, device_id: deviceId },
+      where: { user_id: userId, plugin_id: rootId, device_id: deviceId },
     });
     if (!d || d.revoked_at) throw new NotFoundException('未找到该设备授权记录');
 

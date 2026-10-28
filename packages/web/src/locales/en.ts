@@ -432,19 +432,21 @@ const en = {
     loading: 'Loading…',
     prevPage: 'Previous',
     nextPage: 'Next',
-    // ── Users (user-count column popup) ──
+    // ── Subscribers (subscriber-count column popup) ──
+    // Scope: distinct users who ever subscribed (expired / manually granted included); no device counts
     thUserCount: 'Subscribers',
-    usersTitle: 'Users',
-    usersTotal: '{n} device user(s)',
-    usersSubsCount: '{n} subscriber(s)',
-    usersDeviceShort: 'dev {n}',
+    usersTitle: 'Subscribers',
+    usersTotal: '{n} total',
     usersUuid: 'UUID',
     usersName: 'Name',
     usersEmail: 'Email',
-    usersStartDate: 'First used',
-    usersRecentDate: 'Last active',
-    usersEmpty: 'No users yet',
-    /* 2026-10-12 QA round 3: admin "users" dialog load failure (used to show "No users yet") */
+    usersStartDate: 'First subscribed',
+    usersRecentDate: 'Expires',
+    usersStatus: 'Status',
+    usersStatusValid: 'Active',
+    usersStatusExpired: 'Expired',
+    usersEmpty: 'No subscribers yet',
+    /* 2026-10-12 QA round 3: admin "subscribers" dialog load failure (used to show "No subscribers yet") */
     usersLoadFailed: 'Failed to load the user list. Please retry.',
     /* 2026-10-12 QA round 3: admin page with no token — replaces an infinite loading spinner */
     notLoggedIn: 'Your session has expired. Please sign in again.',
@@ -1077,6 +1079,8 @@ const en = {
 
     activateHint: 'Click “Log in / Activate” inside the plugin and confirm on the web page — authorization completes automatically, with no key to copy.',
     devicesUsed: '{n}/{max} devices authorized',
+    teamSeatsUsed: 'Team members {n}/{max} joined',
+    teamSeatsHint: 'Team plans are billed per account: invite members into the team and they can use their own plugin login; each member may authorize 1 device.',
     devicesUsedLoading: 'Loading authorized device count…',
     manageDevices: 'Manage devices',
     hideDevices: 'Hide',

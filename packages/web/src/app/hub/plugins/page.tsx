@@ -36,10 +36,8 @@ interface PluginItem {
   renew_allowed: boolean;
   download_key: string | null;
   download_filename: string | null;
-  /** 订阅数：该商品有效订阅行按 user_id 去重；团队行只算 1 个客户（团长付钱） */
+  /** 订阅数：订阅过该商品的去重用户数（含已过期、含手动开通）；团队行按团长算 1 个客户 */
   user_count: number;
-  /** 使用用户数：未吊销设备的去重用户数（设备恒绑主插件，故档位商品恒为 0） */
-  device_user_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -136,14 +134,14 @@ export default function HubPluginsPage() {
   /** 「插件数据」内子 tab：数据看板 / 类型注册表（计划 v2.4） */
   const [dataTab, setDataTab] = useState<'board' | 'types'>('board');
 
-  /** 「使用用户」弹窗状态（点击列表里的用户数打开） */
+  /** 「订阅用户」弹窗状态（点击列表里的订阅数打开） */
   const [usersOpen, setUsersOpen] = useState(false);
   const [usersLoading, setUsersLoading] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [usersTotal, setUsersTotal] = useState(0);
   const [usersPlugin, setUsersPlugin] = useState<PluginItem | null>(null);
   const [usersSearch, setUsersSearch] = useState('');
-  /** 2026-10-12 三轮质检：「使用用户」弹窗的加载错误（原实现失败时静默置空列表） */
+  /** 2026-10-12 三轮质检：「订阅用户」弹窗的加载错误（原实现失败时静默置空列表） */
   const [usersErr, setUsersErr] = useState('');
 
   const loadUsers = useCallback(
@@ -542,9 +540,8 @@ export default function HubPluginsPage() {
                     {p.max_activations ?? 2}
                   </td>
                   <td className="px-4 py-3 text-center hidden lg:table-cell">
-                    {/* 主数字 = 订阅数（团队行按团长算 1 个客户）；小字 = 设备授权用户数。
-                        两个口径必须同时可见：设备恒绑主插件，档位商品的设备数恒为 0，
-                        只给设备数会让运营以为「没人订阅试用」。 */}
+                    {/* 订阅数 = 订阅过该商品的去重用户数（含已过期、含手动开通），
+                        团队行按团长算 1 个客户。点开看具体名单。 */}
                     <button
                       onClick={() => openUsers(p)}
                       title={t('admin.usersTitle')}
@@ -552,9 +549,6 @@ export default function HubPluginsPage() {
                     >
                       {p.user_count ?? 0}
                     </button>
-                    <div className="text-[10px] text-neutral-400 tabular-nums mt-0.5">
-                      {t('admin.usersDeviceShort', { n: p.device_user_count ?? 0 })}
-                    </div>
                   </td>
                   <td className="px-4 py-3 text-center">
                     <span
@@ -960,7 +954,7 @@ export default function HubPluginsPage() {
         </Modal>
       )}
 
-      {/* 使用用户弹窗：点击列表里的「用户数」打开 */}
+      {/* 订阅用户弹窗：点击列表里的「订阅数」打开 */}
       {usersOpen && usersPlugin && (
         <Modal onClose={() => setUsersOpen(false)} align="top" backdrop="bg-black/40">
           <div className="bg-white rounded-xl w-full max-w-3xl my-8 shadow-xl">
@@ -968,8 +962,6 @@ export default function HubPluginsPage() {
               <h2 className="font-semibold text-neutral-900">
                 {usersPlugin.name} · {t('admin.usersTitle')}
                 <span className="ml-2 text-sm font-normal text-neutral-500">
-                  {t('admin.usersSubsCount', { n: usersPlugin.user_count ?? 0 })}
-                  {' · '}
                   {t('admin.usersTotal', { n: usersTotal })}
                 </span>
               </h2>
@@ -1019,6 +1011,7 @@ export default function HubPluginsPage() {
                         <th className="px-3 py-2 text-left">{t('admin.usersEmail')}</th>
                         <th className="px-3 py-2 text-left">{t('admin.usersStartDate')}</th>
                         <th className="px-3 py-2 text-left">{t('admin.usersRecentDate')}</th>
+                        <th className="px-3 py-2 text-left">{t('admin.usersStatus')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100">
@@ -1033,7 +1026,18 @@ export default function HubPluginsPage() {
                             {u.start_date ? new Date(u.start_date).toLocaleString('zh-CN') : '—'}
                           </td>
                           <td className="px-3 py-2 text-neutral-500 tabular-nums whitespace-nowrap">
-                            {u.recent_date ? new Date(u.recent_date).toLocaleString('zh-CN') : '—'}
+                            {u.expire_date ? new Date(u.expire_date).toLocaleString('zh-CN') : '—'}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {Number(u.valid_cnt) > 0 ? (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                {t('admin.usersStatusValid')}
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-neutral-100 text-neutral-500">
+                                {t('admin.usersStatusExpired')}
+                              </span>
+                            )}
                           </td>
                         </tr>
                       ))}

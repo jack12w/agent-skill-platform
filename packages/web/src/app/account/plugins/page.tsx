@@ -41,6 +41,10 @@ interface MySub {
   /** 权益归属插件 id（0042）：一档一行后，plugin_id 就是「用户买的那个商品」，
    *  root_plugin_id 是它归属的插件。卡片标题与续费都用 plugin_id，不再靠 source 猜。 */
   root_plugin_id?: string | null;
+  /** 席位（团队行才有，含团长）：团队版卖的就是这个 —— 能加几个账号 */
+  seats?: number | null;
+  /** 该团队在册成员数（含团长），后端 mySubscriptions 子查询带出；团队卡显示「已加入 N/M」 */
+  member_count?: number | null;
 }
 
 interface DeviceRow {
@@ -467,6 +471,15 @@ export default function MyPluginsPage() {
             const displayName = p?.name || t('plugins.tierUnavailable');
             const dd = deviceData[s.plugin_id];
             const open = deviceOpen === s.id;
+            /**
+             * 团队行（0035 席位制）卖的是**席位**，不是设备：
+             * 原实现无条件显示「已授权 N/M 台设备」，M 取商品的设备配额，
+             * 团长会以为 3 台设备是 3 个账号（2026-10-28 用户实测反馈）。
+             * 团队行改为显示「团队成员 已加入 N/M」，设备管理仍保留（只管本人那 1 台）。
+             */
+            const isTeamSeat = !!s.team_id;
+            const seats = s.seats && s.seats > 0 ? s.seats : 3;
+            const members = Math.max(1, Number(s.member_count ?? 1));
             return (
               <div key={s.id} className="bg-white border border-neutral-200 rounded-xl p-4">
                 <div className="flex items-center justify-between gap-3">
@@ -517,19 +530,20 @@ export default function MyPluginsPage() {
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="text-xs text-neutral-600">
-                          {/* 设备数没拿到之前**不要**写「0/2」——那是在陈述一个错误事实
-                              （明明有 1 台授权，却显示 0 台），用户会当成 bug 来报。
-                              改成「加载中」，拿到真值再落数。 */}
-                          {dd
-                            ? t('plugins.devicesUsed', {
-                                n: dd.devices?.length ?? 0,
-                                max: dd.max_devices,
-                              })
-                            : t('plugins.devicesUsedLoading')}
+                          {/* 团队行：显示席位占用（团队成员），不显示设备数 —— 团队版买的是账号数。
+                              个人行：显示该插件族下的设备授权数（后端按 root 归一，档位商品同样准）。 */}
+                          {isTeamSeat
+                            ? t('plugins.teamSeatsUsed', { n: members, max: seats })
+                            : dd
+                              ? t('plugins.devicesUsed', {
+                                  n: dd.devices?.length ?? 0,
+                                  max: dd.max_devices,
+                                })
+                              : t('plugins.devicesUsedLoading')}
                         </div>
                         {!open && (
                           <p className="mt-1 text-[11px] leading-relaxed text-neutral-400">
-                            {t('plugins.activateHint')}
+                            {isTeamSeat ? t('plugins.teamSeatsHint') : t('plugins.activateHint')}
                           </p>
                         )}
                       </div>

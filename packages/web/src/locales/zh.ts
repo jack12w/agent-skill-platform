@@ -432,19 +432,21 @@ const zh = {
     loading: '加载中…',
     prevPage: '上一页',
     nextPage: '下一页',
-    // ── 使用用户（用户数列弹窗）──
+    // ── 订阅用户（用户数列弹窗）──
+    // 口径：订阅过该商品的去重用户（含已过期 / 手动开通），不再混设备数
     thUserCount: '订阅数',
-    usersTitle: '使用用户',
-    usersTotal: '设备授权 {n} 人',
-    usersSubsCount: '订阅 {n} 人',
-    usersDeviceShort: '设备 {n}',
+    usersTitle: '订阅用户',
+    usersTotal: '共 {n} 人',
     usersUuid: 'UUID',
     usersName: '用户名称',
     usersEmail: '邮箱号',
-    usersStartDate: '开始日期',
-    usersRecentDate: '最近日期',
-    usersEmpty: '暂无使用用户',
-    /* 2026-10-12 三轮质检：后台「使用用户」弹窗加载失败（原来只显示「暂无使用用户」） */
+    usersStartDate: '首次订阅',
+    usersRecentDate: '最近到期',
+    usersStatus: '状态',
+    usersStatusValid: '有效',
+    usersStatusExpired: '已过期',
+    usersEmpty: '暂无订阅用户',
+    /* 2026-10-12 三轮质检：后台「订阅用户」弹窗加载失败（原来只显示「暂无订阅用户」） */
     usersLoadFailed: '用户列表加载失败，请重试',
     /* 2026-10-12 三轮质检：后台页无 token（登录态失效）时的提示，替代原先的永久 loading */
     notLoggedIn: '登录已失效，请重新登录后再试',
@@ -1091,6 +1093,8 @@ const zh = {
 
     activateHint: '在插件内点击「登录 / 激活」，网页确认后即自动完成授权，无需手抄任何密钥。',
     devicesUsed: '已授权 {n}/{max} 台设备',
+    teamSeatsUsed: '团队成员 已加入 {n}/{max} 位',
+    teamSeatsHint: '团队版按账号数计费：把成员邀请进团队，对方登录自己的插件即可使用；每人可在自己电脑上授权 1 台设备。',
     devicesUsedLoading: '设备授权数加载中…',
     manageDevices: '管理设备',
     hideDevices: '收起',

@@ -206,9 +206,10 @@ export class PluginsAdminController {
   }
 
   /**
-   * 某插件的「使用用户」列表（distinct 已授权设备用户，join users）。
+   * 某商品的「订阅用户」列表（distinct user_id，join users）。
+   * 口径 = 订阅过该商品就算（含已过期 / 手动开通），与列表「订阅数」列逐字一致。
    * 路由两段 `:id/users` 不会与一段的 `@Get(':id')` 互相截胡。
-   * 走 no-store：刚解绑/新增设备后，管理端点开要看到最新名单，不能读浏览器启发式缓存。
+   * 走 no-store：刚开通/退款/后台改期后，管理端点开要看到最新名单，不能读浏览器启发式缓存。
    */
   @Get(':id/users')
   @Header('Cache-Control', 'no-store')
