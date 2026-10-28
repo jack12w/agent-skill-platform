@@ -566,8 +566,6 @@ export class PluginsAuthService {
       );
     }
 
-    const max = chosen.quota;
-
     /**
      * 设备上限：以 start 阶段记录的 device_id 为准（不信网页传参）。
      *
