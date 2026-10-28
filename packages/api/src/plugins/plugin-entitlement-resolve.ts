@@ -8,9 +8,9 @@ import { PluginSubscription } from './plugin.entity';
  *  · 个人订阅：team_id IS NULL 且 user_id = 本人（行为与 0035 之前一致）
  *  · 团队席位：team_id 非 NULL 的有效团队订阅行，且本人在该团队在册（team_members 实时查）
  *    → 移除成员即失权，无需吊销设备；设备行仍按成员各自的 (user_id, plugin_id) 隔离。
- *  · 多行命中时优先级（2026-10-28 排序口径定稿）：
+ *  · 多行命中时优先级（2026-10-29 口径定稿）：
  *      ① 有权(entitled) 行最优先（否则过期团队行会遮住有效个人行）
- *      ② 同为有权时**专业版优先**（team 席位 或 tier='team'）—— AI 功能只对 team 开，
+ *      ② 同为有权时**团队档优先**（`COALESCE(seats,1) > 1`）—— AI 只对团队档开，
  *         用户同时持有个人版 + 团队版时必须拿团队版
  *      ③ 再按 expires_at 降序（剩余时长最长者优先）
  *
@@ -58,7 +58,7 @@ export async function resolvePluginSubscription(
                  WHERE m.team_id = s.team_id AND m.user_id = $1))
         )
       ORDER BY _entitled DESC,
-               (s.team_id IS NOT NULL OR COALESCE(s.tier, 'personal') = 'team') DESC,
+               (COALESCE(s.seats, 1) > 1) DESC,
                s.expires_at DESC
       LIMIT 1`,
     [userId, pluginId],
@@ -67,10 +67,9 @@ export async function resolvePluginSubscription(
   const r = rows[0];
   return {
     sub: r as PluginSubscription,
-    // ⚠️ via 的语义严格保持「权益来自团队席位（team_id 非空）」——调用方用它决定
-    // 设备上限（plugins-auth.service 取订阅行的 max_devices_per_member，个人行该列为
-    // NULL → 会被压到 1 台）。后台手工置 tier='team' 的个人行**不**算 via=team，
-    // 它只参与上面的排序优先级；返回给插件的 tier 另有 `|| sub.tier === 'team'` 兜底。
+    // ⚠️ via 的语义严格保持「权益来自团队席位（team_id 非空）」——权限边界用它区分
+    // 「自己买的」与「团里给的」。**AI / 档位判定不要用它**：那要看 `seats`
+    // （plugin-auth.util isTeamTier），因为团队行也可能只有 1 席（此时不算团队档）。
     via: r._via_team ? 'team' : 'personal',
     entitled: !!r._entitled,
   };

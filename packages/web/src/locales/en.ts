@@ -392,7 +392,7 @@ const en = {
     /* 2026-10-13: product decision — this number counts accounts (one activation per
        account), no longer phrased as "devices". Reused by the list column thDevices. */
     fieldMaxActivations: 'Authorized accounts',
-    fieldMaxActivationsHint: 'Max accounts that can activate this plugin (1-50, default 2). Raise it for team plans.',
+    fieldMaxActivationsHint: 'Number of accounts that can use this plugin (1-50). This single number defines the tier: 1 = Personal (no AI); 2 or more = Team (AI included, the number is the seat count). Changing it changes the tier and seats of new orders.',
     fieldDuration: 'Subscription validity (days)',
     fieldDurationHint: 'Default duration for new/renewed subscriptions of this plugin (1-3650, default 30). Also used as the default when manually granting a subscription.',
     fieldKind: 'Product type',
@@ -542,7 +542,9 @@ const en = {
     /* 0040 purchase tier: product row recorded on the subscription (entitlement lives on the main row) */
     subSourceTier: 'Purchased tier',
     /* 0035 seat model: hint shown in admin when Team tier selected (auto team creation) */
-    subTierTeamHint: 'Selecting “Team” auto-creates a team owned by this user; entitlement covers all current members. Seats and per-member devices are editable below and take effect immediately.',
+    subTierTeamHint: 'Team plan: saving auto-creates a team owned by this user; entitlement covers all current members. Seats are editable below and take effect immediately.',
+    subTierDerivedHint: 'The tier is derived from the product\'s “authorized accounts” (1 = Personal, 2+ = Team). To change it, edit that product in Plugins.',
+    subTierSeatsSuffix: '· {n} seat(s)',
     subSeatsLabel: 'Seats (incl. owner)',
     subSeatsHint: 'Raise the number and save to add seats (effective instantly). Lowering only blocks new invites; existing members are kept.',
     subMaxDevicesLabel: 'Devices per member',
@@ -1156,6 +1158,14 @@ const en = {
     authRequestedAt: 'Requested at',
     authDevicesUsed: 'Authorized devices',
     authSubStatus: 'Subscription',
+    // ── Auth page "authorize with" tier picker (0046) ──
+    authTier: 'Authorize with',
+    authTierRemaining: '{used}/{quota} device slot(s) free',
+    authTierFull: 'No slot left',
+    authTierExpired: 'Expired',
+    authTierTeam: '{n} team seat(s)',
+    authTierBlocked:
+      'This plan has no free device slot or has expired. Pick another subscription, or unbind a device in "My subscriptions" first.',
     authNoSubscription: 'Not subscribed',
     authSubscribeFirst: 'You have not subscribed to this plugin yet. Subscribe first, then come back to authorize.',
     authConfirm: 'Confirm',

@@ -740,14 +740,16 @@ export class PluginsService {
 
     // 席位制（0035）：tier=team 时自动建团（购买者/被授权者=团长），订阅行挂 team_id。
     // 与支付回调（orders.fulfillPluginSubscription）走同一个 ensureOwnerTeam，两条路径行为一致。
-    const tier = this.parseTierInput(body, 'personal');
+    // tier 默认值（2026-10-29）：由商品的「可授权账号数」派生，弹窗不再让人工单选 ——
+    // 人工单选与商品配置各说一套，正是「商品写 3、订阅行记 personal、AI 却开着」的来源。
+    const tier = this.parseTierInput(body, tierOfPlugin(plugin));
     let teamId: string | null = null;
     let seats: number | null = null;
     let maxPerMember: number | null = null;
     if (tier === 'team') {
       const team = await ensureOwnerTeam(this.subRepo.manager, userId, body?.team_name);
       teamId = team.id;
-      seats = this.normalizeSeats(body?.seats, plugin.team_seats ?? 3);
+      seats = this.normalizeSeats(body?.seats, plugin.max_activations ?? plugin.team_seats ?? 3);
       maxPerMember = this.normalizeSeats(body?.max_devices_per_member, 1);
     }
 
@@ -886,7 +888,10 @@ export class PluginsService {
     //    「个人行 seats 恒为 null」不变量，列表页会展示席位数）。
     if (nextTier === 'team') {
       if (body?.seats !== undefined && body?.seats !== null && body?.seats !== '') {
-        sub.seats = this.normalizeSeats(body.seats, plugin.team_seats ?? 3);
+        sub.seats = this.normalizeSeats(
+          body.seats,
+          plugin.max_activations ?? plugin.team_seats ?? 3,
+        );
       }
       if (
         body?.max_devices_per_member !== undefined &&

@@ -94,3 +94,54 @@ export function subFailReason(sub: {
   return Number.isFinite(exp) && exp <= Date.now() ? 'expired' : 'terminated';
 }
 
+/* ==================== 档位判定（2026-10-29 定案） ====================
+ * 唯一判据：**本行可授权账号数**（seats）。
+ *   · seats = 1 → 个人档，**不带 AI**
+ *   · seats > 1 → 团队档，带 AI，且 seats 就是「能坐几个人」（团长 + 成员）
+ *
+ * 为什么不再看 slug / tier / team_id：
+ *   · slug 后台可改（0041 的 `7testing` 事故），改完付费用户的 AI 当场消失；
+ *   · team_id 只说明「权益来自团队」，不说话席位数，seats=1 的团队行照样能开 AI
+ *     （normalizeSeats 下限是 1，这个口子真实存在过）；
+ *   · tier 是历史人工标注，与真实席位可能不一致。
+ *
+ * seats 的来源链（单向，不循环）：
+ *   商品 max_activations（界面名「可授权账号数」）
+ *     → 发货/后台开通时快照到订阅行 seats
+ *     → 判权时读行上的 seats
+ */
+
+/**
+ * 订阅行的「可授权账号数」。个人行（team_id 为空且无 seats）= 1。
+ *
+ * 历史行兜底：seats 为空但确实是团队行（team_id / tier='team'）时按 2 处理 ——
+ * 保守方向是「别把人已经买到的 AI 收回」。迁移 0046 会把这类行补齐，
+ * 之后这里就不会走到兜底分支。
+ */
+export function subscriptionSeats(
+  sub:
+    | { seats?: number | string | null; team_id?: string | null; tier?: string | null }
+    | null
+    | undefined,
+): number {
+  if (!sub) return 1;
+  const raw = sub.seats;
+  const n = Number(raw);
+  if (raw !== null && raw !== undefined && raw !== '' && Number.isFinite(n) && n >= 1) {
+    return Math.floor(n);
+  }
+  const looksTeam = !!sub.team_id || String(sub.tier || '') === 'team';
+  return looksTeam ? 2 : 1;
+}
+
+/** 该行是否团队档（= 是否开放 AI）。判据只有一条：可授权账号数 > 1。 */
+export function isTeamTier(
+  sub:
+    | { seats?: number | string | null; team_id?: string | null; tier?: string | null }
+    | null
+    | undefined,
+): boolean {
+  return subscriptionSeats(sub) > 1;
+}
+
+

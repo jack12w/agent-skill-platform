@@ -18,8 +18,15 @@ import {
   isSubscriptionEntitled,
   subFailReason,
   safeEqualHex,
+  isTeamTier,
 } from './plugin-auth.util';
 import { resolvePluginSubscription } from './plugin-entitlement-resolve';
+import {
+  DeviceTierOption,
+  deviceQuotaOfRow,
+  listDeviceTierOptions,
+  summarizeQuota,
+} from './plugin-device-quota';
 
 /** 授权码有效期 10 分钟：够用户切到浏览器登录并确认，又短到无法被慢速枚举 */
 const CODE_TTL_MS = 10 * 60 * 1000;
@@ -246,7 +253,7 @@ export class PluginsAuthService {
      * 现在统一走同一个解析函数：按 root_plugin_id 取该插件族的全部行，
      * 排序「有权 > 团队/team 档 > 到期最晚」，与扩展端后续 entitlement 的结论完全一致。
      */
-    const [plugin, resolved, user, devicesUsed] = await Promise.all([
+    const [plugin, resolved, user, devicesUsed, tierOptions] = await Promise.all([
       this.pluginRepo.findOne({ where: { id: req.plugin_id } }),
       resolvePluginSubscription(this.subRepo.manager, req.user_id, req.plugin_id),
       this.userRepo.findOne({
@@ -254,18 +261,21 @@ export class PluginsAuthService {
         select: ['id', 'email', 'name'],
       }),
       this.countActiveDevices(req.user_id, req.plugin_id),
+      listDeviceTierOptions(this.subRepo.manager, req.user_id, req.plugin_id),
     ]);
     const sub = resolved?.sub ?? null;
     // 用户买的那个商品（用于把「Team 专业版」而不是「基础版」告诉扩展端）
     const plan = sub
       ? await this.pluginRepo.findOne({ where: { id: sub.plugin_id } })
       : null;
-    // 档位口径与 entitlement 一致：团队席位 或 tier='team' 都算 team
-    const tier =
-      resolved?.via === 'team' || sub?.tier === 'team' ? 'team' : 'personal';
-    // 设备上限口径与 approve() 逐字一致（团队席位用订阅行快照的每成员上限）
-    const maxDevices =
-      resolved?.via === 'team' ? sub?.max_devices_per_member ?? 1 : plugin?.max_activations ?? 2;
+    /**
+     * 档位与设备额度**同一口径**（2026-10-29 定案，收口在 plugin-auth.util /
+     * plugin-device-quota，不要在别处另写一份）：
+     *   · tier = 本行可授权账号数 > 1（= 开放 AI 的唯一判据）
+     *   · 设备额度 = 该用户在本插件族内所有**在期**档位的额度之和（一档一台）
+     */
+    const tier = isTeamTier(sub) ? ('team' as const) : ('personal' as const);
+    const { max_devices: maxDevices } = summarizeQuota(tierOptions, devicesUsed);
 
     return {
       status: 'approved' as const,
@@ -361,12 +371,11 @@ export class PluginsAuthService {
       expires_at: sub.expires_at.toISOString(),
       status: sub.status,
       plan: sub.plan,
-      /** 订阅类型（0031/0035）：AI 功能（推送/自动采集）仅 team 档开放，插件端按此挂/不挂 AI UI。
-       *  团队席位覆盖的成员同样按 team 返回（权益来自团队订阅行）。 */
-      tier:
-        resolved.via === 'team' || sub.tier === 'team'
-          ? ('team' as const)
-          : ('personal' as const),
+      /** 订阅类型：AI 功能（推送 / 自动采集）仅团队档开放，插件端按此挂或不挂 AI UI。
+       *  唯一判据 = 本行可授权账号数 > 1（见 plugin-auth.util isTeamTier）：
+       *  基础版 / Pro（包年）/ 试用都是 1 席 → personal，Team 专业版 3 席 → team。
+       *  团队席位覆盖的成员同样命中团队行，因此也返回 team。 */
+      tier: isTeamTier(sub) ? ('team' as const) : ('personal' as const),
       plugin: plugin ? { slug: plugin.slug, name: plugin.name } : undefined,
     };
   }
@@ -405,11 +414,27 @@ export class PluginsAuthService {
     // 授权页却引导他去「重新订阅」）
     const subscribed = !!resolved?.entitled;
 
-    // 设备上限：个人订阅用商品 max_activations；团队席位用订阅行快照的每成员上限（默认 1）
-    const maxDevices =
-      resolved?.via === 'team'
-        ? sub.max_devices_per_member ?? 1
-        : plugin?.max_activations ?? 2;
+    /**
+     * 档位列表（0046）：授权页据此渲染「授权使用」下拉。
+     *
+     * 一档一台，所以每档单独算额度；`devices_used` 用真实设备数（不是各行 used 之和，
+     * 历史行 subscription_id 为空不属于任何一档，相加会漏算）。
+     * 在期内档位为 0 时 `max_devices` = 0，但页面早已因 subscribed=false 挡住授权按钮。
+     */
+    const tierOptions: DeviceTierOption[] = plugin
+      ? await listDeviceTierOptions(this.subRepo.manager, userId, plugin.id)
+      : [];
+    const devicesUsed = plugin ? await this.countActiveDevices(userId, plugin.id) : 0;
+    const quota = summarizeQuota(tierOptions, devicesUsed);
+    // 在期档位里到期最晚的那个，用于「订阅状态」那一行的日期展示
+    const entitledExpiries = tierOptions
+      .filter((o) => o.entitled && o.expires_at)
+      .map((o) => o.expires_at as string)
+      .sort();
+    const latestExpiry =
+      entitledExpiries.length > 0
+        ? entitledExpiries[entitledExpiries.length - 1]
+        : sub?.expires_at?.toISOString();
 
     return {
       status: req.status,
@@ -425,19 +450,36 @@ export class PluginsAuthService {
       device_name: req.device_name,
       platform: req.platform,
       subscribed,
-      subscription_expires_at: sub?.expires_at?.toISOString(),
-      devices_used: plugin ? await this.countActiveDevices(userId, plugin.id) : 0,
-      max_devices: maxDevices,
+      subscription_expires_at: latestExpiry,
+      devices_used: quota.devices_used,
+      max_devices: quota.max_devices,
+      /**
+       * 可授权的订阅档位（新增，0046）。前端规则：
+       *   · 在期内且未满的档位 ≥ 2 → 出下拉，默认选 recommended 那项
+       *   · 只有 1 项 → 不出下拉，只显示文案（单档用户零感知）
+       *   · 已满 / 已过期 → 置灰但仍展示（让用户知道「我买过、只是用完了」）
+       */
+      options: tierOptions,
     };
   }
 
   /**
    * 确认/拒绝授权。
    *
-   * 上限校验放在这里（而不是轮询里）：用户点下确认的那一刻就该知道「已满 2 台」，
+   * 上限校验放在这里（而不是轮询里）：用户点下确认的那一刻就该知道「已满」，
    * 错误要在正确的界面暴露；插件端只需要等一个终态。
+   *
+   * ★ 0046「一档一台」：`subscriptionId` 是用户在授权页下拉里选的那一档。
+   *   · 传了 → 必须属于本人、属于本插件族、在期内、该档还有名额（四条校验缺一不可，
+   *     否则可以拿别人的 subscription_id 蹭名额，或用已退款的行反复授权）
+   *   · 没传（老客户端 / 单档用户页面不出下拉）→ 自动选「在期内且未满、到期最晚」
    */
-  async approve(userId: string, code: string, action: 'approve' | 'deny') {
+  async approve(
+    userId: string,
+    code: string,
+    action: 'approve' | 'deny',
+    subscriptionId?: string,
+  ) {
     const c = String(code || '').trim();
     const req = c ? await this.reqRepo.findOne({ where: { code: c } }) : null;
     // 「不存在」与「已过期」用同一状态码 + 同一措辞：不让本接口变成 8 位码的存在性探测器
@@ -479,60 +521,78 @@ export class PluginsAuthService {
       return deny('NO_SUBSCRIPTION', '插件不存在或已下架');
     }
 
-    // 席位制（0035）：本人订阅 OR 团队席位覆盖
-    const resolved = plugin
-      ? await resolvePluginSubscription(this.subRepo.manager, userId, plugin.id)
-      : null;
-    const sub = resolved?.sub ?? null;
-    if (!sub) {
+    /**
+     * 档位选择（0046）。options 已按「在期内 → 到期最晚」排好序，
+     * `recommended` 标记的是第一个「在期内且未满」的档位。
+     */
+    const options = await listDeviceTierOptions(
+      this.subRepo.manager,
+      userId,
+      plugin.id,
+    );
+    if (options.length === 0) {
       return deny(
         'NO_SUBSCRIPTION',
         `你还没有订阅「${plugin.name}」，请先在插件市场完成订阅`,
       );
     }
+    const wantedId = String(subscriptionId || '').trim();
+    const chosen = wantedId
+      ? options.find((o) => o.subscription_id === wantedId)
+      : options.find((o) => o.recommended) ?? options[0];
+    if (!chosen) {
+      // 传了 id 但不在「本人可用的档位」里 —— 越权或该行已失效。
+      // 抛 400 而不是把请求打成 denied：这是**页面过期**（比如另一台机器先占掉了那一档
+      // 或后台刚改了订阅），用户刷新后就能继续，不该逼他回插件重新发起。
+      throw new BadRequestException('所选订阅不属于你或已失效，请刷新授权页后重新选择');
+    }
+    const planLabel = chosen.plan_name || plugin.name;
+
     // cancelled 但未到期 → 有权（见 isSubscriptionEntitled）；这里只剩「已到期」与
     // 「后台强制终止」两种成因，文案要分开，别让被终止的用户以为自己只是过期了。
-    if (!resolved!.entitled) {
+    if (!chosen.entitled) {
       return deny(
         'EXPIRED_SUBSCRIPTION',
-        subFailReason(sub) === 'expired'
-          ? `「${plugin.name}」订阅已于 ${new Date(sub.expires_at).toLocaleDateString('zh-CN')} 到期，请续费后再授权`
-          : `「${plugin.name}」的订阅已失效，请重新订阅后再授权`,
+        chosen.expires_at
+          ? `「${planLabel}」订阅已于 ${new Date(chosen.expires_at).toLocaleDateString('zh-CN')} 到期，请续费后再授权`
+          : `「${planLabel}」的订阅已失效，请重新订阅后再授权`,
+      );
+    }
+    if (chosen.full) {
+      // 名额满**不是终态**：用户可以在授权页改选别的档位，或去账号页解绑后重试。
+      // 所以这里抛 400（页面留在原地显示错误），而不是把请求标成 denied。
+      throw new BadRequestException(
+        `「${planLabel}」的 ${chosen.quota} 台设备名额已用满，请到「我的订阅」解绑一台，或回到授权页改选其他订阅`,
       );
     }
 
-    // 设备上限：个人订阅用商品 max_activations；团队席位用订阅行快照的每成员上限（默认 1）
-    const max =
-      resolved!.via === 'team'
-        ? sub.max_devices_per_member ?? 1
-        : plugin.max_activations ?? 2;
+    const max = chosen.quota;
 
     /**
      * 设备上限：以 start 阶段记录的 device_id 为准（不信网页传参）。
      *
      * ⚠️ 「查活跃数 → 判断 → 写设备行」必须是**原子**的。旧实现是 check-then-act：
      *    两台新机器同时点确认，各自读到 used = max-1，然后都写入 → 活跃数顶到 max+1。
-     *    互斥量选解析出的**那条订阅行**：个人订阅 = 本人 (user_id, plugin_id) 行；
-     *    团队席位（0035）= 团队订阅行（全体成员的授权在此串行化，量小无影响）。
+     *    互斥量选**用户选中的那条订阅行** —— 同一档的并发授权在此串行化。
      */
     const conflict = await this.subRepo.manager.transaction(async (m) => {
       const subRepo = m.getRepository(PluginSubscription);
       const devRepo = m.getRepository(PluginDevice);
 
       const locked = await subRepo.findOne({
-        where: { id: sub.id },
+        where: { id: chosen.subscription_id },
         lock: { mode: 'pessimistic_write' },
       });
       // 锁内才是真相：拿到锁后重新确认订阅（前面那次检查只是为了文案更具体）
       if (!locked) {
         return {
-          reason: 'NO_SUBSCRIPTION',
-          message: `你还没有订阅「${plugin.name}」，请先在插件市场完成订阅`,
+          reason: 'INVALID_SUBSCRIPTION',
+          message: '所选订阅已失效，请刷新授权页后重试',
         };
       }
-      // 锁内复查团队成员关系（0035，2026-10-12 质检 L7）：resolve 之后、拿锁之前
-      // 被移出团的用户，本次授权仍要拒绝——否则刚被团长移除的成员还能落地一台设备
-      // （下一次 entitlement 会因实时校验失权，但令牌已经签出去了）。
+      // 锁内复查归属：个人行必须是本人；团队行必须是本人仍在册
+      // （resolve 之后、拿锁之前被踢出团的用户，本次授权仍要拒绝——否则刚被移除的
+      //  成员还能落地一台设备；下一次 entitlement 会失权，但令牌已经签出去了）
       if (locked.team_id) {
         const mem: Array<{ ok: number }> = await m.query(
           `SELECT 1 AS ok FROM team_members WHERE team_id = $1 AND user_id = $2 LIMIT 1`,
@@ -541,17 +601,22 @@ export class PluginsAuthService {
         if (!mem || mem.length === 0) {
           return {
             reason: 'NO_SUBSCRIPTION',
-            message: `你已不在「${plugin.name}」的订阅团队中，请联系团长邀请`,
+            message: `你已不在「${planLabel}」的订阅团队中，请联系团长邀请`,
           };
         }
+      } else if (locked.user_id !== userId) {
+        return {
+          reason: 'INVALID_SUBSCRIPTION',
+          message: '所选订阅不属于你，请刷新授权页后重试',
+        };
       }
       if (!isSubscriptionEntitled(locked)) {
         return {
           reason: 'EXPIRED_SUBSCRIPTION',
           message:
             subFailReason(locked) === 'expired'
-              ? `「${plugin.name}」订阅已于 ${new Date(locked.expires_at).toLocaleDateString('zh-CN')} 到期，请续费后再授权`
-              : `「${plugin.name}」的订阅已失效，请重新订阅后再授权`,
+              ? `「${planLabel}」订阅已于 ${new Date(locked.expires_at).toLocaleDateString('zh-CN')} 到期，请续费后再授权`
+              : `「${planLabel}」的订阅已失效，请重新订阅后再授权`,
         };
       }
 
@@ -562,27 +627,37 @@ export class PluginsAuthService {
           device_id: req.device_id,
         },
       });
-      const used = await devRepo.count({
-        where: { user_id: userId, plugin_id: plugin.id, revoked_at: IsNull() },
-      });
 
       if (existing && !existing.revoked_at) {
-        // 该设备已授权过：直接放行（重复确认是幂等的），顺手补一下设备名
-        // 用户改过名（name_custom）就不覆盖：显式操作不得被后续流程静默回滚
+        // 该设备已授权过：直接放行（重复确认是幂等的），顺手补一下设备名与档位归属。
+        // 「改绑档位」不做：已授权的设备归属保持不动，要换档请先解绑再授权
+        // （用户明确要求不做改绑入口，避免多一条权限路径）。
         if (req.device_name && !existing.name_custom) existing.device_name = req.device_name;
         if (req.platform) existing.platform = req.platform;
+        // 历史行没有归属：顺手补上（只补空值，不覆盖已记录的购买事实）
+        if (!existing.subscription_id) existing.subscription_id = chosen.subscription_id;
         await devRepo.save(existing);
         return null;
       }
+
+      // 只统计**本人占用这一档**的设备：团队行由全团共享，额度却是每人一份，
+      // 把别人的设备算进来会让第二位成员永远授权不上。
+      const used = await devRepo.count({
+        where: {
+          user_id: userId,
+          subscription_id: chosen.subscription_id,
+          revoked_at: IsNull(),
+        },
+      });
 
       // 走到这里有两种情况：全新设备，或「曾被吊销的同一台设备重新授权」。
       // **两者都会净增一个活跃名额**，所以上限检查必须放在这之前 ——
       // 漏掉这条会出现绕过：吊销 A → 在别的机器授权占满 → A 再来授权，
       // 复用旧行把活跃数顶到 max 之上（曾实测可复现）。
-      if (used >= max) {
+      if (used >= deviceQuotaOfRow(locked)) {
         return {
           reason: 'ACTIVATION_LIMIT',
-          message: `「${plugin.name}」最多授权 ${max} 台设备，当前已用满。请到「我的订阅」解绑一台后重试`,
+          message: `「${planLabel}」的 ${deviceQuotaOfRow(locked)} 台设备名额已用满，请解绑一台或改选其他订阅`,
         };
       }
 
@@ -591,6 +666,7 @@ export class PluginsAuthService {
         existing.revoked_at = null;
         existing.token_hash = null; // 待 poll 阶段签发新令牌
         existing.token_issued_at = null; // 新令牌的绝对有效期从签发时刻重新起算
+        existing.subscription_id = chosen.subscription_id;
         // 用户改过名（name_custom）就不覆盖：显式操作不得被后续流程静默回滚
         if (req.device_name && !existing.name_custom) existing.device_name = req.device_name;
         if (req.platform) existing.platform = req.platform;
@@ -604,25 +680,39 @@ export class PluginsAuthService {
             device_name: req.device_name || null,
             platform: req.platform || null,
             token_hash: null,
+            // 一档一台：设备记住自己占的是哪一档
+            subscription_id: chosen.subscription_id,
           }),
         );
       }
       return null;
     });
 
-    if (conflict) return deny(conflict.reason, conflict.message);
+    if (conflict) {
+      // 名额类失败是**可重试**的（换一档 / 解绑一台），不能把请求打成终态 denied：
+      // 那会逼用户回插件重新发起一次授权，等于把一次误点放大成一次完整流程。
+      if (
+        conflict.reason === 'ACTIVATION_LIMIT' ||
+        conflict.reason === 'INVALID_SUBSCRIPTION'
+      ) {
+        throw new BadRequestException(conflict.message);
+      }
+      return deny(conflict.reason, conflict.message);
+    }
 
     req.status = 'approved';
     req.user_id = userId;
     req.deny_reason = null;
     await this.reqRepo.save(req);
 
+    const after = summarizeQuota(options, await this.countActiveDevices(userId, plugin.id));
     return {
       ok: true,
       status: 'approved',
-      expires_at: sub.expires_at.toISOString(),
-      devices_used: await this.countActiveDevices(userId, plugin.id),
-      max_devices: max,
+      expires_at: chosen.expires_at ?? undefined,
+      plan: { name: planLabel, slug: chosen.plan_slug },
+      devices_used: after.devices_used,
+      max_devices: after.max_devices,
     };
   }
 
@@ -648,20 +738,23 @@ export class PluginsAuthService {
 
   async listDevices(userId: string, pluginId: string) {
     const rootId = await this.resolveDevicePluginId(pluginId);
-    const plugin = await this.pluginRepo.findOne({ where: { id: rootId } });
     const devices = await this.deviceRepo.find({
       where: { user_id: userId, plugin_id: rootId, revoked_at: IsNull() },
       order: { created_at: 'DESC' },
     });
-    // 上限口径必须与 approve() 逐字一致，否则界面说「还能再绑 1 台」、实际授权时被拒：
-    // 个人权益 → 商品 max_activations；团队席位 → 订阅行快照的每成员上限（默认 1）。
-    const resolved = plugin
-      ? await resolvePluginSubscription(this.subRepo.manager, userId, rootId)
-      : null;
-    const maxDevices =
-      resolved?.via === 'team'
-        ? resolved.sub.max_devices_per_member ?? 1
-        : plugin?.max_activations ?? 2;
+    /**
+     * 上限口径必须与 approve() 逐字一致（同一个 summarizeQuota），
+     * 否则界面说「还能再绑 1 台」、实际授权时被拒 —— 这是用户能直接看见的矛盾。
+     *
+     * 一档一台（0046）后，额度 = 各在期档位额度之和；每台设备还带上「占的是哪一档」，
+     * 账号页因此能显示「基础版 1/1 · Pro 1/1」而不是一个笼统的总数。
+     */
+    const options = await listDeviceTierOptions(this.subRepo.manager, userId, rootId);
+    const quota = summarizeQuota(options, devices.length);
+    const planNameById = new Map<string, string>();
+    for (const o of options) {
+      if (o.plan_name) planNameById.set(o.subscription_id, o.plan_name);
+    }
     return {
       devices: devices.map((d) => ({
         device_id: d.device_id,
@@ -673,8 +766,15 @@ export class PluginsAuthService {
         created_at: d.created_at,
         // 尚未取走令牌 = 已批准但插件没完成激活
         pending: !d.token_hash,
+        /** 这台设备占用的订阅档位（0046）；NULL = 历史行，下次重新授权会自动补上 */
+        subscription_id: d.subscription_id ?? null,
+        plan_name: d.subscription_id
+          ? planNameById.get(d.subscription_id) ?? null
+          : null,
       })),
-      max_devices: maxDevices,
+      // 没有在期档位时（卡已过期）用实际设备数兜底：避免界面出现「已授权 1/0 台」
+      max_devices: quota.max_devices || devices.length,
+      used: devices.length,
     };
   }
 

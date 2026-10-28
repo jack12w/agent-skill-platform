@@ -61,6 +61,21 @@ export class PluginDevice {
   @Column({ type: 'text', nullable: true })
   platform: string;
 
+  /**
+   * 这台设备**占用哪一档订阅的名额**（0046「一档一台」）。
+   *
+   * 0042 起用户在同一插件族内可同时持有多行订阅（基础版 / Pro / 试用 / Team 专业版），
+   * 而本表只有 (user_id, plugin_id, device_id)，此前无法回答「这台机器是靠哪一档进来的」，
+   * 于是设备上限只能取一个标量（主插件 max_activations = 1），
+   * 「买了基础版 + Pro 应该有 2 台」永远做不到。
+   *
+   * NULL = 历史行或用户已无任何订阅（所有权到期后仍允许保留，直到被解绑）。
+   * 迁移：migrations/0046_plugin_device_tier.sql（必须先在库上跑，否则查询会 500）。
+   */
+  @Index('idx_plugin_devices_sub')
+  @Column({ type: 'uuid', nullable: true })
+  subscription_id: string;
+
   @Column({ type: 'timestamptz', nullable: true })
   last_seen_at: Date;
 

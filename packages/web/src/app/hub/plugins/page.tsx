@@ -79,7 +79,7 @@ const EMPTY_FORM: FormState = {
   promoEndsAt: '',
   featuresText: '',
   sort_order: '0',
-  max_activations: '2',
+  max_activations: '1',
   subscription_duration_days: '30',
   status: 'active',
   download_key: '',
@@ -274,7 +274,9 @@ export default function HubPluginsPage() {
         .map((s) => s.trim())
         .filter(Boolean),
       sort_order: Number(form.sort_order) || 0,
-      max_activations: Math.max(1, Math.round(Number(form.max_activations) || 2)),
+      // 默认 1：这个数字是「可授权账号数」，≥2 即团队档（自动建团 + 开 AI）——
+      // 新品默认给 2 等于「一建就是团队版」，是运营最容易踩的一脚。
+      max_activations: Math.max(1, Math.round(Number(form.max_activations) || 1)),
       subscription_duration_days: Math.max(
         1,
         Math.round(Number(form.subscription_duration_days) || 30),
@@ -537,7 +539,7 @@ export default function HubPluginsPage() {
                   </td>
                   <td className="px-4 py-3 text-center text-neutral-500 hidden sm:table-cell">{p.sort_order}</td>
                   <td className="px-4 py-3 text-center text-neutral-500 hidden lg:table-cell">
-                    {p.max_activations ?? 2}
+                    {p.max_activations ?? 1}
                   </td>
                   <td className="px-4 py-3 text-center hidden lg:table-cell">
                     {/* 订阅数 = 订阅过该商品的去重用户数（含已过期、含手动开通），

@@ -82,10 +82,31 @@ export function isTierLikePlugin(p?: Partial<Plugin> | null): boolean {
   return isMainPluginTierSlug(p.slug);
 }
 
-/** 档位/试用商品应落入的 tier（trial 恒为个人权益；team 只由 `-b2b` 决定） */
+/**
+ * 商品对应的权益 tier（2026-10-29 定案：**一个数字定档**）。
+ *
+ * 唯一判据是 `max_activations`（后台界面名「可授权账号数」）：
+ *   · 1  → 个人档（personal）：不带 AI
+ *   · ≥2 → 团队档（team）：带 AI，且这个数就是「能坐几个人」（团长 + 成员）
+ *
+ * 为什么不再用 slug：`-b2b` 是硬编码常量，而后台**允许改 slug**。运营改一次名字，
+ * `tierOfTierSlug` 立刻返回 personal → 付了 ¥1399 的用户 AI 当场失效（权益还在、AI 没了）。
+ * 这与 0041 的 `7testing` 事故是同一类问题：把业务语义寄托在可编辑的命名约定上。
+ *
+ * slug 只在「商品还没配可授权账号数」时兜底（历史数据 / 新建商品漏填）。
+ */
 export function tierOfPlugin(p?: Partial<Plugin> | null): 'personal' | 'team' {
-  if (p?.kind === 'trial') return 'personal';
-  return tierOfTierSlug(p?.slug);
+  if (!p) return 'personal';
+  // 试用商品恒为个人档：AI 是付费团队版的卖点，不能让一次 ¥0.01 的试用拿到。
+  // 这条放在数字判据之前，是为了让运营「把试用的可授权账号数填成 3」这类误配
+  // 不至于变成「花一分钱开 AI」的生产事故。
+  if (p.kind === 'trial') return 'personal';
+  const raw = p.max_activations;
+  if (raw !== null && raw !== undefined) {
+    const n = Number(raw);
+    if (Number.isFinite(n)) return n > 1 ? 'team' : 'personal';
+  }
+  return tierOfTierSlug(p.slug);
 }
 
 /**
@@ -714,8 +735,11 @@ export class OrdersService implements OnModuleInit {
         );
       }
       rootPluginId = main.id;
-      tier = tierOfPlugin(ordered);
     }
+    // tier 由「所购商品的可授权账号数」派生（对所有商品一视同仁，含主插件本身）。
+    // 这意味着：后台把某商品的「可授权账号数」从 1 改成 ≥2，等于把它升成团队档
+    // （自动建团 + 开放 AI）——这是 2026-10-29「一个数字定档」的既定语义，不是 bug。
+    if (ordered) tier = tierOfPlugin(ordered);
 
     // 限购兜底（0041）：下单时已拦一次，这里再拦一次防并发/绕过（例如同一用户开了两笔
     // 待支付订单，回调先后到达）。统计时排除当前订单——它此刻已是 PAID。
@@ -729,16 +753,20 @@ export class OrdersService implements OnModuleInit {
     }
 
     // 席位制（0035）：团队订单自动建团（购买者=团长，已有团复用），
-    // 订阅行挂 team_id —— 权益覆盖全团在册成员；seats 从商品 team_seats 快照。
+    // 订阅行挂 team_id —— 权益覆盖全团在册成员。
+    // 席位数 = 商品的「可授权账号数」(max_activations)，与判 tier 用的**同一个数字**，
+    // 不会再出现「商品写 3、订阅行记 3、AI 却按 slug 判」的三套口径。
     let teamId: string | null = null;
     let seats: number | null = null;
     let maxPerMember: number | null = null;
     if (tier === 'team') {
       const team = await ensureOwnerTeam(this.pluginSubRepo.manager, userId);
       teamId = team.id;
-      // 与 admin 路径一致的下限钳制（2026-10-12 质检）：team_seats 配 0 会让
-      // seatCap 返回 0 → 全团任何人 都加不进来，等于卖了个假团队版。
-      seats = Math.max(1, ordered?.team_seats ?? 3);
+      // 下限钳制（2026-10-12 质检）：配 0 会让 seatCap 返回 0 → 全团谁都加不进来，
+      // 等于卖了个假团队版。max_activations 未配时才回退到历史的 team_seats。
+      seats = Math.max(1, Number(ordered?.max_activations) || Number(ordered?.team_seats) || 3);
+      // 每成员 1 台设备：团队卖的是「几个人」，不是「几台机器」。
+      // 旧实现让团队路径读不到 max_activations（那是席位），设备额度会算成 3 台/人。
       maxPerMember = 1;
     }
 

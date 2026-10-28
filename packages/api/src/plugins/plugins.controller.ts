@@ -127,14 +127,26 @@ export class PluginsController {
     return this.auth.pending(this.uid(req), code);
   }
 
-  /** 确认 / 拒绝授权。设备上限校验在此处进行。 */
+  /**
+   * 确认 / 拒绝授权。设备名额校验在此处进行。
+   *
+   * `subscription_id`（0046，一档一台）：用户在授权页下拉里选的那一档。
+   * 不传 → 后端自动选「在期内且未满、到期最晚」的那档（单档用户 / 老客户端兼容）。
+   * 后端会校验它属于本人、属于本插件族、在期内、且该档还有名额。
+   */
   @Post('auth/approve')
   approve(
     @Req() req: Request,
     @Body('code') code: string,
     @Body('action') action?: 'approve' | 'deny',
+    @Body('subscription_id') subscriptionId?: string,
   ) {
-    return this.auth.approve(this.uid(req), code, action === 'deny' ? 'deny' : 'approve');
+    return this.auth.approve(
+      this.uid(req),
+      code,
+      action === 'deny' ? 'deny' : 'approve',
+      subscriptionId,
+    );
   }
 
   // ─────────────────── 我的订阅 / 设备管理 ───────────────────

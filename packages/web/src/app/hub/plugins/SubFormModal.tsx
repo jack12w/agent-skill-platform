@@ -6,7 +6,6 @@ import useTranslation from '../../../hooks/useTranslation';
 import {
   PRESET_DAYS,
   SUB_STATUSES,
-  SUB_TIERS,
   dayToCnEndOfDay,
   getToken,
   toDateInput,
@@ -21,6 +20,11 @@ interface Props {
   sub?: SubRow;
   /** 新增态默认时长（天）：取插件的「订阅有效期」，不传回落 30 */
   defaultDays?: number;
+  /**
+   * 该商品的「可授权账号数」(max_activations)。
+   * 订阅类型（个人版 / 团队版）由它派生 —— 不在这里人工单选（2026-10-29 定案）。
+   */
+  maxAccounts?: number | null;
   onClose: () => void;
   /** 保存成功（父组件负责关弹窗、提示、刷新列表） */
   onSaved: () => void;
@@ -33,15 +37,38 @@ interface Props {
  *  · 状态默认值与白名单只有一处；
  *  · 「只改状态不碰到期时间」这条规则不会在某个入口被漏掉。
  */
-export default function SubFormModal({ mode, pluginId, sub, defaultDays, onClose, onSaved }: Props) {
+export default function SubFormModal({
+  mode,
+  pluginId,
+  sub,
+  defaultDays,
+  maxAccounts,
+  onClose,
+  onSaved,
+}: Props) {
   const { t } = useTranslation();
   const isEdit = mode === 'edit';
 
   /* ---------------- 共用：状态 / 到期时间 ---------------- */
   // 新增与编辑的默认状态都是「生效中」
   const [status, setStatus] = useState<string>(isEdit ? sub?.status || 'active' : 'active');
-  // 订阅类型（0031）：编辑默认取现有值，新增默认个人版
-  const [tier, setTier] = useState<string>(isEdit ? sub?.tier || 'personal' : 'personal');
+  /**
+   * 订阅类型（2026-10-29 定案：**从商品的「可授权账号数」派生，不再人工单选**）。
+   *
+   * 人工单选与商品配置各说一套，是「商品写 3 席、订阅行记 personal、AI 却开着」
+   * 这类矛盾的根源。现在规则只有一条：
+   *   商品 max_activations = 1 → personal（不带 AI）
+   *   商品 max_activations ≥ 2 → team（带 AI，席位数 = 这个数字）
+   * 编辑态优先按行上已有的席位判断（历史行可能早于本次规则）。
+   */
+  const derivedTier: string = isEdit
+    ? Number(sub?.seats ?? 0) > 1 || sub?.tier === 'team'
+      ? 'team'
+      : 'personal'
+    : Number(maxAccounts ?? 1) > 1
+      ? 'team'
+      : 'personal';
+  const tier = derivedTier;
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
 
@@ -63,7 +90,9 @@ export default function SubFormModal({ mode, pluginId, sub, defaultDays, onClose
   /* ---------------- 席位制（0035）：团队订阅的席位数 / 每成员设备数 ----------------
    * 编辑态回填现有值；新增态默认 3 席 / 每成员 1 台（与后端默认一致）。
    * 用户要加席位时，管理员在这个弹窗直接改大数字保存即可（实时生效）。 */
-  const [seats, setSeats] = useState<string>(isEdit ? String(sub?.seats ?? 3) : '3');
+  const [seats, setSeats] = useState<string>(
+    isEdit ? String(sub?.seats ?? 3) : String(Number(maxAccounts ?? 3) || 3),
+  );
   const [maxDevices, setMaxDevices] = useState<string>(
     isEdit ? String(sub?.max_devices_per_member ?? 1) : '1',
   );
@@ -318,26 +347,25 @@ export default function SubFormModal({ mode, pluginId, sub, defaultDays, onClose
             </div>
           )}
 
-          {/* 订阅类型（0031/0035）：tier=team 时后端自动建团（被授权者=团长），
-              权益覆盖团队全部在册成员；席位与每成员设备数由后端按商品配置快照 */}
+          {/* 订阅类型（2026-10-29 定案）：由商品的「可授权账号数」派生，只读展示。
+              以前这里是人工单选，与商品配置各说一套 —— 商品写 3 席、行上记 personal、
+              AI 却开着，运营根本判断不出这个客户到底算哪档。
+              要改档位请去「插件管理」改该商品的可授权账号数（1 = 个人，≥2 = 团队）。 */}
           <label className="block">
             <span className="text-xs text-neutral-500">{t('admin.subThTier')}</span>
-            <select
-              className={`${field} mt-1`}
-              value={tier}
-              onChange={(e) => setTier(e.target.value)}
+            <div
+              className={`${field} mt-1 bg-neutral-50 text-neutral-600 cursor-default select-none`}
             >
-              {SUB_TIERS.map((v) => (
-                <option key={v} value={v}>
-                  {v === 'team' ? t('admin.subTierTeam') : t('admin.subTierPersonal')}
-                </option>
-              ))}
-            </select>
-            {tier === 'team' && (
-              <span className="block mt-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                {t('admin.subTierTeamHint')}
+              {tier === 'team' ? t('admin.subTierTeam') : t('admin.subTierPersonal')}
+              <span className="ml-2 text-[11px] text-neutral-400">
+                {t('admin.subTierSeatsSuffix', { n: tier === 'team' ? seats : '1' })}
               </span>
-            )}
+            </div>
+            <span className="block mt-1 text-[11px] text-neutral-400">
+              {tier === 'team'
+                ? t('admin.subTierTeamHint')
+                : t('admin.subTierDerivedHint')}
+            </span>
           </label>
 
           {/* 席位制（0035）：团队版才显示。加席位 = 用户要扩容时管理员直接改大保存，

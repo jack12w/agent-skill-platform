@@ -4,6 +4,25 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import useTranslation from '../../hooks/useTranslation';
 
+/** 可授权的订阅档位（0046，一档一台） */
+interface TierOption {
+  subscription_id: string;
+  plan_slug: string | null;
+  plan_name: string | null;
+  /** personal = 个人档；team = 团队档（> 1 席，含 AI） */
+  via: 'personal' | 'team';
+  entitled: boolean;
+  expires_at: string | null;
+  /** 团队档才有：可授权账号数（含团长） */
+  seats: number | null;
+  /** 本档设备额度 / 本人已占用 */
+  quota: number;
+  used: number;
+  remaining: number;
+  full: boolean;
+  recommended: boolean;
+}
+
 interface PendingResp {
   status: 'pending' | 'approved' | 'denied' | 'expired';
   deny_reason?: string;
@@ -18,6 +37,8 @@ interface PendingResp {
   subscription_expires_at?: string;
   devices_used: number;
   max_devices: number;
+  /** 可选的订阅档位（新增）；空数组/缺省 = 老后端，退化为不显示下拉 */
+  options?: TierOption[];
 }
 
 /** 8 位授权码按 4+4 展示，便于与插件端逐位比对 */
@@ -31,6 +52,25 @@ function fmtTime(iso?: string): string {
   if (!iso) return '—';
   const d = new Date(iso);
   return isNaN(d.getTime()) ? '—' : d.toLocaleString('zh-CN');
+}
+
+/**
+ * 档位下拉项文案。三种状态必须一眼可辨：
+ *   · 可用   → 「Pro 标准版 · 可用 1/1 台」
+ *   · 已满   → 「基础版 · 名额已满」（置灰，提示用户升档）
+ *   · 已过期 → 「新用户试用 · 已过期」（置灰，但不隐藏 —— 用户会以为「我没买过」）
+ * 团队档额外标注「团队 N 人」：让团长明白 3 席是 3 个人，不是本机 3 台设备。
+ */
+function tierLabel(
+  o: TierOption,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string {
+  const base = o.plan_name || o.plan_slug || '—';
+  if (!o.entitled) return `${base} · ${t('plugins.authTierExpired')}`;
+  if (o.full) return `${base} · ${t('plugins.authTierFull')}`;
+  const dev = t('plugins.authTierRemaining', { used: o.used, quota: o.quota });
+  const team = o.seats && o.seats > 1 ? ` · ${t('plugins.authTierTeam', { n: o.seats })}` : '';
+  return `${base} · ${dev}${team}`;
 }
 
 interface ApproveResp {
@@ -78,6 +118,8 @@ export default function PluginAuthPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ApproveResp | null>(null);
+  /** 用户选中的订阅档位（0046，一档一台）。默认由后端 recommended 指定 */
+  const [selectedSub, setSelectedSub] = useState<string>('');
 
   useEffect(() => {
     try {
@@ -109,7 +151,15 @@ export default function PluginAuthPage() {
         return;
       }
       setError(null);
-      setInfo(await res.json());
+      const data: PendingResp = await res.json();
+      setInfo(data);
+      /**
+       * 默认档位：后端 marked 的 recommended（在期内且未满、到期最晚）。
+       * 用户什么都不点也能直接确认 —— 下拉只是「想换一档」时的入口，不是必填步骤。
+       */
+      const opts = Array.isArray(data?.options) ? data.options : [];
+      const def = opts.find((o) => o.recommended) ?? opts[0];
+      setSelectedSub(def ? def.subscription_id : '');
     } catch {
       setError(t('plugins.loadFailed'));
     }
@@ -126,10 +176,19 @@ export default function PluginAuthPage() {
       const res = await fetch('/api/plugins/auth/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ code, action }),
+        body: JSON.stringify({
+          code,
+          action,
+          // 一档一台：确认时告诉后端占哪一档的名额（不传则后端自动选）
+          ...(action === 'approve' && selectedSub
+            ? { subscription_id: selectedSub }
+            : {}),
+        }),
       });
       const data: ApproveResp = await res.json().catch(() => ({ ok: false }));
       if (!res.ok) {
+        // 名额已满 / 档位失效会走这里（后端抛 400，不改请求状态）——
+        // 停在原页面，用户可以改选另一档或去解绑，不必回插件重新发起。
         setError(data?.message || t('plugins.authFailed'));
         return;
       }
@@ -182,6 +241,17 @@ export default function PluginAuthPage() {
   const expired = info?.status === 'expired';
   const already = info?.status === 'approved';
   const denied = info?.status === 'denied';
+
+  /**
+   * 档位下拉（0046）：
+   *   · options 为空（老后端 / 无订阅）→ 不渲染这一行
+   *   · 只有 1 档 → 不渲染下拉，只显示文案（单档用户零感知，界面与改动前一致）
+   *   · ≥2 档 → 渲染下拉，满了/过期的项置灰（不隐藏：用户要知道自己买过 Pro）
+   */
+  const tierOptions = info?.options ?? [];
+  const currentTier =
+    tierOptions.find((o) => o.subscription_id === selectedSub) ?? tierOptions[0];
+  const tierBlocked = !!currentTier && (!currentTier.entitled || currentTier.full);
 
   return (
     <div className="max-w-lg mx-auto px-4 py-16">
@@ -270,6 +340,40 @@ export default function PluginAuthPage() {
                 })}
               </dd>
             </div>
+            {/* 授权使用哪一档（0046 一档一台）：单档只显示文案，多档才出下拉 */}
+            {currentTier && (
+              <div className="flex justify-between items-center gap-3">
+                <dt className="text-neutral-400 whitespace-nowrap">
+                  {t('plugins.authTier')}
+                </dt>
+                <dd className="text-neutral-700 text-right min-w-0">
+                  {tierOptions.length > 1 ? (
+                    <select
+                      value={currentTier.subscription_id}
+                      onChange={(e) => setSelectedSub(e.target.value)}
+                      className="max-w-[15rem] text-xs border border-neutral-200 rounded-md px-2 py-1.5 bg-white text-neutral-700 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    >
+                      {tierOptions.map((o) => (
+                        <option
+                          key={o.subscription_id}
+                          value={o.subscription_id}
+                          disabled={!o.entitled || o.full}
+                        >
+                          {tierLabel(o, t)}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="truncate">{tierLabel(currentTier, t)}</span>
+                  )}
+                </dd>
+              </div>
+            )}
+            {tierBlocked && (
+              <div className="text-[11px] leading-relaxed text-amber-600 text-right">
+                {t('plugins.authTierBlocked')}
+              </div>
+            )}
             <div className="flex justify-between gap-3">
               <dt className="text-neutral-400">{t('plugins.authSubStatus')}</dt>
               <dd className={info.subscribed ? 'text-green-700' : 'text-red-600'}>
@@ -307,8 +411,9 @@ export default function PluginAuthPage() {
               </button>
               <button
                 onClick={() => decide('approve')}
-                disabled={busy}
-                className="flex-1 text-sm text-white bg-brand-600 rounded-lg px-4 py-2.5 hover:bg-brand-700 disabled:opacity-50"
+                disabled={busy || tierBlocked}
+                title={tierBlocked ? t('plugins.authTierBlocked') : undefined}
+                className="flex-1 text-sm text-white bg-brand-600 rounded-lg px-4 py-2.5 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {busy ? t('plugins.authProcessing') : t('plugins.authConfirm')}
               </button>

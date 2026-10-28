@@ -12,7 +12,7 @@ import { DataSource, Repository } from 'typeorm';
 import { z } from 'zod';
 import { PluginSubscription } from '../plugins/plugin.entity';
 import { PluginDevice } from '../plugins/plugin-auth.entity';
-import { hashSecret } from '../plugins/plugin-auth.util';
+import { hashSecret, isTeamTier } from '../plugins/plugin-auth.util';
 import { resolvePluginSubscription } from '../plugins/plugin-entitlement-resolve';
 
 /**
@@ -160,7 +160,8 @@ export class AiPushController {
     /* ②b 企业版门禁（2026-10-07）：AI 推送仅 team 档可用。口径与 ② 同为订阅级失效
        → 402 保留令牌（升级后即恢复），插件端按 code=TIER_REQUIRED 区分提示文案。
        团队席位覆盖的成员（via='team'）同样放行。 */
-    if (!(resolved!.via === 'team' || String(sub!.tier || 'personal') === 'team')) {
+    // 唯一判据：本行可授权账号数 > 1（见 plugin-auth.util isTeamTier），与 ai-query 同一写法。
+    if (!isTeamTier(sub)) {
       await this.log(device.user_id, device.plugin_id, 'rejected', null, 0, 'TIER_REQUIRED');
       fail(402, {
         ok: false,

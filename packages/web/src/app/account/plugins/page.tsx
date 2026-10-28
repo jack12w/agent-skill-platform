@@ -56,6 +56,9 @@ interface DeviceRow {
   last_seen_at?: string | null;
   created_at?: string | null;
   pending?: boolean;
+  /** 这台设备占用哪一档订阅（0046 一档一台）；NULL = 历史行，重新授权后自动补 */
+  subscription_id?: string | null;
+  plan_name?: string | null;
 }
 
 function authHeaders(): Record<string, string> {
@@ -615,6 +618,13 @@ export default function MyPluginsPage() {
                                           {d.pending ? (
                                             <span className="ml-1.5 text-[10px] text-amber-600 border border-amber-200 rounded px-1">
                                               {t('plugins.devicePending')}
+                                            </span>
+                                          ) : null}
+                                          {/* 一档一台：显示这台设备占用的是哪一档名额，
+                                              用户解绑前能确认「放掉的是哪份订阅的额度」 */}
+                                          {d.plan_name ? (
+                                            <span className="ml-1.5 text-[10px] text-neutral-500 border border-neutral-200 rounded px-1">
+                                              {d.plan_name}
                                             </span>
                                           ) : null}
                                         </div>

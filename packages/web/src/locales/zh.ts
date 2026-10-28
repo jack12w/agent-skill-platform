@@ -391,7 +391,7 @@ const zh = {
     /* 2026-10-13：用户拍板口径 —— 该数值实际指「账号数」（每个账号激活一次），
        不再说「设备」。列表列头 thDevices 与本 hint 复用同一文案。 */
     fieldMaxActivations: '可授权账号数',
-    fieldMaxActivationsHint: '该插件可授权的账号数量上限（1-50，默认 2）。团队版可调大。',
+    fieldMaxActivationsHint: '该插件可授权的账号数量（1-50）。这一个数字决定商品档位：1 = 个人版（不含 AI）；≥2 = 团队版（含 AI，数字即席位数）。改这里会同时改变新订单的档位与席位。',
     fieldDuration: '订阅有效期（天）',
     fieldDurationHint: '本款插件新开/续费订阅的默认时长（1-3650，默认 30）；手动开通订阅时也以此为默认天数。',
     /* 0041（2026-10-28）：商品类型 / 档位归属 / 限购 / 续费 */
@@ -543,7 +543,9 @@ const zh = {
     /* 0040 购买档位：订阅行记录的商品行名（权益在主插件行，仅凭 plugin_id 分不出档位） */
     subSourceTier: '购买档位',
     /* 0035 席位制：后台选团队版时的行为提示（自动建团 + 覆盖成员） */
-    subTierTeamHint: '选择「团队版」将自动为该用户创建团队（其本人为团长），权益覆盖团队全部在册成员；席位与每成员设备数可在下方直接调整，保存后即时生效。',
+    subTierTeamHint: '团队版：保存后自动为该用户建团（其本人为团长），权益覆盖全部在册成员；席位可在下方调整，即时生效。',
+    subTierDerivedHint: '订阅类型由商品的「可授权账号数」决定（1 = 个人版，≥2 = 团队版）。要改档位请到「插件管理」修改该商品。',
+    subTierSeatsSuffix: '· {n} 席',
     subSeatsLabel: '席位数（含团长）',
     subSeatsHint: '用户要加席位时改大保存即可，实时生效；改小只拦新邀请，不剔除已入成员。',
     subMaxDevicesLabel: '每成员设备数',
@@ -1171,6 +1173,13 @@ const zh = {
     authRequestedAt: '发起时间',
     authDevicesUsed: '已授权设备',
     authSubStatus: '订阅状态',
+    // ── 授权页「授权使用」档位选择（0046 一档一台）──
+    authTier: '授权使用',
+    authTierRemaining: '可用 {used}/{quota} 台',
+    authTierFull: '名额已满',
+    authTierExpired: '已过期',
+    authTierTeam: '团队 {n} 人',
+    authTierBlocked: '该档名额已用满或已过期，请改选其他订阅，或到「我的订阅」解绑一台后再试',
     authNoSubscription: '未订阅',
     authSubscribeFirst: '你还没有订阅该插件，请先完成订阅再回来授权。',
     authConfirm: '确认授权',

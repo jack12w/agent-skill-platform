@@ -5,6 +5,7 @@ import * as crypto from 'node:crypto';
 import { Plugin, PluginSubscription } from '../plugins/plugin.entity';
 import { AiApiKey } from './ai-api-key.entity';
 import { resolvePluginSubscription } from '../plugins/plugin-entitlement-resolve';
+import { isTeamTier } from '../plugins/plugin-auth.util';
 
 /**
  * AI 数据服务 · query 取数核心（2026-10-06 从 AiQueryController 平移抽出）。
@@ -115,7 +116,10 @@ export class AiQueryService {
     /* ③b 企业版门禁（2026-10-07 用户拍板）：查询取数与推送同口径，仅 team 订阅可调。
        个人版 → 402 TIER_REQUIRED（密钥保留，升级即恢复），upgradeUrl 供客户端跳订阅页。
        与 ai-push ②b 同一判断写法；团队席位覆盖的成员（via='team'）同样放行。 */
-    if (!(resolved!.via === 'team' || String(sub!.tier || 'personal') === 'team')) {
+    // 唯一判据：本行可授权账号数 > 1（见 plugin-auth.util isTeamTier）。
+    // 旧写法 `via==='team' || tier==='team'` 有两条旁路：seats=1 的团队行、
+    // 后台手工置 tier=team 的无团无席位行，都能开 AI —— 与「1 席不带 AI」的口径冲突。
+    if (!isTeamTier(sub)) {
       await this.usage(userId, key.id, t, null, 0, 'rejected', 'TIER_REQUIRED');
       fail(402, {
         ok: false,
