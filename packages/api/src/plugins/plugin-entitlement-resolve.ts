@@ -18,12 +18,12 @@ import { PluginSubscription } from './plugin.entity';
  *    「找到该看哪一行」。entitled 标记用同一规则（status IN active/cancelled + 未到期）
  *    在 SQL 里预计算，两者口径必须同步改。
  *
- * ★ 0041（2026-10-28 生产事故）——**查询范围从「单个 plugin_id」扩大到「商品族」**：
- *   以前只按 device.plugin_id（主插件行）精确匹配，于是落错行的档位/试用订阅（如
- *   slug 被填成 `7testing` 的试用商品）永远查不到，用户买了权益却一直看到「已过期」。
- *   现在族内 = 自己 + parent_plugin_id 指向自己的商品 + （自己是主插件时）slug 前缀族。
- *   有了显式字段后正常路径不会出现错行，这一层是**防御性兜底**：万一还有残留，
- *   也能按上面的优先级选到最好的那一条，不会整片失权。
+ * ★ 0042（一档一行）——**查询范围改为 `root_plugin_id`**：
+ *   订阅行的 plugin_id 现在是「用户买的那个商品」（基础版 / Pro / 试用 / 独立商品），
+ *   权益归属另存 root_plugin_id。扩展端传进来的 device.plugin_id 恒为主插件行 id，
+ *   正好等于 root_plugin_id，因此这里一次索引命中即可，不再需要 0041 那套商品族
+ *   UNION 子查询，也不依赖 slug 前缀兜底。
+ *   同一插件下用户可以有**多行**（买过基础版 + Pro + 试用各一行），由下面的排序择优。
  *
  * 原始 SQL 而非 QueryBuilder：team_members 是 teams 模块的实体，调用方（ai 模块等）
  * 未必在 forFeature 注册过它，raw query 不依赖实体注册。
@@ -42,26 +42,15 @@ export async function resolvePluginSubscription(
   userId: string,
   pluginId: string,
 ): Promise<ResolvedPluginSubscription | null> {
+  // 0042（一档一行）：权益归属收口到 root_plugin_id，不再用商品族 UNION 子查询。
+  // 扩展端传进来的 device.plugin_id 恒为主插件行 id，正好等于 root_plugin_id，
+  // 因此查询变成一次索引命中（idx_plugin_subs_root），不再依赖 slug 前缀兜底。
   const rows: any[] = await em.query(
     `SELECT s.*,
             (s.team_id IS NOT NULL) AS _via_team,
             (s.status IN ('active', 'cancelled') AND s.expires_at > now()) AS _entitled
        FROM plugin_subscriptions s
-      WHERE s.plugin_id IN (
-              /* 本行自身 */
-              SELECT $2::uuid
-              UNION
-              /* 显式声明归属于本行的档位 / 试用商品（0041） */
-              SELECT p.id FROM plugins p WHERE p.parent_plugin_id = $2::uuid
-              UNION
-              /* 兜底：自己是主插件时，slug 前缀族里尚未回填 parent_plugin_id 的历史商品 */
-              SELECT c.id
-                FROM plugins c
-                JOIN plugins me ON me.id = $2::uuid
-               WHERE me.slug = 'alibaba-toolkit'
-                 AND c.slug LIKE 'alibaba-toolkit-%'
-                 AND c.id <> me.id
-            )
+      WHERE s.root_plugin_id = $2::uuid
         AND (
           (s.team_id IS NULL AND s.user_id = $1)
           OR (s.team_id IS NOT NULL AND EXISTS (

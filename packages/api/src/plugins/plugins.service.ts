@@ -77,41 +77,24 @@ export class PluginsService {
     // 每行附带 via_team / is_team_owner / team_name，前端据此渲染：
     //   团长 → 「团队版」徽标 + 团名 + 「管理团队」入口；成员 → 「由团队提供」徽标。
     //
-    // ⚠️ 2026-10-28：**必须先按商品族去重再返回**。0041 迁移把错落在试用/档位商品上的
-    //    订阅行归档（status='expired' 但保留行），这些历史行与权益行同属一族；不过滤的话
-    //    账号中心会把「同一份权益」渲染成两张一模一样的卡片（用户实测：两个「新用户试用」
-    //    都显示已过期，而他原本的基础版卡片看起来消失了）。
-    //    去重口径与权益解析（plugin-entitlement-resolve）保持一致：
-    //      · 分组键 = 商品族（COALESCE(p.parent_plugin_id, p.id)）+ 归属形态（个人 / 团队）
-    //      · 排序 = 有权优先 > 团队优先 > 到期更晚 > 开始更晚
-    //    正常数据（一族一个人行）行为完全不变；只有异常/归档行被折叠。
+    // 0042（一档一行，2026-10-28）：**不再做任何去重折叠**。
+    //   一行 = 用户真实买过的一个商品，账号中心据此「一档一张卡」，到期也保留。
+    //   旧实现（0041）按商品族折叠是为了掩盖归档行重复，那是旧模型的症状；
+    //   新模型下同一商品只可能有 1 条个人行（唯一索引保证），折叠反而会吞掉用户
+    //   买过的档位 —— 正是用户反馈「我的基础版不见了」的根因。
     const rows: any[] = await this.subRepo.query(
-      `WITH base AS (
-         SELECT s.*,
-                (s.team_id IS NOT NULL) AS via_team,
-                (s.team_id IS NOT NULL AND s.user_id = $1) AS is_team_owner,
-                t.name AS team_name,
-                COALESCE(p.parent_plugin_id, p.id) AS family_id
-           FROM plugin_subscriptions s
-           LEFT JOIN teams t   ON t.id = s.team_id
-           LEFT JOIN plugins p ON p.id = s.plugin_id
-          WHERE s.user_id = $1
-             OR (s.team_id IS NOT NULL AND s.status IN ('active', 'cancelled') AND s.expires_at > now()
-                 AND EXISTS (
-                       SELECT 1 FROM team_members m
-                        WHERE m.team_id = s.team_id AND m.user_id = $1))
-       ), ranked AS (
-         SELECT base.*,
-                ROW_NUMBER() OVER (
-                  PARTITION BY family_id, (team_id IS NOT NULL)
-                  ORDER BY COALESCE(status IN ('active', 'cancelled') AND expires_at > now(), false) DESC,
-                           (COALESCE(tier, 'personal') = 'team') DESC,
-                           expires_at DESC NULLS LAST,
-                           started_at DESC NULLS LAST
-                ) AS rn
-           FROM base
-       )
-       SELECT * FROM ranked WHERE rn = 1 ORDER BY started_at DESC NULLS LAST`,
+      `SELECT s.*,
+              (s.team_id IS NOT NULL) AS via_team,
+              (s.team_id IS NOT NULL AND s.user_id = $1) AS is_team_owner,
+              t.name AS team_name
+         FROM plugin_subscriptions s
+         LEFT JOIN teams t ON t.id = s.team_id
+        WHERE s.user_id = $1
+           OR (s.team_id IS NOT NULL AND s.status IN ('active', 'cancelled') AND s.expires_at > now()
+               AND EXISTS (
+                     SELECT 1 FROM team_members m
+                      WHERE m.team_id = s.team_id AND m.user_id = $1))
+        ORDER BY s.started_at DESC`,
       [userId],
     );
     return rows as PluginSubscription[];
@@ -583,48 +566,15 @@ export class PluginsService {
   async adminListSubscriptions(pluginId: string, q: any) {
     const plugin = await this.adminGet(pluginId);
 
-    // 归属映射（0036 + 0040）：权益实体永远在主插件行（扩展端/AI 门禁写死主行 slug，
-    // 这个存储模型不能动），但**后台筛选按购买档位还原归属**：
-    //   筛某个档位商品（企业版 b2b / Pro 年付 year / 运营后续新建的任意档位）
-    //     → 只显示 source_plugin_id = 该档位商品 id 的行；
-    //   筛主插件（个人版）→ 显示个人行，且购买档位为主行或未知（0040 前的历史行）。
-    // 同一用户同时持有个人订阅 + 团队订阅 → 两个筛选下各显示一行，互不遮挡。
-    //
-    // ⚠️ 2026-10-12（0040）：旧实现没有 source_plugin_id，非企业版档位（如 `-year`）
-    //    与主行个人订阅在数据上不可区分，只能统一塞进「个人桶」——筛选 `-year` 会
-    //    把主行直购的订阅一起显示出来（用户实测反馈「筛选后不是只显示对应的」）。
-    //    现在按 source_plugin_id 精确筛选；NULL = 0040 之前且订单无法还原的历史行，
-    //    归入主行（唯一安全的默认归类，避免老数据在列表里凭空消失）。
-    let wherePluginId = pluginId;
-    let rowKind: 'team' | 'personal' | null = null;
-    /** 精确匹配 source_plugin_id 的档位商品 id（null = 不按档位过滤） */
-    let sourcePluginId: string | null = null;
-    /** true = 主行页：source 为 NULL 的历史行也算「主行直购」，一并显示 */
-    let includeNullSource = false;
-    /**
-     * true = 在档位/试用商品页：除「权益行（落主行 + source 指向本商品）」外，
-     * 还要带出**归档在商品自己 id 上的历史行**。
-     *
-     * ⚠️ 2026-10-28（0041 后实测反馈）：迁移把落错行的订阅归位到主行后，那些被合并的
-     * 试用行会留在商品自己的 id 上并置 expired。若仍按「plugin_id = 主行」硬筛，
-     * 后台在「新用户试用」下就再也看不到这批用户（例如杨：权益依据仍是主行原购买，
-     * source 保持 NULL，于是既不匹配 source 也匹配不到主行）——运营会以为数据丢了。
-     * 站在这款商品的角度，这些行是**真实发生过的购买/领取记录**，必须可见。
-     */
-    let includeArchivedOnTier = false;
-    if (isTierLikePlugin(plugin)) {
-      const main = await resolveEntitlementParent(this.pluginRepo, plugin);
-      if (main) {
-        wherePluginId = main.id;
-        rowKind = tierOfPlugin(plugin) === 'team' ? 'team' : 'personal';
-        sourcePluginId = pluginId;
-        includeArchivedOnTier = true;
-      }
-    } else if (plugin.slug === MAIN_PLUGIN_SLUG) {
-      rowKind = 'personal';
-      sourcePluginId = plugin.id;
-      includeNullSource = true;
-    }
+    // 归属映射（0042，一档一行）——**不再需要任何猜测**：
+    //   筛某个具体商品（基础版 / Pro / 试用 / 独立商品）
+    //     → plugin_id = 该商品。用户当初买的就是这一行，精准命中，不会漏也不会混。
+    //   筛主插件（alibaba-toolkit）
+    //     → root_plugin_id = 主插件，即该插件的**全部**订阅（含所有档位）。
+    // 旧实现靠 source_plugin_id 反推归属，猜不到的用户直接消失（用户实测反馈）。
+    const isMainPage = plugin.slug === MAIN_PLUGIN_SLUG && !isTierLikePlugin(plugin);
+    const filterByRoot = isMainPage;
+    const wherePluginId = pluginId;
 
     const page = Math.max(1, Math.floor(Number(q?.page) || 1));
     const size = Math.min(100, Math.max(1, Math.floor(Number(q?.size) || 20)));
@@ -633,39 +583,14 @@ export class PluginsService {
 
     // 把过滤条件抽成函数：items 与 total 必须走**完全相同**的 where，否则分页数会对不上
     const applyFilters = (qb: any) => {
-      if (includeArchivedOnTier && sourcePluginId) {
-        // (权益行：落主行且 source 指向本商品) OR (归档行：仍挂在商品自己 id 上)
-        qb.where(
-          new Brackets((w) => {
-            w.where('s.plugin_id = :pluginId', { pluginId: wherePluginId })
-              .andWhere('s.source_plugin_id = :srcId', { srcId: sourcePluginId })
-              .orWhere('s.plugin_id = :archivedId', { archivedId: sourcePluginId });
-          }),
-        );
+      if (filterByRoot) {
+        qb.where('s.root_plugin_id = :pluginId', { pluginId: wherePluginId });
       } else {
         qb.where('s.plugin_id = :pluginId', { pluginId: wherePluginId });
       }
-      // 归属过滤（0036 + 二轮质检 #4 防御）：团队筛选放宽到「挂了团**或** tier=team」
-      // （覆盖 0035 前成交、team_id 为 NULL 的历史 b2b 行——虽然当前生产无此数据，
-      // 但口径上 tier=team 就是团队档）；个人筛选收紧为互补条件。两者互斥不漏。
-      if (rowKind === 'team') {
-        qb.andWhere("(s.team_id IS NOT NULL OR COALESCE(s.tier, 'personal') = 'team')");
-      }
-      if (rowKind === 'personal') {
-        qb.andWhere("s.team_id IS NULL AND COALESCE(s.tier, 'personal') <> 'team'");
-      }
-      // 购买档位过滤（0040）：精确匹配「用户当初买的是这一档」。
-      // 主行页额外放行 NULL（历史行无法还原购买档位 → 归主行，避免老数据消失）。
-      // 档位/试用页已在上面 Brackets 内完成两路匹配，这里不再叠加。
-      if (sourcePluginId && !includeArchivedOnTier) {
-        if (includeNullSource) {
-          qb.andWhere('(s.source_plugin_id IS NULL OR s.source_plugin_id = :srcId)', {
-            srcId: sourcePluginId,
-          });
-        } else {
-          qb.andWhere('s.source_plugin_id = :srcId', { srcId: sourcePluginId });
-        }
-      }
+      // 0042：不再按 tier 拆个人/团队两个桶。
+      // 站在商品维度，买了它的人（个人行或团队行）都该出现；列表已带 team_name 列，
+      // 运营一眼能分辨。旧实现把个人桶收紧为 team_id IS NULL，会让团队行在商品页消失。
       if (status) qb.andWhere('s.status = :status', { status });
       if (search) qb.andWhere('(u.email ILIKE :kw OR u.name ILIKE :kw)', { kw: `%${search}%` });
       return qb;
@@ -691,7 +616,7 @@ export class PluginsService {
         's.team_id AS team_id',
         's.seats AS seats',
         's.max_devices_per_member AS max_devices_per_member',
-        's.source_plugin_id AS source_plugin_id',
+        's.root_plugin_id AS root_plugin_id',
         'u.email AS user_email',
         'u.name AS user_name',
         't.name AS team_name',
@@ -722,16 +647,18 @@ export class PluginsService {
   async adminAddSubscription(pluginId: string, body: any): Promise<PluginSubscription> {
     const plugin = await this.adminGet(pluginId);
 
-    // 档位映射（与 orders.fulfillPluginSubscription 同规，2026-10-12 四轮质检扩到全族）：
-    // 在档位商品页（企业版 `-b2b`、Pro 年付 `-year`、以及运营后续新建的任意
-    // `alibaba-toolkit-*` 档位）手动开通 → 权益行落到**主插件行**。否则会落在一个
-    // **没人读的死行**上——扩展端与 AI 门禁只认主行 slug，落错行 = 后台显示已开通、
-    // 用户实际无权益。旧实现只识别 `-b2b`，故 `-year` 手动开通同样会落死行。
-    let targetPluginId = pluginId;
-    // 0041：判定改用「显式 parent_plugin_id 优先、slug 前缀兜底」，见 isTierLikePlugin
+    // 0042（一档一行）：后台在哪款商品页手动开通，就落**哪款商品**一行；
+    // 权益归属 root_plugin_id 由其 parent 决定。旧实现把行落到主插件上，
+    // 于是后台给「Pro 标准版」开通，用户账号页却显示「基础版」。
+    let rootPluginId = pluginId;
     if (isTierLikePlugin(plugin)) {
       const main = await resolveEntitlementParent(this.pluginRepo, plugin);
-      if (main) targetPluginId = main.id;
+      if (!main) {
+        throw new BadRequestException(
+          '档位/试用商品配置异常：找不到其归属的主插件行，已拒绝开通',
+        );
+      }
+      rootPluginId = main.id;
     }
 
     const userId = String(body?.user_id ?? '').trim();
@@ -763,8 +690,8 @@ export class PluginsService {
     const existing = await this.subRepo.findOne({
       where:
         tier === 'team'
-          ? { user_id: userId, plugin_id: targetPluginId, team_id: Not(IsNull()) }
-          : { user_id: userId, plugin_id: targetPluginId, team_id: IsNull() },
+          ? { user_id: userId, plugin_id: pluginId, team_id: Not(IsNull()) }
+          : { user_id: userId, plugin_id: pluginId, team_id: IsNull() },
     });
 
     if (existing) {
@@ -780,6 +707,7 @@ export class PluginsService {
       }
       existing.status = status;
       existing.tier = tier;
+      existing.root_plugin_id = rootPluginId;
       if (tier === 'team') {
         existing.team_id = teamId;
         // 席位上取（2026-10-12 四轮质检）：新增/续期弹窗的席位初值恒为商品档位默认值，
@@ -791,11 +719,6 @@ export class PluginsService {
           maxPerMember,
         );
       }
-      // 购买档位溯源（0040）：**只在为空时补写，不覆盖已知值**。
-      // 管理员在别的档位页顺手为老用户续期，不应把他的购买档位从「-year 年付」
-      // 改写成「主行月付」——那会让账号中心的下一次续费按错价下单。新建/首次记录
-      // 由下面的 create 分支写入；真正换档位购买请走对应档位商品页新建团队行。
-      if (!existing.source_plugin_id) existing.source_plugin_id = pluginId;
       await this.subRepo.save(existing);
       return existing;
     }
@@ -805,7 +728,8 @@ export class PluginsService {
     //    order_id 刻意不传 → 落库为 NULL，这就是「非付费」的天然标记。
     const sub = this.subRepo.create({
       user_id: userId,
-      plugin_id: targetPluginId,
+      plugin_id: pluginId,
+      root_plugin_id: rootPluginId,
       plan: 'manual',
       tier,
       team_id: teamId,
@@ -815,9 +739,6 @@ export class PluginsService {
       status,
       started_at: new Date(),
       expires_at: expiresAt ?? new Date(now + days * DAY),
-      // 购买档位溯源（0040）：记录管理员是在哪个商品页开出的这张订阅，
-      // 供后台按档位筛选与账号中心按同档续费使用（非 targetPluginId）。
-      source_plugin_id: pluginId,
     });
     await this.subRepo.save(sub);
     return sub;
@@ -837,19 +758,13 @@ export class PluginsService {
     body: any,
   ): Promise<PluginSubscription> {
     const plugin = await this.adminGet(pluginId);
-    // 0036 归属映射：在 b2b 档位商品页编辑 → 目标行在主插件行（团队行都挂在主行上，
-    // 与列表筛选/新增入口同规）。少了这层映射，b2b 页点编辑会被
-    // 「该订阅不属于当前插件」误杀（行本身就在主插件行上）。
-    let targetPluginId = pluginId;
-    // 0041：判定改用「显式 parent_plugin_id 优先、slug 前缀兜底」，见 isTierLikePlugin
-    if (isTierLikePlugin(plugin)) {
-      const main = await resolveEntitlementParent(this.pluginRepo, plugin);
-      if (main) targetPluginId = main.id;
-    }
+    // 0042：一档一行后，编辑权限的判据是「这条订阅是否本商品（或本插件的某个档位）」。
+    // 在主插件页可编辑该插件的全部档位行；在具体商品页只可编辑本商品的行。
+    const isMainPage = plugin.slug === MAIN_PLUGIN_SLUG && !isTierLikePlugin(plugin);
 
     const sub = await this.subRepo.findOne({ where: { id: subId } });
     if (!sub) throw new NotFoundException('订阅记录不存在');
-    if (sub.plugin_id !== targetPluginId) {
+    if (isMainPage ? sub.root_plugin_id !== pluginId : sub.plugin_id !== pluginId) {
       throw new BadRequestException('该订阅不属于当前插件，请刷新后重试');
     }
 
@@ -884,7 +799,7 @@ export class PluginsService {
       // 管理端只看到 500。必须先查个人行，有就明确拒绝。
       if (sub.tier === 'personal' && sub.team_id != null) {
         const personalRow = await this.subRepo.findOne({
-          where: { user_id: sub.user_id, plugin_id: targetPluginId, team_id: IsNull() },
+          where: { user_id: sub.user_id, plugin_id: sub.plugin_id, team_id: IsNull() },
         });
         if (personalRow) {
           throw new BadRequestException(
@@ -928,7 +843,7 @@ export class PluginsService {
       //    22P02，23505 仍是默认 500）；0037 未生效时静默产生重复团队行，
       //    后续续期只会命中其中一行，另一行变成陈旧孤儿。
       const teamRow = await this.subRepo.findOne({
-        where: { user_id: sub.user_id, plugin_id: targetPluginId, team_id: Not(IsNull()) },
+        where: { user_id: sub.user_id, plugin_id: sub.plugin_id, team_id: Not(IsNull()) },
       });
       if (teamRow && teamRow.id !== sub.id) {
         throw new BadRequestException(

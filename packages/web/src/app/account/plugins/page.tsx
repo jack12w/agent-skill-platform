@@ -38,9 +38,9 @@ interface MySub {
   team_id?: string | null;
   /** 订阅行归属用户 id（团队行上=团长本人），配合 via_team 判断是否团长 */
   user_id?: string;
-  /** 购买档位商品 id（0040）：本行权益最近一次购买所依据的商品行 id。
-   *  NULL = 未知（0040 前的历史行）/ 直接在主插件行购买。用于续费按同档下单 + 卡片标题。 */
-  source_plugin_id?: string | null;
+  /** 权益归属插件 id（0042）：一档一行后，plugin_id 就是「用户买的那个商品」，
+   *  root_plugin_id 是它归属的插件。卡片标题与续费都用 plugin_id，不再靠 source 猜。 */
+  root_plugin_id?: string | null;
 }
 
 interface DeviceRow {
@@ -459,23 +459,12 @@ export default function MyPluginsPage() {
             // 团长 vs 成员：团长看「团队版」+ 管理入口；成员看「由团队提供」。
             // 之前统一显示「由团队提供」，团长误以为买的还是个人版（2026-10-12 实测反馈）。
             const teamOwner = viaTeam && (!!s.is_team_owner || s.user_id === getUserId());
-            // 卡片标题按购买档位显示商品名（2026-10-12 用户反馈）：订阅行存储在
-            // 主插件行上，直接读主插件名会显示「体验版」让人以为买错了。
-            // 0040 起优先用订阅行记录的购买档位商品名（精确，含 Pro 年付等非团队档位）；
-            // 历史行（无记录）退回按 tier 推断（团队→b2b 企业版，其余→主行名）。
-            // 2026-10-12 五轮质检：**有记录却解析不到商品**（该档位已下架 / 商品列表本次
-            // 加载失败）时不再退回主行名 —— 否则年付 Pro 用户看到「体验版」以为自己买错了；
-            // 团队行仍可借 b2b 商品名兜底，最后才落到中性文案。
-            const srcId = s.source_plugin_id || null;
-            const srcPlugin = srcId ? plugins[srcId] : undefined;
-            const displayName =
-              srcPlugin?.name ||
-              (s.tier === 'team'
-                ? Object.values(plugins).find((x) => x.slug === 'alibaba-toolkit-b2b')?.name
-                : undefined) ||
-              (srcId ? t('plugins.tierUnavailable') : undefined) ||
-              p?.name ||
-              s.plugin_id;
+            // 卡片标题（0042 一档一行）：订阅行的 plugin_id 就是用户**买的那个商品**，
+            // 直接取它的名字即可 —— 买过基础版显示「基础版」、买过 Pro 显示「Pro 标准版」、
+            // 买过试用显示「新用户试用」，到期也保留，不再被后一次购买覆盖。
+            // 只有商品被下架/本次列表加载失败时才退到中性文案（不退回主插件名，
+            // 否则年付用户会看到「基础版」以为自己买错了）。
+            const displayName = p?.name || t('plugins.tierUnavailable');
             const dd = deviceData[s.plugin_id];
             const open = deviceOpen === s.id;
             return (
@@ -706,82 +695,35 @@ export default function MyPluginsPage() {
                       非空），旧条件 !viaTeam 把团长一起藏了 → 全站没有任何入口能再下
                       团队版的单（市场页对团长也只显示「已订阅」）。故加 || teamOwner。 */}
                   {(!viaTeam || teamOwner) &&
-                    (srcPlugin?.renew_allowed === false ? (
+                    (p?.renew_allowed === false ? (
                       /*
-                       * 0041（2026-10-28）：一次性权益（试用）不提供续费入口。
-                       *
-                       * 为什么必须在这一层拦：续费按 `source_plugin_id` 原档位下单，
-                       * 试用行的 source 就是试用商品 → 续费会按 ¥0.01 / 3 天 重新下单，
-                       * 等于让用户无限白用（资损）。限购只在**购买**路径生效，
-                       * 续费走的是同一个下单接口，但语义上属于「重复购买」，
-                       * 后端已按 max_purchases 拦；这里把入口直接收掉，避免用户点了报错。
+                       * 0041 / 0042：一次性权益（试用等 renew_allowed=false 的商品）
+                       * 不提供续费入口 —— 收掉入口 + 后端拦截双保险，避免点了报错。
                        */
                       <span className="text-[11px] leading-relaxed text-neutral-400">
                         {t('plugins.renewDisabled')}
                       </span>
                     ) : (
-                    <button
-                      onClick={() => {
-                        // 续费必须按「用户当初购买的那一档商品」下单（0040）：
-                        //   权益实体在主插件行，但价格与订阅时长由档位商品决定
-                        //   （见 orders.fulfillPluginSubscription 读商品 subscription_duration_days）。
-                        //   旧实现只能按 tier 猜（team→b2b，其余→主行）：年付 Pro 用户在
-                        //   `-year` 档买的 365 天权益，续费会被按主行月付档下单
-                        //   → 少给 335 天（用户资损）。现按订阅行记录的 source_plugin_id 精确下单。
-                        const srcId = s.source_plugin_id || null;
-                        const srcPlugin = srcId ? plugins[srcId] : undefined;
-                        // 2026-10-12 五轮质检：**有购买档位记录但解析不到商品**时不能兜底。
-                        // 触发条件有两种，都不能当作「没有档位记录」处理：
-                        //   ① 该档位商品被后台下架/删除（公共列表只返回 status='active'，
-                        //      下架后就不再出现在 plugins 映射里）；
-                        //   ② 本次 /api/plugins 请求失败 → plugins 是空对象 → 全员解析不到。
-                        // 旧实现在这两种情况下会落到下面的 tier 推断分支，对**个人档位行**
-                        // （如年付 Pro）静默按主行 ¥49/月 下单 —— 续一次少给 335 天（资损），
-                        // 且订单商品与用户实际持有的档位不符。与 b2bMissing 同款处置：
-                        // 显式拦住并说明，绝不静默错价下单。
-                        if (srcId && !srcPlugin) {
-                          setNotice(t('plugins.sourceTierMissing'));
-                          return;
-                        }
-                        if (srcPlugin) {
+                      <button
+                        onClick={() => {
+                          // 0042（一档一行）：续费 = 再买一次「这一行的商品」。
+                          // s.plugin_id 就是用户当初买的那个商品，价格、时长、限购
+                          // 全部由它决定 —— 不再有任何「按 tier 推断档位」的分支，
+                          // 也就不可能把年付用户按 ¥49/月 续费（少给 335 天）。
+                          if (!p) {
+                            setNotice(t('plugins.tierUnavailable'));
+                            return;
+                          }
                           setPayInfo({
-                            id: srcPlugin.id,
-                            name: srcPlugin.name,
-                            price: srcPlugin.price_monthly_cents || 0,
+                            id: p.id,
+                            name: p.name,
+                            price: p.price_monthly_cents || 0,
                           });
-                          return;
-                        }
-                        // 兜底：0040 之前的历史行**没有**购买档位记录（srcId 为空），
-                        // 只能按 tier 推断 ——
-                        // 团队权益只能来自企业版档位 b2b；其余回落主行。
-                        // b2b 档位商品缺失（配置事故/数据异常）时显式拦住并说明，
-                        // 绝不静默按个人价 ¥49/月 下单 —— 否则用户花小钱拿团队权益（资损），
-                        // 或订单商品与权益错配。
-                        const b2b = Object.values(plugins).find(
-                          (x) => x.slug === 'alibaba-toolkit-b2b',
-                        );
-                        if (s.tier === 'team' && !b2b) {
-                          setNotice(t('plugins.b2bMissing'));
-                          return;
-                        }
-                        if (s.tier === 'team' && b2b) {
-                          setPayInfo({
-                            id: b2b.id,
-                            name: b2b.name,
-                            price: b2b.price_monthly_cents,
-                          });
-                        } else {
-                          setPayInfo({
-                            id: s.plugin_id,
-                            name: p?.name,
-                            price: p?.price_monthly_cents || 0,
-                          });
-                        }
-                      }}
-                      className="text-xs text-white bg-brand-600 rounded-lg px-3 py-1.5 hover:bg-brand-700"
-                    >
-                      {valid ? t('plugins.renew') : t('plugins.resubscribe')}
-                    </button>
+                        }}
+                        className="text-xs text-white bg-brand-600 rounded-lg px-3 py-1.5 hover:bg-brand-700"
+                      >
+                        {valid ? t('plugins.renew') : t('plugins.resubscribe')}
+                      </button>
                     ))}
                   {/* cancelled 后不再显示「取消订阅」：再点一次毫无意义，只会让用户
                       以为上次没生效。想恢复就点「续费」（会顺延，不吞剩余天数）。

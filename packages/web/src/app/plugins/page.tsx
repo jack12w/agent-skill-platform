@@ -239,24 +239,11 @@ export default function PluginsPage() {
   );
 
   const isActive = (p: Plugin): MySub | null => {
-    let s = subs[p.id];
-    // 档位商品（企业版 / Pro 年付 / 运营后续新建的任意 `alibaba-toolkit-*` 档位）
-    // 的权益实体在主插件行上（见后端 isMainPluginTierSlug / fulfillPluginSubscription）。
-    // 少了这层映射，买过档位的用户会在档位卡片上看到「订阅」按钮，点进去重复付费。
-    // 档位与权益行的 tier 必须匹配：企业版档位只认团队行，其余档位只认个人行。
-    // ⚠️ 已知取舍：订阅行不记录「买的是哪个档位商品」，所以个人行（体验版月付）与
-    //    年付档位在数据上不可区分 —— 月付用户会看到年付卡片也是「已订阅」，
-    //    即**没有月付→年付的升级入口**（需产品侧确认要不要补「升级」CTA）。
-    if (!s && isTierPlugin(p)) {
-      const mainId =
-        p.parent_plugin_id || plugins.find((x) => x.slug === MAIN_PLUGIN_SLUG)?.id;
-      const main = mainId ? subs[mainId] : null;
-      if (main) {
-        const wantTeam = p.slug === B2B_TIER_SLUG;
-        const isTeamRow = String(main.tier || 'personal') === 'team' || !!main.via_team;
-        if (wantTeam === isTeamRow) s = main;
-      }
-    }
+    // 0042（一档一行）：订阅行的 plugin_id 就是「用户买的那个商品」，
+    // 市场页按商品 id 精确匹配即可 —— 不再需要把档位卡片映射到主行去猜，
+    // 也因此**每种档位各自独立**：买过基础版仍可买 Pro（升级），
+    // 买过 Pro 的人也仍可看到基础版可购（低档不隐藏，按需自行选择）。
+    const s = subs[p.id];
     if (!s) return null;
     // 与后端 isSubscriptionEntitled 对齐：cancelled（到期不再续费）但未到期 → 仍算已订阅，
     // 否则取消过的用户会在市场页看到「订阅」按钮，点进去重复付费。

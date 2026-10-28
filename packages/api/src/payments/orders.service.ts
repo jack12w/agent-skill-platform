@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, Not, IsNull, In } from 'typeorm';
+import { Repository, LessThan, Not, IsNull } from 'typeorm';
 import {
   Order,
   OrderItem,
@@ -342,15 +342,16 @@ export class OrdersService implements OnModuleInit {
        *   · 试用中/试用过期后再买 → 有行 → 拒绝（配合限购双保险）
        *   · 已有基础版订阅的付费用户来买试用 → 也拒绝，试用本就只给新用户
        *
-       * 为什么必须服务端拦：账号中心若因 `source_plugin_id = 试用商品` 渲染出续费按钮，
-       * 会按 ¥0.01/3 天 下单 —— 等于无限白用（资损）。
+       * 为什么必须服务端拦：账号中心若渲染出续费按钮，会按 ¥0.01/3 天 下单 ——
+       * 等于无限白用（资损）。
+       *
+       * 0042：判据改用 root_plugin_id（该插件的**任一档位**订阅都算「不是新用户」），
+       * 比旧的 plugin_id IN (试用商品, 主行) 更严 —— 只买过 Pro 的人同样不能再买试用。
        */
       if (plugin.renew_allowed === false) {
-        const familyIds = [plugin.id];
         const parent = await resolveEntitlementParent(this.pluginRepo, plugin);
-        if (parent) familyIds.push(parent.id);
         const had = await this.pluginSubRepo.count({
-          where: { user_id: userId, plugin_id: In(familyIds) },
+          where: { user_id: userId, root_plugin_id: parent?.id ?? plugin.id },
         });
         if (had > 0) {
           throw new BadRequestException(
@@ -695,11 +696,9 @@ export class OrdersService implements OnModuleInit {
   ) {
     const now = Date.now();
 
-    // 档位商品（企业版 / Pro 年付 / 试用 等）→ 权益映射到主插件行；独立商品照旧落在自己的行上。
-    // 0041（2026-10-28）：判定改为「显式字段优先、slug 前缀兜底」，见 isTierLikePlugin。
-    // 事故复现：运营把试用商品 slug 填成 `7testing` → 前缀判据失效 → 订阅落在试用行上
-    // → 扩展端只查主行 → 用户买了试用却一直看到「基础版已过期」。
-    let targetPluginId = pluginId;
+    // 0042 一档一行：plugin_id 恒为**用户买的那个商品**，权益归属另存 root_plugin_id。
+    // 档位/试用商品 → root 指向其主插件；独立商品 → root 即自身。
+    let rootPluginId = pluginId;
     let tier = 'personal';
     const ordered = await this.pluginRepo.findOne({ where: { id: pluginId } });
     // 订阅时长取所购商品的「订阅有效期（天）」（0033，后台逐款可配）；未配回落 30 = 原包月行为
@@ -714,7 +713,7 @@ export class OrdersService implements OnModuleInit {
           '档位/试用商品配置异常：找不到其归属的主插件行，已拒绝发货，请联系平台管理员',
         );
       }
-      targetPluginId = main.id;
+      rootPluginId = main.id;
       tier = tierOfPlugin(ordered);
     }
 
@@ -743,13 +742,14 @@ export class OrdersService implements OnModuleInit {
       maxPerMember = 1;
     }
 
-    // 顺延查找：团队订单只找团队行（团长可能同时持有个人订阅行，二者互不干扰）；
-    // 个人订单只找个人行（team_id IS NULL）。
+    // 顺延查找（0042）：按「用户 + 所购商品 + 归属形态」精确定位这一行。
+    // 一档一行后，买 Pro 只会碰 Pro 那行，不会顺延到基础版行上；
+    // 团队订单只找团队行（团长可能同时持有个人订阅行，二者互不干扰）。
     const existing = await this.pluginSubRepo.findOne({
       where:
         tier === 'team'
-          ? { user_id: userId, plugin_id: targetPluginId, team_id: Not(IsNull()) }
-          : { user_id: userId, plugin_id: targetPluginId, team_id: IsNull() },
+          ? { user_id: userId, plugin_id: pluginId, team_id: Not(IsNull()) }
+          : { user_id: userId, plugin_id: pluginId, team_id: IsNull() },
     });
     // 订单级幂等闸门（2026-10-12 质检）：deliver 可被「回调重推 / 查单补发」
     // 重复调用（claimed=false 且订单未 DELIVERED 时会再 deliver 一次），而本方法
@@ -766,10 +766,8 @@ export class OrdersService implements OnModuleInit {
       }
       existing.price_cents = priceCents;
       existing.order_id = orderId;
-      // 购买档位溯源（0040）：记下本次所购的**商品行 id**（档位商品 → 档位行 id，
-      // 主行直购 → 主行 id）。账号中心续费据此按同一档位重新下单；
-      // 旧实现只能按 tier 猜，年付用户续费会被按主行 ¥49/月 下单（少给 335 天）。
-      existing.source_plugin_id = pluginId;
+      // 0042：root 恒指向权益归属插件（运营把档位商品改挂到别的主插件时同步纠正）
+      existing.root_plugin_id = rootPluginId;
       // tier 只升不降：企业版订单升 team；个人版续费不得把后台已置的 team 降回 personal
       if (tier === 'team' || String(existing.tier || 'personal') === 'team') {
         existing.tier = 'team';
@@ -789,7 +787,9 @@ export class OrdersService implements OnModuleInit {
     } else {
       const sub = this.pluginSubRepo.create({
         user_id: userId,
-        plugin_id: targetPluginId,
+        // 0042 一档一行：plugin_id = 用户买的那个商品，root_plugin_id = 权益归属插件
+        plugin_id: pluginId,
+        root_plugin_id: rootPluginId,
         plan: 'monthly',
         tier,
         team_id: teamId,
@@ -800,8 +800,6 @@ export class OrdersService implements OnModuleInit {
         started_at: new Date(),
         expires_at: new Date(now + MONTH),
         order_id: orderId,
-        // 购买档位溯源（0040）：恒为「用户下单时点的那个商品行」，非 targetPluginId
-        source_plugin_id: pluginId,
       });
       await this.pluginSubRepo.save(sub);
     }

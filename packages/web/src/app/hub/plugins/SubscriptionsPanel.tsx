@@ -42,11 +42,10 @@ export default function SubscriptionsPanel({ plugins }: { plugins: PluginOption[
   const [modal, setModal] = useState<ModalState>(null);
 
   /**
-   * 购买档位商品名查找表（0040）：`source_plugin_id` → 商品名。
+   * 商品名查找表（0042）：plugin_id → 商品名。
    *
-   * 权益实体恒在主插件行，所以只看 plugin_id 分不出这笔订阅是按「主行月付」还是
-   * 「Pro 年付 / 企业版」卖出的。列表把订阅行记录的购买档位商品名显示出来，
-   * 管理员核对档位、排查「用户说买的年付却在月付筛选里」时不用再去翻订单。
+   * 一档一行后 plugin_id 就是用户买的那个商品，列表直接显示它的名字，
+   * 管理员一眼看出这笔订阅是哪一档卖出的（主插件页汇总全部档位时尤其有用）。
    * （plugins 由父组件传入，是后台全量商品，无需额外请求。）
    */
   const pluginNameById = useMemo(() => {
@@ -284,16 +283,13 @@ export default function SubscriptionsPanel({ plugins }: { plugins: PluginOption[
                         )}
                       </div>
                     )}
-                    {/* 购买档位（0040）：权益行都在主插件行上，仅凭 plugin_id 看不出
-                        这笔订阅是按哪一档卖出的，故显示订阅行记录的档位商品名。
-                        历史行（source 为空）不渲染，不显示「未知」以免误导。 */}
-                    {s.source_plugin_id && pluginNameById[s.source_plugin_id] && (
-                      <div className="mt-1 text-[11px] text-neutral-500">
-                        {t('admin.subSourceTier')}
-                        {' · '}
-                        {pluginNameById[s.source_plugin_id]}
-                      </div>
-                    )}
+                    {/* 购买档位（0042）：显示这一行对应的商品名。
+                        主插件页汇总多个档位时靠它区分；商品已下架则退到 id 前 8 位。 */}
+                    <div className="mt-1 text-[11px] text-neutral-500">
+                      {t('admin.subSourceTier')}
+                      {' · '}
+                      {pluginNameById[s.plugin_id] || String(s.plugin_id).slice(0, 8)}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <div className="tabular-nums text-neutral-800">{fmtDateTime(s.expires_at)}</div>

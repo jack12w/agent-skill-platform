@@ -9,6 +9,8 @@
 export interface SubRow {
   id: string;
   user_id: string;
+  /** 用户**买的那个商品** id（0042 一档一行） */
+  plugin_id: string;
   plan: string;
   /** 订阅类型（0031）：personal=个人版 / team=团队版（存量行由 DB 默认值归入 personal） */
   tier?: string;
@@ -29,9 +31,9 @@ export interface SubRow {
   seats?: number | string | null;
   /** 团队内每成员设备数快照；个人行为 null */
   max_devices_per_member?: number | string | null;
-  /** 购买档位商品 id（0040）：本行权益最近一次购买所依据的商品行 id
-   *  （档位商品行 id；NULL = 历史未知或直接在主插件行购买）。列表据此显示购买档位。 */
-  source_plugin_id?: string | null;
+  /** 权益归属插件 id（0042）：plugin_id 是「用户买的那个商品」，
+   *  root_plugin_id 是它归属的插件。主插件页按 root 汇总展示全部档位。 */
+  root_plugin_id?: string | null;
 }
 
 export interface UserRow {
