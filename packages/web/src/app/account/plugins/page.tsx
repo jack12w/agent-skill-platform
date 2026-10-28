@@ -418,6 +418,18 @@ export default function MyPluginsPage() {
    */
   const fallbackSubId = subs.find((x) => isEntitled(x))?.id ?? subs[0]?.id;
 
+  /**
+   * 账号里是否还有**有效的团队档**（可授权账号数 > 1）。
+   *
+   * 用途只有一个：在个人档卡片上标注「本档不含 AI，AI 由你的团队专业版提供」。
+   * 没有这行说明时，用户在同一账号下换到绑基础版的机器会发现 AI 消失，
+   * 看起来像 bug（2026-10-29 用户实测场景：微软浏览器绑基础版却能用 AI，
+   * 修正为设备级鉴权后，这台机器就该没有 AI —— 需要一句话解释「为什么」）。
+   */
+  const hasEntitledTeamPlan = subs.some(
+    (x) => isEntitled(x) && Number(x.seats ?? 0) > 1,
+  );
+
   const statusLabel = (s: MySub) => {
     if (s.status === 'cancelled') return isEntitled(s) ? t('plugins.cancelledUntil') : t('plugins.expired');
     if (isEntitled(s)) return t('plugins.active');
@@ -585,6 +597,19 @@ export default function MyPluginsPage() {
                         ? `${t('plugins.validUntil')} ${fmtDate(s.expires_at)}`
                         : `${t('plugins.startedOn')} ${fmtDate(s.started_at)}`}
                     </div>
+                    {/* 档位能力（2026-10-29 设备级鉴权）：AI 随「团队档 + 该设备绑在这一档」
+                        生效。个人档且账号另有团队档时明说一句 —— 否则用户换到绑基础版的
+                        机器发现 AI 消失，会当成故障来报。 */}
+                    {valid &&
+                      (Number(s.seats ?? 0) > 1 ? (
+                        <div className="text-xs text-violet-600 mt-0.5">
+                          {t('plugins.planHasAi')}
+                        </div>
+                      ) : hasEntitledTeamPlan ? (
+                        <div className="text-xs text-neutral-400 mt-0.5">
+                          {t('plugins.planNoAi')}
+                        </div>
+                      ) : null)}
                   </div>
                   <span
                     className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-lg border ${statusColor(s)}`}

@@ -1088,6 +1088,12 @@ const en = {
     noDevicesForPlan: 'No device authorized under this plan yet',
     teamSeatsHint: 'Team plans are billed per account: invite members into the team and they can use their own plugin login; each member may authorize 1 device.',
     devicesUsedLoading: 'Loading authorized device count…',
+    /** Plan capability (2026-10-29 device-level auth): AI follows "team plan + this device is bound to it" */
+    planHasAi: 'Includes AI data features',
+    /** Shown on a personal plan card when the account also holds a team plan */
+    planNoAi: 'No AI (AI comes from your Team plan)',
+    /** Short label for the dropdown options so they are not truncated */
+    planNoAiShort: 'no AI',
     manageDevices: 'Manage devices',
     hideDevices: 'Hide',
     tabSubs: 'My subscriptions',

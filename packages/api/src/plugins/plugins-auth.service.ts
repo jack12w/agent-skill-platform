@@ -255,7 +255,17 @@ export class PluginsAuthService {
      */
     const [plugin, resolved, user, devicesUsed, tierOptions] = await Promise.all([
       this.pluginRepo.findOne({ where: { id: req.plugin_id } }),
-      resolvePluginSubscription(this.subRepo.manager, req.user_id, req.plugin_id),
+      /**
+       * ★ 2026-10-29 设备级鉴权：**必须带上这台设备在 approve 时选中的那一档**。
+       *
+       * 不传 pin 的话这里会走账号级择优（team 优先 + 到期最晚），于是「绑基础版的
+       * 微软浏览器」也会拿到 tier=team → 扩展端挂出 AI。用户实测反馈过这个现象。
+       * 一档一台的语义是「这台机器买的是哪一档就享受哪一档」，设备自己绑的档位
+       * 必须参与判定，否则「绑哪一档」对权益毫无影响。
+       */
+      resolvePluginSubscription(this.subRepo.manager, req.user_id, req.plugin_id, {
+        pinSubscriptionId: device.subscription_id,
+      }),
       this.userRepo.findOne({
         where: { id: req.user_id },
         select: ['id', 'email', 'name'],
@@ -340,14 +350,46 @@ export class PluginsAuthService {
       }
     }
 
-    // 席位制（0035）：本人订阅 OR 所在团队的有效团队订阅（resolvePluginSubscription 收口）
+    /**
+     * ★ 2026-10-29 设备级鉴权：按**这台设备所绑的那一档**判定，不再按账号最优档。
+     *
+     * 旧行为：`resolvePluginSubscription(user_id, plugin_id)` 在账号所有订阅行里
+     * 「team 优先 + 到期最晚」挑一条 —— 于是绑定基础版的机器也拿到 Team 的 tier，
+     * 扩展端据此挂出 AI（用户实测：微软浏览器绑基础版，仍能用 AI）。
+     *
+     * 现在：传 `device.subscription_id`（0046）。绑基础版 → personal（无 AI）；
+     * 绑 Team → team（有 AI）。团队席位的成员设备绑的是团队行，同样拿到 team。
+     */
     const resolved = await resolvePluginSubscription(
       this.subRepo.manager,
       device.user_id,
       device.plugin_id,
+      { pinSubscriptionId: device.subscription_id },
     );
     const sub = resolved?.sub ?? null;
+    if (resolved && !resolved.pin_applied && device.subscription_id) {
+      // 设备行指向的订阅查不到了（被删 / 换了人 / 已被移出团）→ 回落账号级。
+      // 这是运维异常，留痕便于排查「为什么这台机器又拿到团队权限了」。
+      this.logger.warn(
+        `设备 ${device.device_id.slice(0, 8)}… 绑定的订阅 ${device.subscription_id} 不可见，权益回落账号级`,
+      );
+    }
     if (!resolved || !resolved.entitled) {
+      /**
+       * 这台设备绑的那一档失效了，但**账号可能还有别的有效档**（例如基础版到期、
+       * Team 专业版仍在期）。两者对用户的含义完全不同：
+       *   · 账号彻底没订阅 → 该去续费
+       *   · 只是本机这一档不行 → 该去「我的订阅」解绑后重新授权到有效档
+       * 扩展端拿 code 只能二选一（都用 SUBSCRIPTION_EXPIRED，保持已发布客户端兼容），
+       * 所以补两个字段给排障与后续 UI 用，不改变现有字段语义。
+       */
+      const accountFallback = resolved?.pin_applied
+        ? await resolvePluginSubscription(
+            this.subRepo.manager,
+            device.user_id,
+            device.plugin_id,
+          )
+        : resolved;
       return {
         valid: false as const,
         code: 'SUBSCRIPTION_EXPIRED',
@@ -355,6 +397,10 @@ export class PluginsAuthService {
         expires_at: sub?.expires_at
           ? new Date(sub.expires_at).toISOString()
           : undefined,
+        /** 本机这一档的状态：inactive=该档已失效（换档可恢复）；missing=设备没记录归属 */
+        device_plan: resolved?.pin_applied ? ('inactive' as const) : ('missing' as const),
+        /** 账号级是否还有任何有效订阅（true 时说明「换档重新授权」就能恢复） */
+        account_entitled: !!accountFallback?.entitled,
       };
     }
 
@@ -374,7 +420,9 @@ export class PluginsAuthService {
       /** 订阅类型：AI 功能（推送 / 自动采集）仅团队档开放，插件端按此挂或不挂 AI UI。
        *  唯一判据 = 本行可授权账号数 > 1（见 plugin-auth.util isTeamTier）：
        *  基础版 / Pro（包年）/ 试用都是 1 席 → personal，Team 专业版 3 席 → team。
-       *  团队席位覆盖的成员同样命中团队行，因此也返回 team。 */
+       *  ★ 「本行」= **这台设备绑定并占用的那一档**（device.subscription_id，2026-10-29），
+       *    不是账号里最优的那一档：绑基础版的机器返回 personal（无 AI），
+       *    绑 Team 的机器返回 team。团队席位覆盖的成员设备绑的是团队行，同样返回 team。 */
       tier: isTeamTier(sub) ? ('team' as const) : ('personal' as const),
       plugin: plugin ? { slug: plugin.slug, name: plugin.name } : undefined,
     };

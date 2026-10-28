@@ -69,8 +69,13 @@ function tierLabel(
   if (!o.entitled) return `${base} · ${t('plugins.authTierExpired')}`;
   if (o.full) return `${base} · ${t('plugins.authTierFull')}`;
   const dev = t('plugins.authTierRemaining', { used: o.used, quota: o.quota });
-  const team = o.seats && o.seats > 1 ? ` · ${t('plugins.authTierTeam', { n: o.seats })}` : '';
-  return `${base} · ${dev}${team}`;
+  const seats = Number(o.seats ?? 0);
+  const isTeam = seats > 1;
+  const team = isTeam ? ` · ${t('plugins.authTierTeam', { n: seats })}` : '';
+  /* 档位能力写进选项（2026-10-29 设备级鉴权）：AI 只跟着**这台设备选中的这一档**走。
+     之前只标席位，用户看不出「选基础版 = 这台机器没有 AI」，选完才发现少功能。 */
+  const ai = isTeam ? t('plugins.planHasAi') : t('plugins.planNoAiShort');
+  return `${base} · ${dev}${team} · ${ai}`;
 }
 
 interface ApproveResp {

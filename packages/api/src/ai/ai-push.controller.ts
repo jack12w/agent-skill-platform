@@ -141,15 +141,23 @@ export class AiPushController {
       }
     }
 
-    /* ② 订阅权益（订阅级失效 → 402 保留令牌，续费即恢复；isSubscriptionEntitled 唯一口径）。
-       席位制（0035）：本人订阅 OR 所在团队的有效团队订阅。 */
-    const resolved = await resolvePluginSubscription(
+    /* ② 订阅权益 —— 拆成**两层**，粒度不同不能合并（2026-10-29）：
+       ②a 账号级：这个账号在本插件下还有没有任何有效订阅 → 没有则 MEMBER_REQUIRED
+       ②b 设备级：**这台设备绑定的那一档**是否自带 AI → 否则 TIER_REQUIRED
+       两层都用同一套唯一口径（isSubscriptionEntitled / isTeamTier），只是输入的行不同。
+       设备身份 = `device.subscription_id`（0046 一档一台），与 entitlement / poll 同源。 */
+    const deviceSub = await resolvePluginSubscription(
       this.subRepo.manager,
       device.user_id,
       device.plugin_id,
+      { pinSubscriptionId: device.subscription_id },
     );
-    const sub = resolved?.sub ?? null;
-    if (!resolved || !resolved.entitled) {
+    // pin 未生效时（历史行无归属 / 该行已不可见）deviceSub 就是账号级结果，不必再查一次
+    const accountSub =
+      deviceSub && deviceSub.pin_applied
+        ? await resolvePluginSubscription(this.subRepo.manager, device.user_id, device.plugin_id)
+        : deviceSub;
+    if (!accountSub || !accountSub.entitled) {
       await this.log(device.user_id, device.plugin_id, 'rejected', null, 0, 'MEMBER_REQUIRED');
       fail(402, {
         ok: false,
@@ -157,16 +165,23 @@ export class AiPushController {
         upgradeUrl: `${(process.env.PUBLIC_BASE_URL || 'https://skills.rehomi.com').replace(/\/+$/, '')}/pricing`,
       });
     }
-    /* ②b 企业版门禁（2026-10-07）：AI 推送仅 team 档可用。口径与 ② 同为订阅级失效
-       → 402 保留令牌（升级后即恢复），插件端按 code=TIER_REQUIRED 区分提示文案。
-       团队席位覆盖的成员（via='team'）同样放行。 */
-    // 唯一判据：本行可授权账号数 > 1（见 plugin-auth.util isTeamTier），与 ai-query 同一写法。
-    if (!isTeamTier(sub)) {
-      await this.log(device.user_id, device.plugin_id, 'rejected', null, 0, 'TIER_REQUIRED');
+    /* ②b 企业版门禁（2026-10-07）：AI 推送仅 team 档可用。
+       ★ 判的是**这台设备占的那一档**，不是账号里最优的那一档：
+         绑基础版的机器即使账号另有 Team，也不能推送（一档一台的必然推论）。
+       档位过期与档位不带 AI 都走同一个 code（不新增 code，避免已发布扩展端不识别），
+       用 `reason` 让扩展端/客服能区分原因。 */
+    if (!deviceSub || !deviceSub.entitled || !isTeamTier(deviceSub.sub)) {
+      const reason = !deviceSub
+        ? 'NO_DEVICE_PLAN'
+        : !deviceSub.entitled
+          ? 'DEVICE_PLAN_EXPIRED'
+          : 'TIER_REQUIRED';
+      await this.log(device.user_id, device.plugin_id, 'rejected', null, 0, reason);
       fail(402, {
         ok: false,
         code: 'TIER_REQUIRED',
-        upgradeUrl: `${(process.env.PUBLIC_BASE_URL || 'https://skills.rehomi.com').replace(/\/+$/, '')}/pricing`,
+        reason,
+        upgradeUrl: `${(process.env.PUBLIC_BASE_URL || 'https://skills.rehomi.com').replace(/\/+$/, '')}/account/plugins`,
       });
     }
 

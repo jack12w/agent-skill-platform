@@ -1102,6 +1102,12 @@ const zh = {
     noDevicesForPlan: '本卡暂无已授权设备',
     teamSeatsHint: '团队版按账号数计费：把成员邀请进团队，对方登录自己的插件即可使用；每人可在自己电脑上授权 1 台设备。',
     devicesUsedLoading: '设备授权数加载中…',
+    /** 档位能力（2026-10-29 设备级鉴权）：AI 跟着「团队档 + 该设备绑在这一档」走 */
+    planHasAi: '含 AI 数据功能',
+    /** 个人档卡片上、且账号另有团队档时显示 —— 解释「换台机器 AI 就没了」不是故障 */
+    planNoAi: '不含 AI（AI 由你的团队专业版提供）',
+    /** 授权页下拉选项里的短标注，避免选项过长被截断 */
+    planNoAiShort: '不含 AI',
     manageDevices: '管理设备',
     hideDevices: '收起',
     tabSubs: '我的插件订阅',

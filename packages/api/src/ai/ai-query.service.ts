@@ -98,7 +98,17 @@ export class AiQueryService {
     const label = String(regRows[0].label || t);
 
     /* ③ 订阅权益（订阅级失效 → 402 保留密钥，续费即恢复；isSubscriptionEntitled 唯一口径）。
-       席位制（0035）：本人订阅 OR 所在团队的有效团队订阅。 */
+       席位制（0035）：本人订阅 OR 所在团队的有效团队订阅。
+
+       ★ 这里是**账号级**，与 entitlement / ai/data/push 的**设备级**不同（2026-10-29）：
+         那两处拿得到 `device.subscription_id`，能判「这台机器绑的是哪一档」；
+         本链路的凭据是 `ai_sk_…`（0026），是**账号级 API 密钥**，请求里没有设备身份
+         （MCP / 脚本 / curl 都可能调用，它们根本不存在"设备"这个概念）。
+         所以取数只回答「这个账号有没有团队档订阅」，不回答「是哪台机器在用」。
+         这不是漏改：给密钥加设备绑定会破坏 MCP 与第三方脚本的调用方式，
+         而它代表的本来就是账号凭据 —— 只要账号持有团队档，取数权就成立。
+         （若将来要对密钥也按档收紧，正确做法是给 ai_api_key 加 subscription_id
+          并在建密钥时选定档位，而不是让取数请求伪装成设备。） */
     const plugin = await this.pluginRepo.findOne({ where: { slug: AI_VENDOR_SLUG } });
     const resolved = plugin
       ? await resolvePluginSubscription(this.subRepo.manager, userId, plugin.id)

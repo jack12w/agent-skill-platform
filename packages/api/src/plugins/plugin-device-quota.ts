@@ -34,9 +34,11 @@ import { isSubscriptionEntitled, subscriptionSeats } from './plugin-auth.util';
  *      · 绝不能把 `summarizeQuota().max_devices`（各在期行之和）贴到单张卡上
  *        —— 那会让「基础版」显示 2 台（自己 1 台 + 团队行 1 台），用户直接看错。
  *
- * ⚠️ AI 权益与设备配额**互相独立**：AI 只看「可授权账号数 > 1」（用户级判定，
- *    见 plugin-auth.util isTeamTier + resolvePluginSubscription 的团队优先排序），
- *    与这台机器绑在哪一档无关。所以拆档授权**不会**让「绑在基础版上的机器丢 AI」。
+ * ⚠️ 配额与**权益判定同源**：设备绑哪一档，就只享那一档的能力与额度。
+ *    档位看「可授权账号数 > 1」（plugin-auth.util isTeamTier），输入的行 = 设备行上的
+ *    `subscription_id`（`resolvePluginSubscription(..., { pinSubscriptionId })`）。
+ *    于是「绑基础版的那台机器没有 AI」是设计意图，不是 bug ——
+ *    权益按档、按设备走，否则「绑哪一档」对能力毫无影响，一档一台只剩配额意义。
  *
  * `used` 只统计**本人**占用该行的设备：团队行是全体成员共享的，额度却是每人一份，
  * 所以不能把别人的设备算进自己的已用量。
