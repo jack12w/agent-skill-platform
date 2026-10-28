@@ -817,13 +817,31 @@ export class PluginsAuthService {
     return { ok: true };
   }
 
-  /** 全清：换机/重装前的粗粒度操作，等价于逐台吊销 */
-  async revokeAllDevices(userId: string, pluginId: string) {
+  /**
+   * 「解绑全部」。
+   *
+   * 2026-10-29 收紧为**按订阅卡**清（新增可选 `subscriptionId`）：
+   *   账号页现在一张订阅卡只展示本卡名下的设备，按钮挂在卡里 —— 如果仍然全清，
+   *   用户在「基础版」卡上点一下会把 Team 专业版那台也解绑，界面与副作用完全不符。
+   *
+   * 不传 `subscriptionId` 时保持旧语义（清掉该插件下本人全部设备），
+   * 供「换机/重装前一键清空」这类全局场景使用。
+   */
+  async revokeAllDevices(userId: string, pluginId: string, subscriptionId?: string) {
     const rootId = await this.resolveDevicePluginId(pluginId);
-    await this.deviceRepo.update(
-      { user_id: userId, plugin_id: rootId, revoked_at: IsNull() },
-      { revoked_at: new Date(), token_hash: null, token_issued_at: null },
-    );
+    const subId = String(subscriptionId || '').trim();
+    const where: Record<string, unknown> = {
+      user_id: userId,
+      plugin_id: rootId,
+      revoked_at: IsNull(),
+    };
+    // 只认本人名下的行：subscription_id 由 approve 写入，越权传别人的 id 也只会命中 0 行
+    if (subId) where.subscription_id = subId;
+    await this.deviceRepo.update(where, {
+      revoked_at: new Date(),
+      token_hash: null,
+      token_issued_at: null,
+    });
     return { ok: true };
   }
 

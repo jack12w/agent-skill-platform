@@ -1084,9 +1084,8 @@ const en = {
     teamSeatsUsed: 'Team members {n}/{max} joined',
     /** Team card, second line: team plans also cap at 1 device per card, counted per person */
     teamDeviceUsed: 'This account: {n}/{max} device(s) authorized',
-    /** Device list header hint: one device per plan card, list is shown per plugin */
-    devicesCrossTierHint:
-      'All devices under this plugin are shown here; the tag after each device shows which plan slot it occupies.',
+    /** This plan card has no authorized device yet */
+    noDevicesForPlan: 'No device authorized under this plan yet',
     teamSeatsHint: 'Team plans are billed per account: invite members into the team and they can use their own plugin login; each member may authorize 1 device.',
     devicesUsedLoading: 'Loading authorized device count…',
     manageDevices: 'Manage devices',

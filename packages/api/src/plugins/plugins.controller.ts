@@ -199,10 +199,19 @@ export class PluginsController {
     return this.auth.renameDevice(this.uid(req), id, deviceId, deviceName);
   }
 
-  /** 全清：换机/重装前的粗粒度操作 */
+  /**
+   * 解绑全部设备。
+   *
+   * `subscription_id`（可选）= 只清这一档名下的设备。账号页的解绑按钮挂在单张订阅卡里，
+   * 传了它才不会「点基础版的解绑把 Team 的机器一起下掉」；不传 = 清该插件下本人全部设备。
+   */
   @Post(':id/reset-devices')
-  resetDevices(@Req() req: Request, @Param('id') id: string) {
-    return this.auth.revokeAllDevices(this.uid(req), id);
+  resetDevices(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body('subscription_id') subscriptionId?: string,
+  ) {
+    return this.auth.revokeAllDevices(this.uid(req), id, subscriptionId);
   }
 
   @Post(':id/subscribe')

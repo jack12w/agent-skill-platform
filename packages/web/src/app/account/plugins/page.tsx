@@ -374,6 +374,11 @@ export default function MyPluginsPage() {
     try {
       const res = await apiFetch(`/api/plugins/${pluginId}/reset-devices`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        /* ★ 带上 subscription_id：按钮挂在**这一张卡**里，只应解绑本卡名下的设备。
+         * 不带的话后端会把这台插件下本人全部设备一起清掉 —— 用户在「基础版」卡上
+         * 点一下，Team 专业版那台也被解绑，界面与副作用完全对不上（2026-10-29）。 */
+        body: JSON.stringify({ subscription_id: subId }),
       });
       if (res.ok) {
         await loadDevices(pluginId);
@@ -399,6 +404,19 @@ export default function MyPluginsPage() {
   const isEntitled = (s: MySub) =>
     (s.status === 'active' || s.status === 'cancelled') &&
     new Date(s.expires_at).getTime() > Date.now();
+
+  /**
+   * 历史设备（`subscription_id` 为空）挂到哪张卡。
+   *
+   * ⚠️ 位置不能上移：`isEntitled` 是 const 箭头函数，放到它的声明之前会踩 TDZ
+   *    （`Cannot access 'isEntitled' before initialization` —— 2026-10-09 同一份代码
+   *    在 useMemo 里踩过，tsc 查不出来，只有真渲染才崩）。
+   *
+   * 0046 已把所有存量设备回填了归属（生产实测未归属 0 台），但代码必须兜住漏网数据：
+   * 一张卡只显示「本卡设备」之后，无归属的设备会**谁都看不到、也解绑不了**，
+   * 白占一个名额。统一挂到第一张有效卡上（只挂一次，不会在多张卡里重复出现）。
+   */
+  const fallbackSubId = subs.find((x) => isEntitled(x))?.id ?? subs[0]?.id;
 
   const statusLabel = (s: MySub) => {
     if (s.status === 'cancelled') return isEntitled(s) ? t('plugins.cancelledUntil') : t('plugins.expired');
@@ -524,6 +542,19 @@ export default function MyPluginsPage() {
             const myTier = dd?.tiers?.find((x) => x.subscription_id === s.id);
             const devUsed = myTier ? myTier.used : 0;
             const devQuota = myTier ? myTier.quota : 1;
+            /**
+             * ★ 本卡名下的设备（2026-10-29 用户要求）：**一张卡只显示自己的设备**。
+             *
+             * 旧实现把 `dd.devices`（该插件下本人全部设备）整份渲染在每张卡里，
+             * 于是基础版卡展开能看到 Team 专业版那台，只有小徽标区分 —— 用户明确
+             * 反馈「自己显示自己的」。现在按 `subscription_id` 过滤；
+             * 无归属的历史设备只挂到第一张有效卡（见 fallbackSubId），不会重复出现。
+             */
+            const myDevices = (dd?.devices ?? []).filter(
+              (d) =>
+                d.subscription_id === s.id ||
+                (s.id === fallbackSubId && !d.subscription_id),
+            );
             return (
               <div key={s.id} className="bg-white border border-neutral-200 rounded-xl p-4">
                 <div className="flex items-center justify-between gap-3">
@@ -609,22 +640,14 @@ export default function MyPluginsPage() {
                           <div className="py-3 text-center text-[11px] text-neutral-400">
                             {t('plugins.loading')}
                           </div>
-                        ) : !dd?.devices?.length ? (
+                        ) : !myDevices.length ? (
                           <div className="py-3 text-center text-[11px] text-neutral-400">
-                            {t('plugins.noDevices')}
+                            {t('plugins.noDevicesForPlan')}
                           </div>
                         ) : (
                           <>
-                            {/* 一卡一台后，同一插件下可能有多档各占一台设备 ——
-                                展开任一卡都会看到「本插件的全部设备」，不解释一句就会被读成
-                                「Team 卡说 0/1，展开却有 1 台」= bug。 */}
-                            {(dd.tiers?.filter((x) => x.entitled).length ?? 0) > 1 && (
-                              <p className="mb-2 text-[11px] leading-relaxed text-neutral-400">
-                                {t('plugins.devicesCrossTierHint')}
-                              </p>
-                            )}
                             <ul className="space-y-2">
-                            {dd.devices.map((d) => {
+                            {myDevices.map((d) => {
                               const rowKey = `${s.id}:${d.device_id}`;
                               const editing = renameKey === rowKey;
                               const rowBusy = deviceBusy === rowKey;
@@ -674,13 +697,8 @@ export default function MyPluginsPage() {
                                               {t('plugins.devicePending')}
                                             </span>
                                           ) : null}
-                                          {/* 一档一台：显示这台设备占用的是哪一档名额，
-                                              用户解绑前能确认「放掉的是哪份订阅的额度」 */}
-                                          {d.plan_name ? (
-                                            <span className="ml-1.5 text-[10px] text-neutral-500 border border-neutral-200 rounded px-1">
-                                              {d.plan_name}
-                                            </span>
-                                          ) : null}
+                                          {/* 档位徽标已移除（2026-10-29）：一张卡只列本卡设备，
+                                              每台的档位恒等于卡标题，再挂徽标是重复信息。 */}
                                         </div>
                                         <div className="text-[11px] text-neutral-400">
                                           {t('plugins.lastSeen')} {fmtDate(d.last_seen_at)}
@@ -739,7 +757,7 @@ export default function MyPluginsPage() {
                           </>
                         )}
 
-                        {!!dd?.devices?.length && (
+                        {!!myDevices.length && (
                           <div className="mt-3 flex justify-end">
                             <button
                               onClick={() => revokeAll(s.id, s.plugin_id)}
