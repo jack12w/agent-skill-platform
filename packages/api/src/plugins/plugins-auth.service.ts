@@ -233,17 +233,39 @@ export class PluginsAuthService {
     device.last_seen_at = new Date();
     await this.deviceRepo.save(device);
 
-    const [plugin, sub, user, devicesUsed] = await Promise.all([
+    /**
+     * ★ 2026-10-28 修复：这里原来按 `(user_id, plugin_id = 主插件)` 直查订阅行。
+     *
+     * 0042「一档一行」之后，订阅行的 plugin_id 变成**用户买的那个商品**（基础版 /
+     * -year / -b2b / -trial），只有「买过基础版」的人才存在 plugin_id = 主插件 的行。于是：
+     *   · 买过基础版的人 → 查到基础版行 → 扩展端登录后显示「基础版」（哪怕他还有 Team 专业版）
+     *   · 只买过档位商品的人 → 查不到 → expires_at / sub_status 直接 undefined
+     * 而 `entitlement` / `pending` / `approve` 早就走 resolvePluginSubscription 了，
+     * 唯独登录回调这一处漏了 —— 这就是「登录后优先显示个人版」的根因。
+     *
+     * 现在统一走同一个解析函数：按 root_plugin_id 取该插件族的全部行，
+     * 排序「有权 > 团队/team 档 > 到期最晚」，与扩展端后续 entitlement 的结论完全一致。
+     */
+    const [plugin, resolved, user, devicesUsed] = await Promise.all([
       this.pluginRepo.findOne({ where: { id: req.plugin_id } }),
-      this.subRepo.findOne({
-        where: { user_id: req.user_id, plugin_id: req.plugin_id },
-      }),
+      resolvePluginSubscription(this.subRepo.manager, req.user_id, req.plugin_id),
       this.userRepo.findOne({
         where: { id: req.user_id },
         select: ['id', 'email', 'name'],
       }),
       this.countActiveDevices(req.user_id, req.plugin_id),
     ]);
+    const sub = resolved?.sub ?? null;
+    // 用户买的那个商品（用于把「Team 专业版」而不是「基础版」告诉扩展端）
+    const plan = sub
+      ? await this.pluginRepo.findOne({ where: { id: sub.plugin_id } })
+      : null;
+    // 档位口径与 entitlement 一致：团队席位 或 tier='team' 都算 team
+    const tier =
+      resolved?.via === 'team' || sub?.tier === 'team' ? 'team' : 'personal';
+    // 设备上限口径与 approve() 逐字一致（团队席位用订阅行快照的每成员上限）
+    const maxDevices =
+      resolved?.via === 'team' ? sub?.max_devices_per_member ?? 1 : plugin?.max_activations ?? 2;
 
     return {
       status: 'approved' as const,
@@ -251,10 +273,15 @@ export class PluginsAuthService {
       device_id: req.device_id,
       expires_at: sub?.expires_at?.toISOString(),
       sub_status: sub?.status,
+      /** 权益档位（新增）：personal | team。扩展端据此挂/不挂 AI UI，不必等 entitlement */
+      tier,
+      /** 命中的那个商品（新增）：Team 专业版 / Pro 标准版 / 基础版 / 新用户试用 */
+      plan: plan ? { slug: plan.slug, name: plan.name } : undefined,
+      /** 不改动：仍为主插件信息，兼容已发布扩展端读 plugin.slug 判定身份 */
       plugin: plugin ? { slug: plugin.slug, name: plugin.name } : undefined,
       user: user ? { email: user.email, name: user.name } : undefined,
       devices_used: devicesUsed,
-      max_devices: plugin?.max_activations ?? 2,
+      max_devices: maxDevices,
     };
   }
 
