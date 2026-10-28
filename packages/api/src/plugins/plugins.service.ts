@@ -263,15 +263,51 @@ export class PluginsService {
 
   /**
    * 后台列表：含下架，按排序。
-   * 额外附带 `user_count` = 该插件「已授权设备」口径的去重用户数
-   * （plugin_devices 中 revoked_at IS NULL，按 user_id 去重）。
+   *
+   * 两个计数**语义不同，必须分开给**（2026-10-28 用户实测反馈后修正）：
+   *   · `user_count`        = **订阅数**：该商品的有效订阅行按 user_id 去重。
+   *                           团队行只算 1（user_id 是团长），因为「订阅客户」按付钱的人算，
+   *                           成员是靠席位覆盖的，不是独立客户。这是运营做卖货决策要看的数。
+   *   · `device_user_count` = **使用用户数**：plugin_devices 里未吊销设备的去重用户数。
+   *
+   * 为什么不能只留一个：设备行恒绑**主插件** id，所以档位商品（试用 / Pro / 团队版）
+   * 的设备口径永远是 0；而基础版的设备数又会把试用用户的设备混进来。
+   * 旧实现只给设备口径却挂着「用户数」的列名，于是 trial/b2b 显示 0、基础版数字虚高。
    */
-  async adminList(): Promise<Array<Plugin & { user_count: number }>> {
-    const [plugins, counts] = await Promise.all([
+  async adminList(): Promise<
+    Array<Plugin & { user_count: number; device_user_count: number }>
+  > {
+    const [plugins, subs, devices] = await Promise.all([
       this.pluginRepo.find({ order: { sort_order: 'ASC', created_at: 'ASC' } }),
+      this.subscriberCounts(),
       this.userCounts(),
     ]);
-    return plugins.map((p) => ({ ...p, user_count: counts[p.id] ?? 0 }));
+    return plugins.map((p) => ({
+      ...p,
+      user_count: subs[p.id] ?? 0,
+      device_user_count: devices[p.id] ?? 0,
+    }));
+  }
+
+  /**
+   * 各商品的「有效订阅用户数」聚合（0044 口径）。
+   *
+   * 有效 = `status IN ('active','cancelled') AND expires_at > now()`，与判权函数
+   * `isSubscriptionEntitled()` 逐字一致 —— 口径一旦不同就会出现「列表说有人订阅、
+   * 实际点进去全过期」的矛盾。
+   * `COUNT(DISTINCT user_id)`：同一人同时持个人行与团队行只算 1 个客户。
+   */
+  private async subscriberCounts(): Promise<Record<string, number>> {
+    const rows: Array<{ plugin_id: string; cnt: number }> = await this.subRepo.query(
+      `SELECT plugin_id, COUNT(DISTINCT user_id)::int AS cnt
+         FROM plugin_subscriptions
+        WHERE status IN ('active', 'cancelled')
+          AND expires_at > now()
+        GROUP BY plugin_id`,
+    );
+    const map: Record<string, number> = {};
+    for (const r of rows) map[r.plugin_id] = Number(r.cnt) || 0;
+    return map;
   }
 
   /**

@@ -433,9 +433,11 @@ const zh = {
     prevPage: '上一页',
     nextPage: '下一页',
     // ── 使用用户（用户数列弹窗）──
-    thUserCount: '用户数',
+    thUserCount: '订阅数',
     usersTitle: '使用用户',
-    usersTotal: '共 {n} 人',
+    usersTotal: '设备授权 {n} 人',
+    usersSubsCount: '订阅 {n} 人',
+    usersDeviceShort: '设备 {n}',
     usersUuid: 'UUID',
     usersName: '用户名称',
     usersEmail: '邮箱号',

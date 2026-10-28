@@ -36,8 +36,10 @@ interface PluginItem {
   renew_allowed: boolean;
   download_key: string | null;
   download_filename: string | null;
-  /** 使用这款插件的用户数（已授权设备口径，按 user_id 去重） */
+  /** 订阅数：该商品有效订阅行按 user_id 去重；团队行只算 1 个客户（团长付钱） */
   user_count: number;
+  /** 使用用户数：未吊销设备的去重用户数（设备恒绑主插件，故档位商品恒为 0） */
+  device_user_count: number;
   created_at: string;
   updated_at: string;
 }
@@ -540,6 +542,9 @@ export default function HubPluginsPage() {
                     {p.max_activations ?? 2}
                   </td>
                   <td className="px-4 py-3 text-center hidden lg:table-cell">
+                    {/* 主数字 = 订阅数（团队行按团长算 1 个客户）；小字 = 设备授权用户数。
+                        两个口径必须同时可见：设备恒绑主插件，档位商品的设备数恒为 0，
+                        只给设备数会让运营以为「没人订阅试用」。 */}
                     <button
                       onClick={() => openUsers(p)}
                       title={t('admin.usersTitle')}
@@ -547,6 +552,9 @@ export default function HubPluginsPage() {
                     >
                       {p.user_count ?? 0}
                     </button>
+                    <div className="text-[10px] text-neutral-400 tabular-nums mt-0.5">
+                      {t('admin.usersDeviceShort', { n: p.device_user_count ?? 0 })}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-center">
                     <span
@@ -960,6 +968,8 @@ export default function HubPluginsPage() {
               <h2 className="font-semibold text-neutral-900">
                 {usersPlugin.name} · {t('admin.usersTitle')}
                 <span className="ml-2 text-sm font-normal text-neutral-500">
+                  {t('admin.usersSubsCount', { n: usersPlugin.user_count ?? 0 })}
+                  {' · '}
                   {t('admin.usersTotal', { n: usersTotal })}
                 </span>
               </h2>

@@ -433,9 +433,11 @@ const en = {
     prevPage: 'Previous',
     nextPage: 'Next',
     // ── Users (user-count column popup) ──
-    thUserCount: 'Users',
+    thUserCount: 'Subscribers',
     usersTitle: 'Users',
-    usersTotal: '{n} user(s)',
+    usersTotal: '{n} device user(s)',
+    usersSubsCount: '{n} subscriber(s)',
+    usersDeviceShort: 'dev {n}',
     usersUuid: 'UUID',
     usersName: 'Name',
     usersEmail: 'Email',
