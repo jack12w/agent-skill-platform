@@ -770,9 +770,35 @@ export class PluginsAuthService {
           ? planNameById.get(d.subscription_id) ?? null
           : null,
       })),
-      // 没有在期档位时（卡已过期）用实际设备数兜底：避免界面出现「已授权 1/0 台」
+      /**
+       * ⚠️ `max_devices` 是**插件族总量**（在期各档额度之和），**不是单张订阅卡的额度**。
+       * 2026-10-29 修正：账号页曾把它贴在每张卡上 —— 用户有基础版(1)+Team(1) 时，
+       * 基础版卡显示「已授权 1/2 台设备」，看起来像「基础版能绑 2 台」。产品口径是
+       * **一张订阅卡 = 1 台设备的绑定配额**，所以每张卡必须用下面 `tiers` 里本行的
+       * `used / quota`，`max_devices` 只留给「授权页显示该用户总共能绑几台」这类全局场景。
+       */
       max_devices: quota.max_devices || devices.length,
       used: devices.length,
+      /**
+       * 按订阅行拆分的额度明细（一卡一台的展示依据）。
+       *
+       * `used` 是**本人占用该行**的设备数（团队行的额度每人一份，不把别人的设备算进来）；
+       * 前端按 `subscription_id === 订阅行 id` 匹配，取不到时按 1 台兜底
+       * （历史设备未归属某行时，卡上不会凭空多出额度）。
+       */
+      tiers: options.map((o) => ({
+        subscription_id: o.subscription_id,
+        plan_slug: o.plan_slug,
+        plan_name: o.plan_name,
+        /** personal | team —— 判据是「可授权账号数 > 1」，与 AI 门禁同源 */
+        via: o.via,
+        entitled: o.entitled,
+        /** 团队行才有：可授权账号数（含团长）。**不是设备数** */
+        seats: o.seats,
+        expires_at: o.expires_at,
+        quota: o.quota,
+        used: o.used,
+      })),
     };
   }
 

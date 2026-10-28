@@ -1082,6 +1082,11 @@ const en = {
     activateHint: 'Click “Log in / Activate” inside the plugin and confirm on the web page — authorization completes automatically, with no key to copy.',
     devicesUsed: '{n}/{max} devices authorized',
     teamSeatsUsed: 'Team members {n}/{max} joined',
+    /** Team card, second line: team plans also cap at 1 device per card, counted per person */
+    teamDeviceUsed: 'This account: {n}/{max} device(s) authorized',
+    /** Device list header hint: one device per plan card, list is shown per plugin */
+    devicesCrossTierHint:
+      'All devices under this plugin are shown here; the tag after each device shows which plan slot it occupies.',
     teamSeatsHint: 'Team plans are billed per account: invite members into the team and they can use their own plugin login; each member may authorize 1 device.',
     devicesUsedLoading: 'Loading authorized device count…',
     manageDevices: 'Manage devices',

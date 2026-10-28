@@ -334,10 +334,19 @@ export default function PluginAuthPage() {
             <div className="flex justify-between gap-3">
               <dt className="text-neutral-400">{t('plugins.authDevicesUsed')}</dt>
               <dd className="text-neutral-700">
-                {t('plugins.devicesUsed', {
-                  n: info.devices_used,
-                  max: info.max_devices,
-                })}
+                {/* ★ 一卡一台（2026-10-29）：显示**所选档位**自己的额度，
+                    不是插件族总量。用户有基础版(1)+Team(1) 时，总量是 2 ——
+                    贴在「基础版」上会被读成「基础版能绑 2 台」。
+                    没有档位信息（老后端）时才退回总量兜底。 */}
+                {currentTier
+                  ? t('plugins.devicesUsed', {
+                      n: currentTier.used,
+                      max: currentTier.quota,
+                    })
+                  : t('plugins.devicesUsed', {
+                      n: info.devices_used,
+                      max: info.max_devices,
+                    })}
               </dd>
             </div>
             {/* 授权使用哪一档（0046 一档一台）：单档只显示文案，多档才出下拉 */}

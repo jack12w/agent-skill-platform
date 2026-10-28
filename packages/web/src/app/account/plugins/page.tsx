@@ -61,6 +61,37 @@ interface DeviceRow {
   plan_name?: string | null;
 }
 
+/**
+ * 按订阅行拆分的设备额度（`GET /plugins/:id/devices` 的 `tiers`）。
+ *
+ * ⚠️ 卡片上的「已授权 N/M 台设备」必须取**本行**的这一项，不能用接口里的
+ * `max_devices` —— 那是插件族总量（各在期档位之和）。2026-10-29 实测：
+ * 用户有基础版(1) + Team(1)，基础版卡上显示「已授权 1/2 台设备」，
+ * 看起来像「基础版能绑 2 台」，与「一张卡一台」的口径直接冲突。
+ */
+interface DeviceTier {
+  subscription_id: string;
+  plan_name?: string | null;
+  plan_slug?: string | null;
+  /** personal | team（判据 = 可授权账号数 > 1，与 AI 门禁同源） */
+  via?: 'personal' | 'team';
+  entitled: boolean;
+  /** 团队行才有：可授权账号数（含团长），**不是设备数** */
+  seats?: number | null;
+  quota: number;
+  /** 本人占用本行的设备数 */
+  used: number;
+}
+
+/** 设备接口响应：devices 是全插件共用的一份，tiers 才是「每张卡多少台」 */
+interface DeviceResp {
+  devices: DeviceRow[];
+  /** 插件族总量，**不要**贴在单卡上（见 DeviceTier 注释） */
+  max_devices: number;
+  used: number;
+  tiers?: DeviceTier[];
+}
+
 function authHeaders(): Record<string, string> {
   try {
     const token = localStorage.getItem('token');
@@ -130,9 +161,7 @@ export default function MyPluginsPage() {
   // 团队行（同插件），用 plugin_id 会让两张卡的展开态/busy 态互相串联。
   // 数据本身仍按 plugin_id 存（设备就是按 user+plugin 隔离的，两卡看到同一份是对的）。
   const [deviceOpen, setDeviceOpen] = useState<string | null>(null);
-  const [deviceData, setDeviceData] = useState<
-    Record<string, { devices: DeviceRow[]; max_devices: number }>
-  >({});
+  const [deviceData, setDeviceData] = useState<Record<string, DeviceResp>>({});
   const [deviceLoading, setDeviceLoading] = useState<string | null>(null);
   const [deviceBusy, setDeviceBusy] = useState<string | null>(null);
   // 内联改名：一次只允许改一行（`${pluginId}:${deviceId}`），避免多点并发写同一张表
@@ -483,6 +512,18 @@ export default function MyPluginsPage() {
             const isTeamSeat = !!s.team_id;
             const seats = s.seats && s.seats > 0 ? s.seats : 3;
             const members = Math.max(1, Number(s.member_count ?? 1));
+            /**
+             * ★ 本卡的设备额度（2026-10-29 修正）：**一张订阅卡 = 1 台设备配额**。
+             *
+             * 旧实现取 `dd.max_devices`，而它是**插件族总量**（在期各档之和）：
+             * 用户同时有基础版 + Team 专业版时，基础版卡上显示「已授权 1/2 台设备」，
+             * 用户当场判断「基础版能绑 2 台」—— 与产品口径直接冲突。
+             * 现在按 `subscription_id === 本行 id` 取该行自己的 used/quota；
+             * 取不到时按 1 台兜底（历史设备未归属、或老后端没有 tiers 字段）。
+             */
+            const myTier = dd?.tiers?.find((x) => x.subscription_id === s.id);
+            const devUsed = myTier ? myTier.used : 0;
+            const devQuota = myTier ? myTier.quota : 1;
             return (
               <div key={s.id} className="bg-white border border-neutral-200 rounded-xl p-4">
                 <div className="flex items-center justify-between gap-3">
@@ -534,16 +575,20 @@ export default function MyPluginsPage() {
                       <div>
                         <div className="text-xs text-neutral-600">
                           {/* 团队行：显示席位占用（团队成员），不显示设备数 —— 团队版买的是账号数。
-                              个人行：显示该插件族下的设备授权数（后端按 root 归一，档位商品同样准）。 */}
+                              个人行：显示**本卡**的设备授权数（一卡一台，不再是插件族总量）。 */}
                           {isTeamSeat
                             ? t('plugins.teamSeatsUsed', { n: members, max: seats })
                             : dd
-                              ? t('plugins.devicesUsed', {
-                                  n: dd.devices?.length ?? 0,
-                                  max: dd.max_devices,
-                                })
+                              ? t('plugins.devicesUsed', { n: devUsed, max: devQuota })
                               : t('plugins.devicesUsedLoading')}
                         </div>
+                        {/* 团队卡的第二行：团队版**同样**享受一卡一台的绑定权，
+                            只是额度按人算（每个成员各占自己那 1 台），与 seats 是两个维度。 */}
+                        {isTeamSeat && dd && (
+                          <div className="text-xs text-neutral-500 mt-0.5">
+                            {t('plugins.teamDeviceUsed', { n: devUsed, max: devQuota })}
+                          </div>
+                        )}
                         {!open && (
                           <p className="mt-1 text-[11px] leading-relaxed text-neutral-400">
                             {isTeamSeat ? t('plugins.teamSeatsHint') : t('plugins.activateHint')}
@@ -569,7 +614,16 @@ export default function MyPluginsPage() {
                             {t('plugins.noDevices')}
                           </div>
                         ) : (
-                          <ul className="space-y-2">
+                          <>
+                            {/* 一卡一台后，同一插件下可能有多档各占一台设备 ——
+                                展开任一卡都会看到「本插件的全部设备」，不解释一句就会被读成
+                                「Team 卡说 0/1，展开却有 1 台」= bug。 */}
+                            {(dd.tiers?.filter((x) => x.entitled).length ?? 0) > 1 && (
+                              <p className="mb-2 text-[11px] leading-relaxed text-neutral-400">
+                                {t('plugins.devicesCrossTierHint')}
+                              </p>
+                            )}
+                            <ul className="space-y-2">
                             {dd.devices.map((d) => {
                               const rowKey = `${s.id}:${d.device_id}`;
                               const editing = renameKey === rowKey;
@@ -681,7 +735,8 @@ export default function MyPluginsPage() {
                                 </li>
                               );
                             })}
-                          </ul>
+                            </ul>
+                          </>
                         )}
 
                         {!!dd?.devices?.length && (

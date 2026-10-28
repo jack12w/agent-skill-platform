@@ -1096,6 +1096,11 @@ const zh = {
     activateHint: '在插件内点击「登录 / 激活」，网页确认后即自动完成授权，无需手抄任何密钥。',
     devicesUsed: '已授权 {n}/{max} 台设备',
     teamSeatsUsed: '团队成员 已加入 {n}/{max} 位',
+    /** 团队卡第二行：团队版也是一卡一台，但额度按人算（每人占自己那 1 台） */
+    teamDeviceUsed: '本账号已授权 {n}/{max} 台设备',
+    /** 设备列表顶部提示：一卡一台后，多档会各占一台，列表按插件整体展示 */
+    devicesCrossTierHint:
+      '以下为你在该插件下的全部设备；设备后的标签表示它占用的是哪一档订阅名额。',
     teamSeatsHint: '团队版按账号数计费：把成员邀请进团队，对方登录自己的插件即可使用；每人可在自己电脑上授权 1 台设备。',
     devicesUsedLoading: '设备授权数加载中…',
     manageDevices: '管理设备',
