@@ -1312,7 +1312,28 @@ const en = {
       ctaDesc: 'Download the installer → log in on the page → hit Collect once; the export takes it from there.',
       ctaBtn: 'Download installer',
       disclaimer: '外贸工具箱 is a third-party productivity tool with no official authorization, partnership or affiliation with Alibaba.com; collected data comes from public pages and APIs only.',
+
+      /* 11.11 promo skin + WeChat tutorial series (2026-11-10).
+         Display copy only: no discount numbers (prices come from /api/plugins)
+         and no countdown timer (that would add time-based logic). Keep keys in sync with zh.ts. */
+      promoRibbon: '11.11 special · limited-time pricing',
+      promoBadge11: '11.11 SPECIAL',
+      tutorialEyebrow: 'Tutorial series · updated regularly',
+      tutorialTitle: 'Scan to follow the step-by-step tutorial series',
+      tutorialDesc: 'Scan with WeChat to follow our Official Account and read the full illustrated guides on installation, collection, export and real-world workflows.',
+      tutorialHint: 'Scan in WeChat → open past tutorials (Chinese content)',
+      tutorialQrAlt: 'WeChat Official Account QR code for the plugin tutorial series',
     },
+  },
+
+  /* Shared risk notice (2026-11-10): skill detail / user profile / team showcase.
+     Labels and body text are split so the label can be styled; email stays plain text. */
+  riskNotice: {
+    title: 'Risk notice',
+    copyrightLabel: 'Copyright / takedown: ',
+    copyrightText: 'If any content infringes your copyright, email 287083583@qq.com. We will verify the notice promptly and take the item down once confirmed.',
+    securityLabel: 'Safety notice: ',
+    securityText: 'Agents and skills on this platform are independently designed, developed and uploaded by third-party users. Development environments and use cases vary, so assess the risks before downloading or using them and protect your own accounts and data.',
   },
 };
 

@@ -7,6 +7,7 @@ import useTranslation from '../../../hooks/useTranslation';
 import { setShareConfig, resetShareConfig } from '../../../lib/share';
 import { likeSkill, startDownload, openLoginInNewTab } from '../../../lib/skill-actions';
 import SkillUpdateBadge from '../../components/SkillUpdateBadge';
+import RiskNotice from '../../components/RiskNotice';
 import MembershipModal from '../../components/MembershipModal';
 import CheckoutModal from '../../components/CheckoutModal';
 
@@ -544,6 +545,9 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
           </div>
         )}
       </section>
+
+      {/* 页面底部风险说明（2026-11-10）：纯展示 */}
+      <RiskNotice />
 
       {memberModalOpen && team && (
         <MembershipModal

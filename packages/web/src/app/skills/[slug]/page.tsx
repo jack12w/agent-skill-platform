@@ -8,6 +8,7 @@ import useTranslation from '../../../hooks/useTranslation';
 import { setShareConfig, resetShareConfig } from '../../../lib/share';
 import CommentSection from '../../components/CommentSection';
 import SkillUpdateBadge from '../../components/SkillUpdateBadge';
+import RiskNotice from '../../components/RiskNotice';
 import CheckoutModal from '../../components/CheckoutModal';
 import MembershipModal from '../../components/MembershipModal';
 import { likeSkill, startDownload, openLoginInNewTab } from '../../../lib/skill-actions';
@@ -450,6 +451,9 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
           </div>
         </div>
       </div>
+
+      {/* 页面底部风险说明（2026-11-10）：纯展示，独立于两栏主内容 */}
+      <RiskNotice />
 
       {checkoutOpen && (
         <CheckoutModal

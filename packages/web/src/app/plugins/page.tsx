@@ -350,7 +350,7 @@ export default function PluginsPage() {
           onClick={() => setCat(c)}
           className={`rounded-full px-4 py-1.5 text-sm border transition ${
             cat === c
-              ? 'bg-brand-600 text-white border-brand-600'
+              ? 'bg-[#C8161D] text-white border-[#C8161D]'
               : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-100'
           }`}
         >
@@ -400,11 +400,18 @@ export default function PluginsPage() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
+      {/* ==================== 双11 促销条（2026-11-10，纯静态展示文案） ==================== */}
+      <div className="bg-[#8E0F16]">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-2 text-center text-xs font-semibold tracking-wider text-[#FFD66B]">
+          {t('plugins.page.promoRibbon')}
+        </div>
+      </div>
+
       {/* ==================== Hero ==================== */}
-      <section className="bg-gradient-to-b from-brand-50 to-neutral-50">
+      <section className="bg-gradient-to-b from-[#FFF1EC] via-[#FFEDE6] to-neutral-50">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-14 sm:py-20 text-center">
-          <div className="inline-block rounded-full bg-white px-4 py-1.5 text-xs font-semibold text-brand-700 border border-brand-100">
-            {t('plugins.page.badge')}
+          <div className="inline-block rounded-full bg-[#C8161D] px-4 py-1.5 text-xs font-semibold text-white border border-[#C8161D]">
+            {t('plugins.page.promoBadge11')}
           </div>
           <h1 className="mt-5 text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-neutral-900">
             {t('plugins.page.title')}
@@ -426,21 +433,21 @@ export default function PluginsPage() {
               {isActive(primary) ? (
                 <Link
                   href="/account/plugins"
-                  className="rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white hover:bg-brand-700 shadow-brand"
+                  className="rounded-xl bg-[#C8161D] px-6 py-3 text-sm font-semibold text-white hover:bg-[#A8121A] shadow-lg"
                 >
                   {t('plugins.page.heroManage')}
                 </Link>
               ) : (
                 <button
                   onClick={() => setPayId(primary.id)}
-                  className="rounded-xl bg-brand-600 px-6 py-3 text-sm font-semibold text-white hover:bg-brand-700 shadow-brand"
+                  className="rounded-xl bg-[#C8161D] px-6 py-3 text-sm font-semibold text-white hover:bg-[#A8121A] shadow-lg"
                 >
                   {t('plugins.page.heroSubscribe')}
                 </button>
               )}
               <button
                 onClick={() => handleDownload(primary)}
-                className="rounded-xl border border-neutral-300 bg-white px-6 py-3 text-sm font-semibold text-neutral-700 hover:border-brand-400 hover:text-brand-600"
+                className="rounded-xl border border-neutral-300 bg-white px-6 py-3 text-sm font-semibold text-neutral-700 hover:border-[#C8161D] hover:text-[#C8161D]"
               >
                 {t('plugins.page.heroDownload')}
               </button>
@@ -452,6 +459,34 @@ export default function PluginsPage() {
       </section>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-20">
+
+        {/* ==================== 公众号连载教程（2026-11-10 新增，纯展示） ==================== */}
+        <section className="mt-10 rounded-3xl border border-[#F0C9C0] bg-[#FFF8F4] px-5 py-7 sm:px-8 sm:py-8">
+          <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8">
+            <div className="min-w-0 flex-1 text-center sm:text-left">
+              <p className="text-[11px] font-bold tracking-widest text-[#8E0F16]">
+                {t('plugins.page.tutorialEyebrow')}
+              </p>
+              <h2 className="mt-2 text-xl sm:text-2xl font-extrabold tracking-tight text-neutral-900">
+                {t('plugins.page.tutorialTitle')}
+              </h2>
+              <p className="mt-2 text-sm text-neutral-600 leading-relaxed">
+                {t('plugins.page.tutorialDesc')}
+              </p>
+              <p className="mt-3 text-xs font-semibold text-[#C8161D]">
+                {t('plugins.page.tutorialHint')}
+              </p>
+            </div>
+            <div className="shrink-0 rounded-2xl border border-[#F0C9C0] bg-white p-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/wechat-tutorial-qr.jpg"
+                alt={t('plugins.page.tutorialQrAlt')}
+                className="h-40 w-40 sm:h-44 sm:w-44 object-contain"
+              />
+            </div>
+          </div>
+        </section>
 
         {/* ==================== 能力总览 ==================== */}
         <section className="mt-10">
@@ -465,13 +500,13 @@ export default function PluginsPage() {
           <div className="mt-8 grid gap-5 md:grid-cols-3">
             {ovBars.map((b, i) => (
               <div key={b.name} className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-card">
-                <div className="text-xs font-bold text-brand-600">0{i + 1}</div>
+                <div className="text-xs font-bold text-[#C8161D]">0{i + 1}</div>
                 <h3 className="mt-2 text-lg font-bold text-neutral-900">{b.name}</h3>
                 <p className="mt-2 text-sm text-neutral-600 leading-relaxed">{b.desc}</p>
                 <ul className="mt-4 space-y-2 text-sm text-neutral-600">
                   {b.pts.map((p) => (
                     <li key={p} className="flex gap-2">
-                      <span className="text-brand-600 font-bold">✓</span>
+                      <span className="text-[#C8161D] font-bold">✓</span>
                       <span><RichText text={p} /></span>
                     </li>
                   ))}
@@ -493,7 +528,7 @@ export default function PluginsPage() {
           {/* 2026-10-12：字段表收口——首屏只留一句价值话术（fLead），完整表格折叠。
               结构与 FAQ 的 details 一致，样式复用同一套圆角卡片。 */}
           <details className="mt-8 group rounded-2xl border border-neutral-200 bg-white px-5 py-4">
-            <summary className="cursor-pointer list-none text-sm font-semibold text-brand-700 marker:hidden">
+            <summary className="cursor-pointer list-none text-sm font-semibold text-[#8E0F16] marker:hidden">
               {t('plugins.page.fFull')}
               <span className="float-right text-neutral-400 transition group-open:rotate-45">＋</span>
             </summary>
@@ -539,8 +574,8 @@ export default function PluginsPage() {
                 ))}
               </ul>
             </div>
-            <div className="bg-brand-50/60 rounded-2xl border border-brand-200 p-6">
-              <h3 className="text-base font-bold text-brand-900">{t('plugins.page.gPaidTitle')}</h3>
+            <div className="bg-[#FFF1EC] rounded-2xl border border-[#F0C9C0] p-6">
+              <h3 className="text-base font-bold text-[#501313]">{t('plugins.page.gPaidTitle')}</h3>
               <ul className="mt-4 space-y-2 text-sm text-neutral-700">
                 {[
                   t('plugins.page.gPaid1'),
@@ -549,7 +584,7 @@ export default function PluginsPage() {
                   t('plugins.page.gPaid4'),
                 ].map((x) => (
                   <li key={x} className="flex gap-2">
-                    <span className="text-brand-600 font-bold">✓</span>
+                    <span className="text-[#C8161D] font-bold">✓</span>
                     <span>{x}</span>
                   </li>
                 ))}
@@ -604,7 +639,7 @@ export default function PluginsPage() {
                       sub ? 'border-green-200' : 'border-neutral-200'
                     }`}
                   >
-                    <div className="w-12 h-12 shrink-0 rounded-xl bg-brand-50 flex items-center justify-center text-2xl">
+                    <div className="w-12 h-12 shrink-0 rounded-xl bg-[#FFF1EC] flex items-center justify-center text-2xl">
                       {p.icon_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={p.icon_url} alt={p.name} className="w-12 h-12 rounded-xl object-cover" />
@@ -637,7 +672,7 @@ export default function PluginsPage() {
                         <ul className="mt-3 space-y-1 text-sm text-neutral-600">
                           {features.slice(0, 4).map((f, i) => (
                             <li key={i} className="flex gap-2">
-                              <span className="text-brand-600 font-bold">✓</span>
+                              <span className="text-[#C8161D] font-bold">✓</span>
                               <span>{f}</span>
                             </li>
                           ))}
@@ -665,7 +700,7 @@ export default function PluginsPage() {
                         </span>
                         <span className="text-sm text-neutral-400 shrink-0">{priceUnit(p)}</span>
                         {!!strike && (
-                          <span className="rounded-md bg-red-50 border border-red-200 px-1.5 py-0.5 text-[10px] font-semibold text-red-600 shrink-0 whitespace-nowrap">
+                          <span className="rounded-md bg-[#C8161D] border border-[#C8161D] px-1.5 py-0.5 text-[10px] font-semibold text-white shrink-0 whitespace-nowrap">
                             {t('plugins.promoBadge')}
                           </span>
                         )}
@@ -673,7 +708,7 @@ export default function PluginsPage() {
                       <div className="mt-3 flex gap-3">
                         <button
                           onClick={() => handleDownload(p)}
-                          className="flex-1 rounded-lg border border-neutral-200 py-2.5 text-sm font-semibold text-neutral-700 bg-white hover:border-brand-400 hover:text-brand-600"
+                          className="flex-1 rounded-lg border border-neutral-200 py-2.5 text-sm font-semibold text-neutral-700 bg-white hover:border-[#C8161D] hover:text-[#C8161D]"
                         >
                           {t('plugins.download')}
                         </button>
@@ -715,7 +750,7 @@ export default function PluginsPage() {
                               }
                               setPayId(p.id);
                             }}
-                            className="flex-1 rounded-lg bg-brand-600 py-2.5 text-sm font-semibold text-white hover:bg-brand-700"
+                            className="flex-1 rounded-lg bg-[#C8161D] py-2.5 text-sm font-semibold text-white hover:bg-[#A8121A]"
                           >
                             {t('plugins.subscribe')}
                           </button>
@@ -740,14 +775,14 @@ export default function PluginsPage() {
           <p className="mt-3 text-sm sm:text-base text-neutral-600 leading-relaxed">
             {t('plugins.page.clLead')}
           </p>
-          <div className="mt-8 border-l-2 border-brand-100 ml-2">
+          <div className="mt-8 border-l-2 border-[#F5C4B3] ml-2">
             {[
               [t('plugins.page.cl1Date'), t('plugins.page.cl1Desc')],
               [t('plugins.page.cl2Date'), t('plugins.page.cl2Desc')],
               [t('plugins.page.cl3Date'), t('plugins.page.cl3Desc')],
             ].map(([date, desc]) => (
               <div key={date} className="relative pl-6 pb-6 last:pb-0">
-                <span className="absolute -left-[7px] top-1 h-3 w-3 rounded-full bg-brand-600" />
+                <span className="absolute -left-[7px] top-1 h-3 w-3 rounded-full bg-[#C8161D]" />
                 <div className="text-xs font-semibold text-neutral-400">{date}</div>
                 <p className="mt-1 text-sm text-neutral-600 leading-relaxed">{desc}</p>
               </div>
@@ -769,7 +804,7 @@ export default function PluginsPage() {
               [t('plugins.page.s3Title'), t('plugins.page.s3Desc')],
             ].map(([title, desc], i) => (
               <div key={title} className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-card">
-                <div className="h-8 w-8 rounded-lg bg-brand-600 text-white text-sm font-bold flex items-center justify-center">
+                <div className="h-8 w-8 rounded-lg bg-[#C8161D] text-white text-sm font-bold flex items-center justify-center">
                   {i + 1}
                 </div>
                 <h3 className="mt-3 text-base font-bold text-neutral-900">{title}</h3>
@@ -788,12 +823,12 @@ export default function PluginsPage() {
             {faqs.map(([q, a]) => (
               <details key={q} className="group px-5 py-4">
                 <summary className="cursor-pointer list-none text-sm sm:text-base font-semibold text-neutral-900 marker:hidden">
-                  <span className="mr-2 text-brand-600">Q</span>
+                  <span className="mr-2 text-[#C8161D]">Q</span>
                   {q}
                   <span className="float-right text-neutral-400 transition group-open:rotate-45">＋</span>
                 </summary>
                 <p className="mt-3 text-sm text-neutral-600 leading-relaxed">
-                  <span className="mr-2 font-semibold text-brand-600">A</span>
+                  <span className="mr-2 font-semibold text-[#C8161D]">A</span>
                   <RichText text={a} />
                 </p>
               </details>
@@ -802,20 +837,20 @@ export default function PluginsPage() {
         </section>
 
         {/* ==================== 结尾 CTA ==================== */}
-        <section className="mt-16 rounded-3xl bg-brand-600 px-6 py-12 text-center">
+        <section className="mt-16 rounded-3xl bg-[#8E0F16] px-6 py-12 text-center">
           <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
             {t('plugins.page.ctaTitle')}
           </h2>
-          <p className="mt-3 text-sm text-brand-100">{t('plugins.page.ctaDesc')}</p>
+          <p className="mt-3 text-sm text-[#FFD66B]">{t('plugins.page.ctaDesc')}</p>
           {primary && (
             <button
               onClick={() => handleDownload(primary)}
-              className="mt-7 rounded-xl bg-white px-7 py-3 text-sm font-semibold text-brand-700 hover:bg-brand-50"
+              className="mt-7 rounded-xl bg-white px-7 py-3 text-sm font-semibold text-[#8E0F16] hover:bg-[#FFF1EC]"
             >
               {t('plugins.page.ctaBtn')}
             </button>
           )}
-          <p className="mt-6 text-xs text-brand-100/70 leading-relaxed">
+          <p className="mt-6 text-xs text-[#FFD9A0] leading-relaxed">
             {t('plugins.page.disclaimer')}
           </p>
         </section>
