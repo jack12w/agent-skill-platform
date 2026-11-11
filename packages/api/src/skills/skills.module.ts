@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SkillsService } from './skills.service';
+import { SkillPackageStorageService } from './skill-package-storage.service';
 import { SkillsController } from './skills.controller';
 import { GeoController } from './geo.controller';
 import { Skill } from './skill.entity';
@@ -22,7 +23,7 @@ import { AuthModule } from '../auth/auth.module';
     PaymentsModule,
     AuthModule, // 提供 IdentityService（公开接口的登录可选身份解析，必须验签）
   ],
-  providers: [SkillsService, StatsAggregationService],
+  providers: [SkillsService, StatsAggregationService, SkillPackageStorageService],
   controllers: [SkillsController, GeoController],
   exports: [SkillsService, StatsAggregationService],
 })

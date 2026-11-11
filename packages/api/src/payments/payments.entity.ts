@@ -434,6 +434,21 @@ export class CreatorMembershipPlan {
   @Column({ default: 'CNY' })
   currency: string;
 
+  /**
+   * 0047 团队订阅墙：是否继续接受新购/续费。
+   * 只停「新购」，不停「订阅墙」——停售后仍有有效订阅时，未订阅者依旧 402。
+   */
+  @Column({ default: true })
+  enabled: boolean;
+
+  /** 0047 团长「立即释放」时间戳：非空即整团队技能免费开放（24h 内可撤销）。 */
+  @Column({ type: 'timestamptz', nullable: true })
+  released_at: Date | null;
+
+  /** 0047 释放前的 enabled 快照：撤销释放时精确回滚，避免把停售团队隐式改回售卖中。 */
+  @Column({ type: 'boolean', nullable: true })
+  enabled_before_release: boolean | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 

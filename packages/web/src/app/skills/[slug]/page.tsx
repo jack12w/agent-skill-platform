@@ -56,6 +56,8 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   const [followBusy, setFollowBusy] = useState(false);
   // 当前用户是否为该技能所属团队成员（用于「订阅自己」按钮禁用）
   const [isTeamMember, setIsTeamMember] = useState(false);
+  // 0047 团队订阅墙状态（后端 per-request 实时返回，不进 10s 详情缓存）
+  const [teamPlan, setTeamPlan] = useState<any>(null);
   // ── 详情页折叠：标签最多 2 行、版本历史最多 3 条 ──
   const [tagsExpanded, setTagsExpanded] = useState(false);
   const tagsRef = useRef<HTMLDivElement>(null);
@@ -96,7 +98,7 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
     else { setVersionsLoadFailed(true); }
   };
   const reload = async () => {
-    const res = await fetch(`/api/skills/${params.slug}/detail`, { headers: getAuthHeaders() });
+    const res = await fetch(`/api/skills/${params.slug}/detail`, { headers: getAuthHeaders(), cache: 'no-store' });
     if (res.ok) {
       const d = await res.json();
       setSkill(d.skill);
@@ -104,6 +106,7 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
       if (d.pricing) setPricing(d.pricing);
       setHasPlan(!!d.hasPlan);
       setIsTeamMember(!!d.isTeamMember);
+      setTeamPlan(d.teamPlan || null);
       if (d.membershipStatus) {
         if (d.hasPlan) setAuthorSub(d.membershipStatus);
         else setFreeSub(!!d.membershipStatus.subscribed);
@@ -115,7 +118,7 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
     (async () => {
       try {
         // 聚合接口：一次返回 技能+版本+定价+作者套餐+订阅状态（原 5 个请求压成 1 个）
-        const res = await fetch(`/api/skills/${params.slug}/detail`, { headers: getAuthHeaders() });
+        const res = await fetch(`/api/skills/${params.slug}/detail`, { headers: getAuthHeaders(), cache: 'no-store' });
         if (!res.ok) {
           if (res.status === 403) { setForbidden(true); setLoading(false); return; }
           // 记录状态码：404 → 真缺失；429/5xx/其它 → 瞬时故障（可重试），与「技能走丢了」区分开
@@ -133,6 +136,7 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
         if (d.pricing) setPricing(d.pricing);
         setHasPlan(!!d.hasPlan);
         setIsTeamMember(!!d.isTeamMember);
+        setTeamPlan(d.teamPlan || null);
         if (d.membershipStatus) {
           if (d.hasPlan) setAuthorSub(d.membershipStatus);
           else setFreeSub(!!d.membershipStatus.subscribed);
@@ -202,11 +206,21 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   };
 
   // 订阅作者按钮：未登录先跳登录；有付费套餐 → 打开会员支付弹窗；无套餐 → 免费关注
+  // 0047：团队技能必须看实时 teamPlan（hasPlan 来自 10s 缓存，停售/释放后会串味）；
+  // 停售 / 已释放时不再弹一个必然下单失败的支付窗。
   const handleAuthorSubClick = () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) { alert(t('detail.loginFirst')); router.push('/auth'); return; }
-    if (hasPlan) setMemberSubOpen(true);
-    else toggleFollow();
+    const isTeamSkill = !!skill?.owner_team_id;
+    if (isTeamSkill && teamPlan?.unavailable) { alert(t('detail.teamPlanUnavailable')); return; }
+    if (isTeamSkill && teamPlan?.released) { alert(t('detail.teamPlanReleased')); return; }
+    const planOn = isTeamSkill ? !!teamPlan?.hasPlan : hasPlan;
+    if (planOn) {
+      if (isTeamSkill && !teamPlan?.enabled) { alert(t('detail.teamPlanStopped')); return; }
+      setMemberSubOpen(true);
+    } else {
+      toggleFollow();
+    }
   };
 
   const handleDownload = async (versionId?: string) => {
@@ -221,6 +235,17 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
       if (result.kind === 'unauthorized') {
         alert(t('detail.loginExpired'));
         openLoginInNewTab();
+        return;
+      }
+      // 0047 团队订阅墙：团队技能一律不单卖（含免费技能），402 只对应订阅窗。
+      // 绝不落到下面的收银台分支 —— 免费技能没有单买价，会触发「该技能无需付费」0 元死锁。
+      if (result.kind === 'team-subscription-required') {
+        if (result.team?.enabled === false) {
+          alert(t('detail.teamPlanStopped'));
+          return;
+        }
+        setPendingVersionId(versionId);
+        setMemberSubOpen(true);
         return;
       }
       // ▼▼ 付费墙：后端返回 402 时弹出收银台，支付成功后自动重试下载
@@ -259,6 +284,25 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
       reload();
     }
   };
+
+  // 0047 团队技能展示口径：一律以实时 teamPlan 为准，不读 10s 缓存里的 hasPlan。
+  const isTeamSkill = !!skill?.owner_team_id;
+  const planOn = isTeamSkill ? !!teamPlan?.hasPlan : hasPlan;
+  const paidSubscribed = isTeamSkill ? !!teamPlan?.subscribed : !!authorSub?.subscribed;
+  // 免费关注 ≠ 付费订阅：文案必须区分，避免用户误以为点「关注」就能下载团队技能
+  const showSubscribed = planOn ? paidSubscribed : !!freeSub;
+  const defaultVersionLabel = `v${versions.find((v) => v.id === skill?.latest_version_id)?.version || versions[0]?.version || 'latest'}`;
+  const downloadLabel = acting === 'download'
+    ? t('detail.downloading')
+    : versions.length === 0
+      ? t('detail.noVersionYet')
+      : isTeamSkill && teamPlan?.unavailable
+        ? t('detail.teamPlanUnavailable')
+        : isTeamSkill && teamPlan?.wallActive && !teamPlan?.subscribed
+          ? t('detail.subscribeToDownload')
+          : isTeamSkill && (teamPlan?.released || !teamPlan?.wallActive)
+            ? t('detail.freeDownload')
+            : `${t('detail.download')} ${defaultVersionLabel}`;
 
   if (loading) return <div className="max-w-5xl mx-auto px-4 sm:px-6 py-16 sm:py-24 text-center text-neutral-500">{t('skills.loading')}</div>;
   if (forbidden) {
@@ -387,7 +431,8 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
           <div className="p-6 border rounded-xl">
             <div className="text-center mb-6"><span className="text-sm text-neutral-500">{t('detail.skillScore')}</span><div className="text-3xl sm:text-4xl font-black text-brand-600">{parseFloat(skill.stats?.total_score || 0).toFixed(1)}</div></div>
             <div className="grid grid-cols-2 gap-4 text-center mb-6"><div className="p-3 bg-neutral-100 rounded-lg"><div className="font-bold">{skill.stats?.likes_total || 0}</div><div className="text-xs text-neutral-500">{t('detail.likes')}</div></div><div className="p-3 bg-neutral-100 rounded-lg"><div className="font-bold">{skill.stats?.downloads_total || 0}</div><div className="text-xs text-neutral-500">{t('detail.downloads')}</div></div></div>
-            {pricing && pricing.pricing_mode !== 'free' && (
+            {/* 0047：团队技能一律不单卖，隐藏单价区，避免出现一个「看得见买不了」的价格 */}
+            {pricing && !isTeamSkill && pricing.pricing_mode !== 'free' && (
               <div className="mb-3 flex items-center justify-center gap-2">
                 <span className="text-2xl font-black text-brand-700">¥{((pricing.price_cents || 0) / 100).toFixed(2)}</span>
                 {pricing.member_included ? (
@@ -405,9 +450,9 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
                   {t('detail.cannotSubscribeSelf')}
                 </button>
               ) : (
-                (authorSub?.subscribed || freeSub) ? (
+                showSubscribed ? (
                   <div className="flex-1 text-center text-sm font-medium text-green-700 bg-green-50 rounded-lg py-2.5">
-                    {t('detail.subscribed')}
+                    {planOn ? t('detail.subscribed') : t('detail.followed')}
                   </div>
                 ) : (
                   <button
@@ -423,7 +468,7 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
                 {acting === 'like' ? t('detail.liking') : `${t('detail.likeSkill')} ${skill.stats?.likes_total || 0}`}
               </button>
             </div>
-            <button onClick={() => handleDownload()} disabled={acting !== null || versions.length === 0} className="w-full py-3 bg-brand-600 text-white rounded-lg font-bold hover:bg-brand-700 mb-3 disabled:opacity-50 disabled:cursor-not-allowed">{acting === 'download' ? t('detail.downloading') : versions.length === 0 ? t('detail.noVersionYet') : `${t('detail.download')} v${versions.find((v) => v.id === skill.latest_version_id)?.version || versions[0]?.version || 'latest'}`}</button>
+            <button onClick={() => handleDownload()} disabled={acting !== null || versions.length === 0} className="w-full py-3 bg-brand-600 text-white rounded-lg font-bold hover:bg-brand-700 mb-3 disabled:opacity-50 disabled:cursor-not-allowed">{downloadLabel}</button>
           </div>
           <div className="text-sm text-neutral-500">
             <div>
@@ -478,7 +523,9 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
           onPaid={() => {
             setMemberSubOpen(false);
             setAuthorSub({ subscribed: true });
-            // 订阅成功后自动重试一次下载（创作者会员已覆盖本技能）
+            // 0047：团队订阅成功后同步刷新实时状态，避免下载按钮仍显示「订阅后下载」
+            setTeamPlan((prev: any) => prev ? { ...prev, subscribed: true } : prev);
+            // 订阅成功后自动重试一次下载（后端门禁为权威，会重新判定）
             handleDownload(pendingVersionId);
           }}
         />

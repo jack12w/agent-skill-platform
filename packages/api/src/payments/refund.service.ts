@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Not } from 'typeorm';
+import { Repository, Not, EntityManager } from 'typeorm';
 import {
   Order,
   OrderItem,
@@ -53,6 +53,71 @@ export class RefundService implements OnModuleInit {
 
   private genRefundNo(): string {
     return `RF${Date.now()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  }
+
+  /**
+   * 0047 创作者会员订阅退款：按本单档位天数 × 退款比例精确回退 expires_at。
+   *
+   * 定位必须用 (user_id, target_type, target_id) 而非 order_id —— 续费会覆盖订阅行的
+   * order_id（membership.service.ts），按 order_id 退旧单命中 0 行（钱退了权益还在），
+   * 退新单又会把未退款的更早周期整行抹掉。
+   *
+   * 部分退款同样调用本方法（旧实现只在 fullyRefunded 时撤，等于退一半钱权益一天不少）。
+   * 缺 snapshot.plan 的历史订单无法精确计算 → 保守整行失效并记日志，绝不按金额猜档位。
+   */
+  private async revokeCreatorMembershipForRefund(
+    manager: EntityManager,
+    order: Order,
+    items: OrderItem[],
+    ratio: number,
+  ): Promise<void> {
+    const it = items[0];
+    const snap = (it?.snapshot || {}) as any;
+    const targetType: string | undefined = snap.targetType;
+    const targetId: string | undefined = snap.targetId || it?.subject_id;
+    if (!targetType || !targetId) {
+      // 0047 回归兜底：改造前 creator_membership 全额退款一定按 order_id 整行撤销。
+      // 历史脏订单缺 targetType/targetId 时不能退化成「只记日志、钱退了权益还在」，
+      // 这里复刻原行为按本单 order_id 兜底撤销，并记日志供人工核对。
+      await manager.update(
+        CreatorSubscription,
+        { order_id: order.id },
+        { status: 'refunded', expires_at: new Date() },
+      );
+      this.logger.warn(
+        `订阅退款缺少目标快照，已按 order_id 兜底撤销 order=${order.id}，请人工核对`,
+      );
+      return;
+    }
+
+    const where = { user_id: order.user_id, target_type: targetType, target_id: targetId };
+    const sub = await manager.findOne(CreatorSubscription, { where });
+    if (!sub) {
+      this.logger.warn(
+        `订阅退款未命中订阅行 order=${order.id} ${targetType}/${targetId}，权益未自动撤销，请人工核对`,
+      );
+      return;
+    }
+
+    const plan = snap.plan as string | undefined;
+    const daysByPlan: Record<string, number> = { monthly: 30, quarterly: 90, yearly: 365 };
+    const days = plan ? daysByPlan[plan] : undefined;
+    if (!days) {
+      await manager.update(CreatorSubscription, where, { status: 'refunded', expires_at: new Date() });
+      this.logger.warn(
+        `订阅退款缺 snapshot.plan，已保守整行失效 order=${order.id} ${targetType}/${targetId}，请人工核对是否需补偿`,
+      );
+      return;
+    }
+
+    const safeRatio = Math.min(1, Math.max(0, Number(ratio) || 0));
+    const rollbackMs = days * 86400_000 * safeRatio;
+    const newExpires = new Date(new Date(sub.expires_at).getTime() - rollbackMs);
+    if (newExpires.getTime() <= Date.now()) {
+      await manager.update(CreatorSubscription, where, { status: 'refunded', expires_at: new Date() });
+    } else {
+      await manager.update(CreatorSubscription, where, { status: 'active', expires_at: newExpires });
+    }
   }
 
   /**
@@ -295,6 +360,11 @@ export class RefundService implements OnModuleInit {
         successRefunds.reduce((s, r) => s + Number(r.amount_cents || 0), 0) + Number(refund.amount_cents);
       const fullyRefunded = totalRefunded >= paid;
 
+      // 2.5 部分退款：订阅制必须按比例回退到期时间（买断制 skill 仍只在全额退款时撤销）
+      if (!fullyRefunded && order.type === 'creator_membership') {
+        await this.revokeCreatorMembershipForRefund(manager, order, items, ratio);
+      }
+
       if (fullyRefunded) {
         if (order.type === 'skill') {
           for (const it of items) {
@@ -303,12 +373,11 @@ export class RefundService implements OnModuleInit {
             }
           }
         } else if (order.type === 'creator_membership') {
-          await manager
-            .createQueryBuilder()
-            .update(CreatorSubscription)
-            .set({ status: 'refunded', expires_at: new Date() })
-            .where('order_id = :oid', { oid: order.id })
-            .execute();
+          // 0047：按 (user_id,target_type,target_id) 定位 + 按档位天数精确回退。
+          // ⚠️ 必须传本次 ratio，不能固定传 1：若该单此前已部分退款（上面 2.5 已回退过
+          // 一部分天数），这里再回退整天数会重复计算，把续费叠加的其它周期一起抹掉。
+          // 每次退款都按「本次退款额 / 订单实付」回退，累计恰好等于总退款比例。
+          await this.revokeCreatorMembershipForRefund(manager, order, items, ratio);
         } else if (order.type === 'plugin') {
           // 插件订阅（2026-10-12 二轮质检 M-4）：旧实现只处理 skill/creator_membership，
           // 插件全额退款后订阅行原样有效至自然到期——团队版更甚（全团成员继续白用）。

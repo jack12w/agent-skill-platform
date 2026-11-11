@@ -30,6 +30,9 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
   const [teamPlan, setTeamPlan] = useState<{ monthly: string; quarterly: string; yearly: string }>({ monthly: '', quarterly: '', yearly: '' });
   const [planLoading, setPlanLoading] = useState(false);
   const [savingPlan, setSavingPlan] = useState(false);
+  // 0047 套餐售卖状态（实时）：停售 / 释放 / 有效订阅数
+  const [planStatus, setPlanStatus] = useState<any>(null);
+  const [planBusy, setPlanBusy] = useState(false);
   // ── 成员管理（按邮箱邀请 / 改角色 / 移除）──
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'maintainer' | 'viewer'>('viewer');
@@ -84,9 +87,32 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
       setPlanLoading(true);
       fetch(`/api/pay/membership/plan?targetType=team&targetId=${encodeURIComponent(params.id)}`, {
         headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store', // 0047：停售/释放操作后 await load() 必须拿到新状态，否则「点了没反应」
       })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((p) => {
+        .then(async (r) => {
+          if (!r.ok) return { __unavailable: true };
+          try { return await r.json(); } catch { return { __unavailable: true }; }
+        })
+        .catch(() => ({ __unavailable: true }))
+        .then((p: any) => {
+          // 0047 三态铁律：5xx / 429 / 断网是「不确定」，不是「未设置套餐」。
+          // 原实现把失败当成 null 走 else 分支，会清空团长已填的价格表单，
+          // 再点保存就提交空价格 → 400；也会让状态未知的团队暴露停售/释放按钮。
+          if (p?.__unavailable) {
+            setPlanStatus({
+              unavailable: true, hasPlan: false, enabled: false,
+              released: false, activeSubscribers: 0,
+            });
+            return; // 保留现有表单，不清空、不覆盖
+          }
+          // 0047：实时售卖状态，供停售 / 立即释放的二次确认使用；无套餐时为 null
+          setPlanStatus(p?.hasPlan ? {
+            hasPlan: true,
+            enabled: p.enabled !== false,
+            released: !!p.released,
+            activeSubscribers: Number(p.activeSubscribers) || 0,
+            unavailable: false,
+          } : null);
           // 优先用后端 suggested 作为推荐价 fallback
           const ref = p?.suggested
             ? { monthly: Math.round(p.suggested.monthly / 100), quarterly: Math.round(p.suggested.quarterly / 100), yearly: Math.round(p.suggested.yearly / 100) }
@@ -102,7 +128,6 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
             setTeamPlan({ monthly: '', quarterly: '', yearly: '' });
           }
         })
-        .catch(() => {})
         .finally(() => setPlanLoading(false));
     } catch (e: any) { setError(e.message || 'Load failed'); }
     finally { setLoading(false); }
@@ -125,8 +150,37 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || `HTTP ${res.status}`); }
       alert(t('team.membershipSaved'));
+      await load();
     } catch (err: any) { alert(t('team.saveFailed') + ': ' + err.message); }
     finally { setSavingPlan(false); }
+  };
+
+  /** 0047 停售 / 启用 / 立即释放 / 24h 内撤销释放（仅团队 owner 可见此区块） */
+  const handlePlanAction = async (action: 'stop' | 'resume' | 'release' | 'undo') => {
+    const token = localStorage.getItem('token'); if (!token) return;
+    // 状态未知时禁止任何售卖状态变更，避免误停售 / 误释放。
+    if (planStatus?.unavailable) { alert(t('detail.teamPlanUnavailable')); return; }
+    if (action === 'stop' && !confirm(t('team.planStopConfirm'))) return;
+    if (action === 'release') {
+      const n = planStatus?.activeSubscribers ?? 0;
+      if (!confirm(t('team.planReleaseConfirm').replace('{n}', String(n)))) return;
+    }
+    setPlanBusy(true);
+    try {
+      const isPut = action === 'stop' || action === 'resume';
+      const url = action === 'stop' ? '/api/pay/membership/plan/stop'
+        : action === 'resume' ? '/api/pay/membership/plan/resume'
+          : action === 'release' ? '/api/pay/membership/plan/release'
+            : '/api/pay/membership/plan/release/undo';
+      const res = await fetch(url, {
+        method: isPut ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ targetId: params.id, ...(action === 'release' ? { confirm: true } : {}) }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || `HTTP ${res.status}`); }
+      await load();
+    } catch (err: any) { alert(t('team.saveFailed') + ': ' + err.message); }
+    finally { setPlanBusy(false); }
   };
   useEffect(() => { load(); }, [params.id]);
 
@@ -444,6 +498,54 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
                     className="mt-4 w-full px-4 py-2 bg-brand-600 text-white text-sm rounded hover:bg-brand-700 disabled:opacity-50">
                     {savingPlan ? t('team.saving') : t('team.save')}
                   </button>
+
+                  {/* 0047 三态：套餐状态查询失败时只给「暂不可用 + 重试」，不显示任何售卖状态操作 */}
+                  {planStatus?.unavailable && (
+                    <div className="mt-5 pt-4 border-t">
+                      <div className="text-sm font-medium mb-1">{t('team.planStatusTitle')}</div>
+                      <div className="text-xs text-amber-700">{t('detail.teamPlanUnavailable')}</div>
+                    </div>
+                  )}
+                  {/* 0047 售卖状态：停售只停新购（订阅墙保留）；释放后全免费且不可重新启用 */}
+                  {planStatus?.hasPlan && !planStatus?.unavailable && (
+                    <div className="mt-5 pt-4 border-t">
+                      <div className="text-sm font-medium mb-1">{t('team.planStatusTitle')}</div>
+                      <div className="text-xs text-neutral-500 mb-3">
+                        {planStatus.released
+                          ? t('team.planStatusReleased')
+                          : !planStatus.enabled
+                            ? t('team.planStatusStopped')
+                            : t('team.planStatusSelling')}
+                        {planStatus.activeSubscribers > 0
+                          ? ` · ${planStatus.activeSubscribers} ${t('team.planActiveSubscribers')}`
+                          : ''}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {planStatus.released ? (
+                          <button onClick={() => handlePlanAction('undo')} disabled={planBusy}
+                            className="px-3 py-1.5 text-xs border border-neutral-300 rounded-lg hover:bg-neutral-50 disabled:opacity-50">
+                            {t('team.planUndoRelease')}
+                          </button>
+                        ) : !planStatus.enabled ? (
+                          <>
+                            <button onClick={() => handlePlanAction('resume')} disabled={planBusy}
+                              className="px-3 py-1.5 text-xs bg-brand-600 text-white rounded-lg hover:bg-brand-700 disabled:opacity-50">
+                              {t('team.planResume')}
+                            </button>
+                            <button onClick={() => handlePlanAction('release')} disabled={planBusy}
+                              className="px-3 py-1.5 text-xs border border-red-300 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50">
+                              {t('team.planRelease')}
+                            </button>
+                          </>
+                        ) : (
+                          <button onClick={() => handlePlanAction('stop')} disabled={planBusy}
+                            className="px-3 py-1.5 text-xs border border-neutral-300 rounded-lg hover:bg-neutral-50 disabled:opacity-50">
+                            {t('team.planStop')}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>

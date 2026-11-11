@@ -5,6 +5,7 @@ import {
   Param,
   Query,
   Body,
+  Header,
   UseGuards,
   Request,
   NotFoundException,
@@ -59,8 +60,15 @@ export class PricingController {
       currency: 'CNY',
     };
     try {
-      const pricing = await this.pricingRepo.findOne({ where: { skill_id: skillId } });
+      // 0047：团队技能一律不单卖，公开定价接口对它直接返回免费，
+      // 不让历史 paid 定价行泄漏成一个「看得见买不了」的价格。
+      const skill = await this.skillRepo.findOne({
+        where: { id: skillId },
+        select: ['id', 'owner_team_id'],
+      });
       const membership = await this.settings.getMembershipPrices();
+      if (skill?.owner_team_id) return { pricing: free, membership };
+      const pricing = await this.pricingRepo.findOne({ where: { skill_id: skillId } });
       return { pricing: pricing || free, membership };
     } catch {
       // 迁移未执行等异常：降级为免费，避免技能详情页因新接口报错
@@ -89,13 +97,37 @@ export class PricingController {
    * 有套餐→打开付费会员弹窗（须支付成功才订阅成功）。
    */
   @Get('creator-plan')
+  // 0047：订阅墙状态、停售/释放、有效订阅数必须 per-request 实时。
+  // 无 Cache-Control 会被浏览器启发式缓存复用旧快照（res.ok 仍 true），
+  // 表现为「后端已释放、前端还弹订阅窗」。@Header 不支持类级，逐方法标。
+  @Header('Cache-Control', 'no-store')
   async creatorPlan(@Query('targetType') targetType: string, @Query('targetId') targetId: string) {
     if (!targetType || !targetId) throw new BadRequestException('缺少 targetType / targetId');
     const plan = await this.planRepo.findOne({ where: { target_type: targetType, target_id: targetId } });
     const suggested = await this.settings.getMembershipPrices();
     if (!plan) {
-      return { hasPlan: false, plans: null, suggested, targetType, targetId };
+      return {
+        hasPlan: false, plans: null, suggested, targetType, targetId,
+        enabled: false, released: false, wallActive: false, activeSubscribers: 0,
+      };
     }
+
+    // 0047：套餐状态 / 订阅墙 / 有效订阅数一律 per-request 实时算，绝不进详情缓存。
+    let activeSubscribers = 0;
+    if (targetType === 'team') {
+      const rows = await this.planRepo.manager.query(
+        `SELECT count(*)::int AS cnt FROM creator_subscriptions
+          WHERE target_type = 'team' AND target_id = $1
+            AND status = 'active' AND expires_at > now()`,
+        [targetId],
+      );
+      activeSubscribers = Number(rows?.[0]?.cnt) || 0;
+    }
+    const enabled = (plan as any).enabled !== false;
+    const released = !!(plan as any).released_at;
+    // 停售且最后一个有效订阅到期 → 墙自动消失；立即释放 → 墙立即消失。
+    const wallActive = !released && (enabled || activeSubscribers > 0);
+
     return {
       hasPlan: true,
       plans: {
@@ -106,6 +138,10 @@ export class PricingController {
       suggested,
       targetType,
       targetId,
+      enabled,
+      released,
+      wallActive,
+      activeSubscribers,
     };
   }
 
@@ -122,6 +158,12 @@ export class PricingController {
   ) {
     const skill = await this.skillRepo.findOne({ where: { id: skillId } });
     if (!skill) throw new NotFoundException('Skill not found');
+
+    // 0047：团队技能一律不单卖，禁止设置任何定价（避免出现「看得见买不了」的价格）。
+    // 历史 skill_pricing 行原样保留、判定层完全不读；技能转个人归属时自动恢复生效。
+    if (skill.owner_team_id) {
+      throw new BadRequestException('团队技能不支持单独定价或售卖，下载权由团队订阅套餐控制');
+    }
 
     const isAdmin = req.user?.role === 'admin';
     const uid = req.user.sub;

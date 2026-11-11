@@ -28,6 +28,8 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
   const [memberModalOpen, setMemberModalOpen] = useState(false);
   // 无付费套餐时的「免费关注」状态
   const [hasPlan, setHasPlan] = useState(false);
+  // 0047 套餐状态（creator-plan 实时返回）：停售 / 释放 / 订阅墙是否生效
+  const [planStatus, setPlanStatus] = useState<any>(null);
   const [freeSub, setFreeSub] = useState(false);
   const [freeSubCount, setFreeSubCount] = useState(0);
   const [followBusy, setFollowBusy] = useState(false);
@@ -75,13 +77,35 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
       // 创作者是否设置了付费会员套餐（公开接口，未登录也可读）
       let planHas = false;
       try {
-        const planRes = await fetch(`/api/pay/creator-plan?targetType=team&targetId=${encodeURIComponent(params.id)}`);
+        // 0047：套餐状态实时性前提——无 no-store 会被启发式缓存复用旧快照，
+        // 团长刚释放完，访客仍看到「订阅后下载」。
+        const planRes = await fetch(`/api/pay/creator-plan?targetType=team&targetId=${encodeURIComponent(params.id)}`, { cache: 'no-store' });
         if (planRes.ok) {
           const p = await planRes.json();
           planHas = !!p.hasPlan;
           setHasPlan(planHas);
+          setPlanStatus({
+            enabled: p.enabled !== false,
+            released: !!p.released,
+            wallActive: !!p.wallActive,
+            activeSubscribers: Number(p.activeSubscribers) || 0,
+            unavailable: false,
+          });
+        } else {
+          // 0047 三态铁律：5xx/429/断网是「不确定」，不是「没有套餐」。
+          // 若静默降级成 hasPlan=false，页面会显示「免费关注」，而后端订阅墙仍在，
+          // 用户点了关注再下载才吃 402 —— 误导且无从判断。
+          setPlanStatus({
+            enabled: false, released: false, wallActive: true,
+            activeSubscribers: 0, unavailable: true,
+          });
         }
-      } catch { /* ignore */ }
+      } catch {
+        setPlanStatus({
+          enabled: false, released: false, wallActive: true,
+          activeSubscribers: 0, unavailable: true,
+        });
+      }
 
       // 订阅数：有套餐 → 付费会员数；无套餐 → 免费关注数（始终展示）
       try {
@@ -190,9 +214,14 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
   };
 
   // 订阅按钮点击：有套餐 → 打开付费弹窗；无套餐 → 免费关注
+  // 0047：停售 / 已释放时不再弹一个必然下单失败的支付窗
+  const canSellPlan = !!planStatus?.enabled && !planStatus?.released;
   const handleSubscribeClick = () => {
-    if (hasPlan) setMemberModalOpen(true);
-    else toggleFollow();
+    if (planStatus?.unavailable) { alert(t('detail.teamPlanUnavailable')); return; }
+    if (!hasPlan) { toggleFollow(); return; }
+    if (planStatus?.released) { alert(t('detail.teamPlanReleased')); return; }
+    if (!planStatus?.enabled) { alert(t('detail.teamPlanStopped')); return; }
+    setMemberModalOpen(true);
   };
 
   // 申请加入公开团队
@@ -254,6 +283,16 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
       if (result.kind === 'unauthorized') {
         alert(t('detail.loginExpired'));
         openLoginInNewTab();
+        return;
+      }
+      // 0047 团队订阅墙：团队技能一律不单卖（含免费技能），402 只对应订阅窗，绝不进收银台。
+      if (result.kind === 'team-subscription-required') {
+        if (result.team?.enabled === false || planStatus?.released) {
+          alert(t('detail.teamPlanStopped'));
+          return;
+        }
+        setPendingDownloadSkill(s);
+        setMemberModalOpen(true);
         return;
       }
       if (result.kind === 'payment-required') {
@@ -369,20 +408,23 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
             </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            {currentUserId && !isOwner && (
+            {/* 0047：停售且仍有有效订阅时订阅墙仍在，但不接受新购 → 不再展示无效订阅按钮；已订阅者仍显示状态 */}
+            {currentUserId && !isOwner && !(hasPlan && !canSellPlan && !isSub) && (
               <button
                 onClick={handleSubscribeClick}
                 className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition ${isSub ? 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200' : 'bg-brand-600 text-white hover:bg-brand-700'}`}
               >
-                {isSub ? (
+                {planStatus?.unavailable ? (
+                  <span>{t('detail.teamPlanUnavailable')}</span>
+                ) : isSub ? (
                   <>
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 006 0h-6z" /></svg>
-                    已订阅
+                    {hasPlan ? t('detail.subscribed') : t('detail.followed')}
                   </>
                 ) : (
                   <>
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2a2 2 0 01-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-                    订阅
+                    {hasPlan ? t('detail.subscribe') : t('detail.follow')}
                   </>
                 )}
                 </button>

@@ -2,6 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, LessThanOrEqual } from 'typeorm';
 import { Membership, CreatorSubscription } from './payments.entity';
+import { TeamMember } from '../teams/team-member.entity';
 import { BalanceService } from './balance.service';
 import { SettingsService } from './settings.service';
 
@@ -19,6 +20,7 @@ export class MembershipService {
   constructor(
     @InjectRepository(Membership) private readonly memberRepo: Repository<Membership>,
     @InjectRepository(CreatorSubscription) private readonly csRepo: Repository<CreatorSubscription>,
+    @InjectRepository(TeamMember) private readonly teamMemberRepo: Repository<TeamMember>,
     private readonly balance: BalanceService,
     private readonly settings: SettingsService,
   ) {}
@@ -85,6 +87,7 @@ export class MembershipService {
     // 续费基准取 max(到期日, 现在)：有效期内续费顺延；过期后续订从今天起算，避免得到比现在更早的过期时间。
     const base = new Date();
     const expires = new Date(base.getTime() + this.durationDays(plan) * 86400_000);
+    let saved: CreatorSubscription | undefined;
     // 并发安全（LOW-3）：两个请求对同一 (user,target) 首次订阅时都可能 findOne 未命中而走 INSERT，
     // 撞全局唯一索引 → 第二路报 23505。捕获后重试走 update 分支即可自愈。
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -100,7 +103,8 @@ export class MembershipService {
         existing.plan = plan;
         existing.price_cents = priceCents;
         existing.order_id = orderId;
-        return this.csRepo.save(existing);
+        saved = await this.csRepo.save(existing);
+        break;
       }
       const created = this.csRepo.create({
         user_id: userId,
@@ -113,7 +117,8 @@ export class MembershipService {
         order_id: orderId,
       });
       try {
-        return await this.csRepo.save(created);
+        saved = await this.csRepo.save(created);
+        break;
       } catch (e: any) {
         if (e?.code === '23505' && attempt < 2) {
           this.logger.warn(`activateCreatorSub 并发插入冲突，重试 update 分支: ${userId}/${targetType}/${targetId}`);
@@ -122,7 +127,31 @@ export class MembershipService {
         throw e;
       }
     }
-    throw new BadRequestException('订阅激活重试失败，请稍后再试');
+    if (!saved) throw new BadRequestException('订阅激活重试失败，请稍后再试');
+
+    // 0047 团队订阅：付费成功后幂等加入团队（仅可见性/协作，不参与下载权判定）。
+    // 直接写 team_members 而不调用 TeamsService.addMember* —— 不新增席位校验依赖，
+    // 也不触碰 teams.service.ts 的任何逻辑；ON CONFLICT DO NOTHING 保证不降级已有 owner/maintainer。
+    if (targetType === 'team') {
+      await this.joinTeamOnce(userId, targetId);
+    }
+    return saved;
+  }
+
+  /** 订阅成功自动加入团队：幂等、不降级、失败不阻断发货（下载权只由 creator_subscriptions 决定）。 */
+  private async joinTeamOnce(userId: string, teamId: string): Promise<void> {
+    try {
+      await this.teamMemberRepo.query(
+        `INSERT INTO team_members (team_id, user_id, role, joined_at)
+         VALUES ($1, $2, 'viewer', now())
+         ON CONFLICT (team_id, user_id) DO NOTHING`,
+        [teamId, userId],
+      );
+    } catch (e: any) {
+      this.logger.warn(
+        `订阅成功但自动加入团队失败（不影响下载权）team=${teamId} user=${userId}: ${e?.message || e}`,
+      );
+    }
   }
 
   /** 我的全部有效创作者会员订阅 */

@@ -214,6 +214,40 @@ export class OrdersService implements OnModuleInit {
    * 价格变更后 15 分钟内复用旧价订单，属可接受窗口；毫秒级并发撞单概率极低，
    * 即便发生也只是多一笔待支付订单（用户只会扫其中一个码），无资金风险。
    */
+  /**
+   * 0047 下单前置门禁 —— 必须在 findReusablePendingOrder() **之前**执行。
+   *
+   * 原因：复用待支付订单是 createOrder 的最早返回路径，早于下方的定价/状态校验。
+   * 若把团队技能禁售、套餐停售/释放只写在下方分支里，用户手里一张旧的
+   * PENDING_PAY 二维码就能绕过全部新规则：团长刚「立即释放」全免费，用户仍可付款；
+   * 团队技能也仍能走历史单买订单付钱。这里统一收口，且只作用于 skill / creator_membership，
+   * 不触碰 membership / plugin 分支。
+   */
+  private async assert0047OrderAllowed(input: CreateOrderInput): Promise<void> {
+    if (input.type === 'skill' && input.skillId) {
+      const skill = await this.skillRepo.findOne({
+        where: { id: input.skillId },
+        select: ['id', 'owner_team_id'] as any,
+      });
+      if (skill?.owner_team_id) {
+        throw new BadRequestException('团队技能不支持单独购买，请订阅该团队');
+      }
+    // 0047 回归边界：只收口「团队订阅」。个人创作者订阅（targetType='user'）必须
+    // 完全走原有路径，不能被团队套餐的停售/释放状态误拦。
+    } else if (input.type === 'creator_membership' && input.targetType === 'team' && input.targetId) {
+      const planRow = await this.planRepo.findOne({
+        where: { target_type: input.targetType, target_id: input.targetId },
+      });
+      // 顺序与 createOrder 主分支一致：release 会同时置 enabled=false，先判释放才不会误导。
+      if (planRow && (planRow as any).released_at) {
+        throw new BadRequestException('该团队已开放免费下载，无需再订阅');
+      }
+      if (planRow && (planRow as any).enabled === false) {
+        throw new BadRequestException('该团队套餐已停售，暂不接受新订阅或续费');
+      }
+    }
+  }
+
   private async findReusablePendingOrder(userId: string, input: CreateOrderInput, desiredTradeType?: string) {
     const qb = this.orderRepo
       .createQueryBuilder('o')
@@ -266,6 +300,9 @@ export class OrdersService implements OnModuleInit {
     const desiredTradeType: 'NATIVE' | 'JSAPI' | 'H5' =
       input.tradeType === 'JSAPI' && user?.wechat_openid_oa ? 'JSAPI' : input.tradeType === 'H5' ? 'H5' : 'NATIVE';
 
+    // 0047：先过订阅墙/禁售门禁，再谈「复用未支付订单」，否则旧二维码会绕过全部新规则。
+    await this.assert0047OrderAllowed(input);
+
     // 防重复下单：有未过期的同商品待支付订单直接复用（返回结构与新建一致，前端无感）。
     // 但若复用订单的支付通道与本次期望不一致（如用户先扫码、后拿到 openid 想走 JSAPI），
     // 不复用、新建一笔正确通道的订单，避免用户被降级到二维码（LOW-4 优化）。
@@ -282,6 +319,11 @@ export class OrdersService implements OnModuleInit {
       if (!input.skillId) throw new BadRequestException('缺少 skillId');
       const pricing = await this.pricingRepo.findOne({ where: { skill_id: input.skillId } });
       const skill = await this.skillRepo.findOne({ where: { id: input.skillId } });
+      // 0047：团队 = 订阅制、个人 = 单卖制。团队技能一律不单卖，
+      // 顺带封死「团队技能 owner_user_id 为 null → 单卖收入无归属」的历史洞。
+      if (skill?.owner_team_id) {
+        throw new BadRequestException('团队技能不支持单独购买，请订阅该团队');
+      }
       if (!pricing || pricing.pricing_mode === 'free') throw new BadRequestException('该技能无需付费');
       total = Number(pricing.price_cents);
       // 0 元订单必然被微信拒绝（最低 1 分），但付费墙已生效 → 技能会陷入
@@ -306,6 +348,15 @@ export class OrdersService implements OnModuleInit {
       const { targetType, targetId, plan } = input;
       if (!targetType || !targetId || !plan) throw new BadRequestException('缺少订阅目标或方案');
       const planRow = await this.planRepo.findOne({ where: { target_type: targetType, target_id: targetId } });
+      // 0047：释放态优先判定（release 同时把 enabled 置 false，先判停售会给出错误文案）。
+      // 仅团队订阅适用；user 订阅不受本次改造影响。
+      if (targetType === 'team' && planRow && (planRow as any).released_at) {
+        throw new BadRequestException('该团队已开放免费下载，无需再订阅');
+      }
+      // 0047 停售：只停「新购/续费」，不停订阅墙（已有付费订阅的权益必须保留到自然到期）。
+      if (targetType === 'team' && planRow && (planRow as any).enabled === false) {
+        throw new BadRequestException('该团队套餐已停售，暂不接受新订阅或续费');
+      }
       const price = planRow ? Number((planRow as any)[`${plan}_cents`]) : 0;
       if (!price || price <= 0) throw new BadRequestException('该创作者未开通此会员方案');
       total = price;

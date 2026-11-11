@@ -1,11 +1,11 @@
 import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, IsNull } from 'typeorm';
-import { SkillPricing, Entitlement, Membership } from './payments.entity';
+import { Repository, MoreThan } from 'typeorm';
+import { SkillPricing, Entitlement, Membership, CreatorMembershipPlan } from './payments.entity';
 import { Skill } from '../skills/skill.entity';
 import { TeamMember } from '../teams/team-member.entity';
 import { MemberRole } from '@platform/shared';
-import { PaymentRequiredException } from './payment-exceptions';
+import { PaymentRequiredException, TeamSubscriptionRequiredException } from './payment-exceptions';
 import { SettingsService } from './settings.service';
 import { MembershipService } from './membership.service';
 
@@ -23,6 +23,7 @@ export class EntitlementService {
     @InjectRepository(Entitlement) private readonly entRepo: Repository<Entitlement>,
     @InjectRepository(Membership) private readonly memberRepo: Repository<Membership>,
     @InjectRepository(TeamMember) private readonly teamMemberRepo: Repository<TeamMember>,
+    @InjectRepository(CreatorMembershipPlan) private readonly planRepo: Repository<CreatorMembershipPlan>,
     private readonly settings: SettingsService,
     private readonly membership: MembershipService,
   ) {}
@@ -36,7 +37,140 @@ export class EntitlementService {
     return !!m && (m.role === MemberRole.OWNER || m.role === MemberRole.MAINTAINER);
   }
 
+  /**
+   * 团队订阅墙（0047）—— 团队技能下载的唯一判定入口。
+   *
+   * 规则（产品定案）：
+   *   个人技能                      → 返回 false，完全交回原有逐技能定价逻辑（零影响）
+   *   无套餐                        → 全免费（团队技能一律不单卖）
+   *   已「立即释放」                → 全免费
+   *   停售且已无任何有效订阅         → 自动全免费（最后一个订阅到期即开放）
+   *   有墙                          → admin / 团队 owner,maintainer / 有效付费订阅 /
+   *                                   历史买断 放行；其余 402 TEAM_SUBSCRIPTION_REQUIRED
+   *
+   * 返回 true 表示本方法已完成判定（放行或抛错），调用方必须立即 return。
+   * 单条 SQL 拿全状态，避免培训现场并发把 DB 打爆；DB 异常一律 500（三态铁律），
+   * 绝不当作「未订阅」抛 402，避免已付费用户被误判、重复付款。
+   */
+  private async assertTeamSkillAccess(
+    skill: Skill,
+    userId?: string,
+    isAdmin = false,
+  ): Promise<boolean> {
+    if (!skill.owner_team_id) return false;
+    const teamId = skill.owner_team_id;
+
+    let rows: any[];
+    try {
+      rows = await this.planRepo.manager.query(
+        `SELECT p.enabled, p.released_at,
+                p.monthly_cents, p.quarterly_cents, p.yearly_cents,
+                EXISTS (
+                  SELECT 1 FROM creator_subscriptions cs
+                   WHERE cs.target_type = 'team' AND cs.target_id = $1
+                     AND cs.status = 'active' AND cs.expires_at > now()
+                ) AS any_active,
+                EXISTS (
+                  SELECT 1 FROM creator_subscriptions cs
+                   WHERE cs.target_type = 'team' AND cs.target_id = $1 AND cs.user_id = $2
+                     AND cs.status = 'active' AND cs.expires_at > now()
+                ) AS viewer_subscribed,
+                EXISTS (
+                  SELECT 1 FROM team_members tm
+                   WHERE tm.team_id = $1 AND tm.user_id = $2
+                     AND tm.role IN ('owner', 'maintainer')
+                ) AS viewer_manager,
+                EXISTS (
+                  SELECT 1 FROM entitlements e
+                   WHERE e.user_id = $2 AND e.skill_id = $3
+                     AND (e.expires_at IS NULL OR e.expires_at > now())
+                ) AS viewer_owned
+           FROM creator_membership_plans p
+          WHERE p.target_type = 'team' AND p.target_id = $1
+          LIMIT 1`,
+        [teamId, userId || null, skill.id],
+      );
+    } catch (e: any) {
+      // 三态铁律：DB 异常是「不确定」，不是「无权益」。绝不能放行，也不能 402。
+      this.logger.error(`团队订阅墙查询失败 skill=${skill.id} team=${teamId}: ${e?.message || e}`);
+      throw new InternalServerErrorException('权益校验暂不可用，请稍后重试');
+    }
+
+    const plan = rows?.[0];
+    if (!plan) return true;                                  // 无套餐 → 免费，且绝不读 skill_pricing
+    if (plan.released_at) return true;                        // 团长立即释放 → 免费
+    if (plan.enabled === false && !plan.any_active) return true;  // 停售且最后一个订阅已到期 → 自动免费
+
+    if (isAdmin) return true;
+    if (userId && plan.viewer_manager) return true;            // owner / maintainer 管理侧特权
+    if (userId && plan.viewer_subscribed) return true;         // 唯一解锁依据：有效付费订阅
+    if (userId && plan.viewer_owned) return true;              // 历史买断是永久权益，不能被订阅墙收回
+
+    throw new TeamSubscriptionRequiredException({
+      team_id: teamId,
+      enabled: plan.enabled !== false,
+      plans: {
+        monthly: Number(plan.monthly_cents) || 0,
+        quarterly: Number(plan.quarterly_cents) || 0,
+        yearly: Number(plan.yearly_cents) || 0,
+      },
+    });
+  }
+
+  /**
+   * 详情页用的团队套餐视图（0047）。必须 per-request 实时查，绝不进 getSkillCoreCached
+   * （那个缓存 10s 且含 hasPlan，套餐停售/释放后会出现 UI 与门禁不一致）。
+   * 仅用于展示，真正的下载判定仍以 assertTeamSkillAccess 为准；DB 异常返回
+   * unavailable=true（三态铁律），前端显示「状态暂不可用，请重试」而非「免费下载」。
+   */
+  async getTeamPlanView(teamId: string, userId?: string) {
+    const empty = {
+      hasPlan: false, enabled: false, released: false, wallActive: false,
+      subscribed: false, unavailable: false,
+    };
+    try {
+      const rows: any[] = await this.planRepo.manager.query(
+        `SELECT p.enabled, p.released_at,
+                EXISTS (
+                  SELECT 1 FROM creator_subscriptions cs
+                   WHERE cs.target_type = 'team' AND cs.target_id = $1
+                     AND cs.status = 'active' AND cs.expires_at > now()
+                ) AS any_active,
+                EXISTS (
+                  SELECT 1 FROM creator_subscriptions cs
+                   WHERE cs.target_type = 'team' AND cs.target_id = $1 AND cs.user_id = $2
+                     AND cs.status = 'active' AND cs.expires_at > now()
+                ) AS viewer_subscribed
+           FROM creator_membership_plans p
+          WHERE p.target_type = 'team' AND p.target_id = $1
+          LIMIT 1`,
+        [teamId, userId || null],
+      );
+      const plan = rows?.[0];
+      if (!plan) return empty;
+      const enabled = plan.enabled !== false;
+      const released = !!plan.released_at;
+      return {
+        hasPlan: true,
+        enabled,
+        released,
+        wallActive: !released && (enabled || !!plan.any_active),
+        subscribed: !!plan.viewer_subscribed,
+        unavailable: false,
+      };
+    } catch (e: any) {
+      this.logger.warn(`团队套餐视图查询失败 team=${teamId}: ${e?.message || e}`);
+      // 三态铁律：DB 异常是「不确定」，绝不能降级成「无套餐 → 免费」，
+      // 否则详情页会显示「免费下载」而点击却是 500。wallActive=true 让前端显示
+      // 「状态暂不可用，请重试」，同时后端下载门禁仍由 assertTeamSkillAccess 独立 fail-closed。
+      return { ...empty, unavailable: true, wallActive: true };
+    }
+  }
+
   async assertCanDownload(skill: Skill, userId?: string, isAdmin = false): Promise<void> {
+    // 0047 团队订阅墙：团队技能完全由订阅墙判定，不再读 skill_pricing / member_included。
+    if (await this.assertTeamSkillAccess(skill, userId, isAdmin)) return;
+
     let pricing: SkillPricing | null = null;
     try {
       pricing = await this.pricingRepo.findOne({ where: { skill_id: skill.id } });

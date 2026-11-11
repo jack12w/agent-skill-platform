@@ -14,7 +14,8 @@
 
 export type DownloadOutcome =
   | { kind: 'unauthorized' } // 401 或无 token：调用方应跳登录
-  | { kind: 'payment-required'; pricing: any; owner: any } // 402：调用方应弹收银台
+  | { kind: 'payment-required'; pricing: any; owner: any } // 402 PAYMENT_REQUIRED：调用方应弹收银台
+  | { kind: 'team-subscription-required'; team: any } // 402 TEAM_SUBSCRIPTION_REQUIRED：必须弹团队订阅窗
   | { kind: 'redirect'; url: string; version: string } // 200：调用方应 window.location = url
   | { kind: 'error'; status: number; message: string }; // 其它错误
 
@@ -74,6 +75,9 @@ export async function startDownload(
   try {
     res = await fetch(path, {
       headers: authHeaders(token),
+      // 0047：订阅成功后会立刻重试下载，若 402 被启发式缓存复用，会一直弹订阅窗；
+      // 200 里的 300s 签名 URL 也不能被复用成过期链接。
+      cache: 'no-store',
     });
   } catch (e: any) {
     return { kind: 'error', status: 0, message: e?.message || 'network error' };
@@ -83,6 +87,11 @@ export async function startDownload(
 
   if (res.status === 402) {
     const info = await res.json().catch(() => ({} as any));
+    // 0047 团队订阅墙：团队技能一律不单卖（含免费技能），必须强制弹团队订阅窗。
+    // 绝不能落到 payment-required → 收银台，否则会下 0 元单、被后端判「该技能无需付费」死锁。
+    if (info?.code === 'TEAM_SUBSCRIPTION_REQUIRED') {
+      return { kind: 'team-subscription-required', team: info?.team ?? null };
+    }
     // 后端 402 体：{ code, message, pricing: { pricing_mode, price_cents, member_included, owner } }
     const pricing = info?.pricing ?? null;
     const owner = pricing?.owner ?? info?.owner ?? null;

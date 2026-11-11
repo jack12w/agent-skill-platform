@@ -1,4 +1,4 @@
-import { Controller, Post, Patch, Delete, Get, Body, UseGuards, Request, Param, Query, UseInterceptors, UploadedFile, UploadedFiles, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Patch, Delete, Get, Body, UseGuards, Request, Param, Query, UseInterceptors, UploadedFile, UploadedFiles, BadRequestException, Header } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { SkillsService } from './skills.service';
 import { AuthGuard } from '../auth/auth.guard';
@@ -121,6 +121,9 @@ export class SkillsController {
 
   /** 详情页聚合接口：技能+版本+定价+作者套餐+订阅状态 一次返回（降低限流压力） */
   @Get(':id/detail')
+  // 0047：本接口携带 per-request 实时算的 teamPlan（订阅墙/是否已订阅/释放态），
+  // 且整体是用户态数据，绝不能被浏览器启发式缓存复用。
+  @Header('Cache-Control', 'no-store')
   async getDetail(@Param('id') id: string, @Request() req: any) {
     const { userId, isAdmin } = await this.identity.fromRequest(req);
     return this.skillsService.getDetail(id, userId, isAdmin);
@@ -134,6 +137,9 @@ export class SkillsController {
 
   @UseGuards(AuthGuard)
   @Get(':id/download')
+  // 0047：402 订阅墙 / 200 里的 300s 签名 URL 都是用户态且强实时，
+  // 被缓存会导致「订阅成功后仍弹订阅窗」或复用过期签名链接。
+  @Header('Cache-Control', 'no-store')
   async download(@Param('id') id: string, @Request() req: any) {
     const result = await this.skillsService.getDownloadUrl(id, undefined, req.user.sub, req.user?.role === 'admin');
     await this.skillsService.recordEvent(id, EventType.DOWNLOAD, req.user.sub, undefined, { version_id: result.version_id, version: result.version });
@@ -142,6 +148,7 @@ export class SkillsController {
 
   @UseGuards(AuthGuard)
   @Get(':id/versions/:versionId/download')
+  @Header('Cache-Control', 'no-store')
   async downloadVersion(
     @Param('id') id: string,
     @Param('versionId') versionId: string,

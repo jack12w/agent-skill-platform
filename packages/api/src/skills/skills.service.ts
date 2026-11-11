@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, InternalServerErrorException, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -12,6 +12,7 @@ import { Team } from '../teams/team.entity';
 import { SkillPricing, CreatorMembershipPlan, CreatorSubscription } from '../payments/payments.entity';
 import { Subscription, SubscriptionTargetType } from '../subscriptions/subscription.entity';
 import { OssService } from '../storage/oss.service';
+import { SkillPackageStorageService } from './skill-package-storage.service';
 import { EntitlementService } from '../payments/entitlement.service';
 import { EventType, SkillStatus, parseSkillMd, MemberRole } from '@platform/shared';
 import AdmZip from 'adm-zip';
@@ -66,6 +67,7 @@ export class SkillsService {
    *   把「降低 DB 压力」的收益又吐回去，得不偿失。
    */
   private coreCache = new Map<string, { value: any; exp: number }>();
+  private readonly logger = new Logger(SkillsService.name);
 
   constructor(
     @InjectRepository(Skill)
@@ -91,6 +93,7 @@ export class SkillsService {
     @InjectRepository(Subscription)
     private subscriptionRepository: Repository<Subscription>,
     private ossService: OssService,
+    private skillPackageStorage: SkillPackageStorageService,
     private entitlementService: EntitlementService,
   ) {}
 
@@ -457,6 +460,18 @@ export class SkillsService {
         patch.owner_team_id = teamId;
         patch.owner_user_id = null;
       } else {
+        // 0047：解绑团队后技能恢复个人归属，历史 skill_pricing 立刻重新生效。
+        // 团队技能此前不允许定价，可能残留 price_cents<100 的老脏数据 →
+        // 下单时 orders.service.ts 会判「定价异常（0 元）」，付费墙陷入死锁。
+        // 缺定价行 = 免费，不会死锁，无需拦。
+        if (skill.owner_team_id) {
+          const legacy = await this.pricingRepository.findOne({ where: { skill_id: skill.id } });
+          if (legacy && legacy.pricing_mode !== 'free' && Number(legacy.price_cents) < 100) {
+            throw new BadRequestException(
+              '该技能从团队转出前，请先把单独售卖价设为不低于 1 元（或改为免费），避免定价异常导致无法购买',
+            );
+          }
+        }
         patch.owner_team_id = null;
         // 解绑团队：恢复个人归属，但回填「原创作者」(created_by) 而非当前操作者，
         // 避免团队里另一个成员解绑后技能变成归属于他。
@@ -543,9 +558,9 @@ export class SkillsService {
       );
     }
 
-    // Upload to OSS (falls back to mock URL if OSS env not configured)
+    // 0047：技能包必须私有上传（对象级 ACL=private）。头像 / 插件包仍走 OssService.putBuffer，零改动。
     const objectKey = `skills/${skill.id}/${meta.version}.zip`;
-    const package_url = await this.ossService.putBuffer(objectKey, fileBuffer);
+    const package_url = await this.skillPackageStorage.putPrivate(objectKey, fileBuffer);
 
     const version = this.versionRepository.create({
       skill_id: skill.id,
@@ -641,7 +656,11 @@ export class SkillsService {
     const ownerType = skill.owner_team_id ? 'team' : 'user';
     const ownerId = skill.owner_team_id || skill.owner_user_id;
     const hasPlan = await this.hasCreatorPlan(ownerType, ownerId);
-    const pricing = await this.getPricingObject(idOrSlug);
+    // 0047：团队技能一律不单卖，详情聚合直接给免费定价（复用已查到的 skill，零额外查询），
+    // 避免历史 paid 行在页面上留成一个「看得见买不了」的价格。
+    const pricing = skill.owner_team_id
+      ? { pricing_mode: 'free', price_cents: 0, member_included: false, commercial_price_cents: 0, currency: 'CNY' }
+      : await this.getPricingObject(idOrSlug);
 
     const value = { skill, versions, pricing, hasPlan };
     this.coreCache.set(idOrSlug, { value, exp: now + 10_000 });
@@ -695,7 +714,12 @@ export class SkillsService {
       ? !!(await this.teamMemberRepository.findOne({ where: { team_id: skill.owner_team_id, user_id: userId } }))
       : false;
 
-    return { skill: displaySkill, versions, pricing: core.pricing, hasPlan: core.hasPlan, membershipStatus, isTeamMember };
+    // 0047 团队套餐状态：per-request 实时查，绝不进 getSkillCoreCached（10s 缓存会让停售/释放后 UI 串味）
+    const teamPlan = skill.owner_team_id
+      ? await this.entitlementService.getTeamPlanView(skill.owner_team_id, userId)
+      : null;
+
+    return { skill: displaySkill, versions, pricing: core.pricing, hasPlan: core.hasPlan, membershipStatus, isTeamMember, teamPlan };
   }
 
   /** 复制 PricingController.pricing 的公开查询 + 免费降级 */
@@ -809,11 +833,25 @@ export class SkillsService {
     const objectKey =
       this.ossService.getObjectKeyFromUrl(version.package_url) ||
       `skills/${skill.id}/${version.version}.zip`;
-    const signedUrl = await this.ossService.signDownloadWithDisposition(objectKey, dispValue);
-    const url = signedUrl ?? version.package_url;
+    // 0047：团队技能包签名 300s；个人技能保持改造前的默认 3600s（不显式传第三参即走
+    // OssService 默认值）——个人单卖业务零行为变化。插件包始终 3600s，不受影响。
+    const expiresSec = skill.owner_team_id ? 300 : undefined;
+    const signedUrl = await this.ossService.signDownloadWithDisposition(objectKey, dispValue, expiresSec);
+    if (!signedUrl) {
+      // 0047：绝不把 DB 里的 package_url 裸链发给前端 —— 那就是订阅墙的后门。
+      // 不依赖 NODE_ENV：生产 env 漏配 / 被覆盖 / 用非 prod compose 启动时也必须 fail-closed。
+      // 仅「显式本地开关 + 确为 mock URL」才允许降级，真实 OSS 直链任何时候都不回退。
+      const allowMock = process.env.ALLOW_INSECURE_OSS_MOCK === 'true';
+      const isMockUrl = !version.package_url || version.package_url.startsWith('https://storage.example.com/');
+      if (!allowMock || !isMockUrl) {
+        this.logger.error(`技能包签名失败，拒绝回退裸链 skill=${skill.id} key=${objectKey}`);
+        throw new InternalServerErrorException('下载链接生成失败，请稍后重试');
+      }
+      this.logger.warn('OSS 未配置，本地 mock 直链降级（ALLOW_INSECURE_OSS_MOCK=true）');
+    }
 
     return {
-      url,
+      url: signedUrl || version.package_url,
       version: version.version,
       version_id: version.id,
       size: version.size,
@@ -1176,7 +1214,7 @@ export class SkillsService {
 
         // Upload version（key 必须与存储的版本号一致，避免下载重拼 key 时 NoSuchKey）
         const objectKey = `skills/${saved.id}/${meta.version || '1.0.0'}.zip`;
-        const packageUrl = await this.ossService.putBuffer(objectKey, file.buffer);
+        const packageUrl = await this.skillPackageStorage.putPrivate(objectKey, file.buffer);
         const version = this.versionRepository.create({
           skill_id: saved.id, version: meta.version || '1.0.0',
           manifest_json: meta as any, package_url: packageUrl, size: file.buffer.length,

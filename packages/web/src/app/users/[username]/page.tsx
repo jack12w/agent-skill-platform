@@ -243,6 +243,12 @@ export default function UserProfile({ params }: { params: { username: string } }
         openLoginInNewTab();
         return;
       }
+      // 0047 团队订阅墙：本页技能通常都是个人技能，若后端仍返回团队 402，引导到团队主页订阅
+      if (result.kind === 'team-subscription-required') {
+        alert(t('detail.teamSubscriptionRequired'));
+        if (result.team?.team_id) window.location.href = `/teams/${result.team.team_id}`;
+        return;
+      }
       if (result.kind === 'payment-required') {
         // 会员技能且归属创作者已设套餐 → 引导订阅创作者（与详情页一致）
         if (result.pricing?.member_included && result.owner?.target_type === 'user' && hasPlan) {

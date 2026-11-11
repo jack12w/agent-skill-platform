@@ -50,6 +50,10 @@ export default function HubReviewsPage() {
         window.location.href = result.url;
       } else if (result.kind === 'unauthorized') {
         openLoginInNewTab();
+      } else if (result.kind === 'team-subscription-required') {
+        // 0047 团队订阅墙：团队技能不单卖，引导到团队主页订阅
+        alert(t('detail.teamSubscriptionRequired'));
+        if (result.team?.team_id) window.location.href = `/teams/${result.team.team_id}`;
       } else if (result.kind === 'payment-required') {
         alert('下载失败: 该技能设置了付费限制');
       } else {

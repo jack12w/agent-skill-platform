@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   Req,
+  Header,
   UseGuards,
   Logger,
   BadRequestException,
@@ -120,12 +121,29 @@ export class PaymentsController {
    * 返回该创作者设置的月/季/年价格（分，0=未开通）与平台建议默认价。
    */
   @Get('membership/plan')
+  // 0047：设置页点完「停售 / 释放 / 撤销」会 await load() 重读本接口，
+  // 被缓存就会出现「点了没反应」的假故障。必须 no-store。
+  @Header('Cache-Control', 'no-store')
   async membershipPlan(@Query('targetType') targetType: string, @Query('targetId') targetId: string) {
     if (!targetType || !targetId) throw new BadRequestException('缺少 targetType / targetId');
     const plan = await this.planRepo.findOne({ where: { target_type: targetType, target_id: targetId } });
     const suggested = await this.settings.getMembershipPrices();
     if (!plan) {
-      return { hasPlan: false, plans: null, suggested, targetType, targetId };
+      return {
+        hasPlan: false, plans: null, suggested, targetType, targetId,
+        enabled: false, released: false, activeSubscribers: 0,
+      };
+    }
+    // 0047：设置页需要实时售卖状态 + 有效订阅数，用于停售 / 释放的二次确认。
+    let activeSubscribers = 0;
+    if (targetType === 'team') {
+      const rows = await this.planRepo.manager.query(
+        `SELECT count(*)::int AS cnt FROM creator_subscriptions
+          WHERE target_type = 'team' AND target_id = $1
+            AND status = 'active' AND expires_at > now()`,
+        [targetId],
+      );
+      activeSubscribers = Number(rows?.[0]?.cnt) || 0;
     }
     return {
       hasPlan: true,
@@ -137,6 +155,9 @@ export class PaymentsController {
       suggested,
       targetType,
       targetId,
+      enabled: (plan as any).enabled !== false,
+      released: !!(plan as any).released_at,
+      activeSubscribers,
     };
   }
 
@@ -170,6 +191,19 @@ export class PaymentsController {
     } else if (targetType === 'team') {
       const team = await this.teamRepo.findOne({ where: { id: targetId } });
       if (!team) throw new NotFoundException('团队不存在');
+      // 0047：私有团队外人连主页/技能详情都 403，连 402 都拿不到 ⇒ 开套餐是死功能。
+      // 不自动置公开（隐式副作用），必须由团长到设置页显式开启「对外展示」。
+      // ⚠️ 只拦「首次开套餐」：已有套餐的团队后来转私有，仍须允许团长改价 / 停售 /
+      //    释放 / 撤销（这些是已有权益的管理动作），否则存量套餐被永久锁死无法维护。
+      if (!team.is_public) {
+        const hasPlan = await this.planRepo.findOne({
+          where: { target_type: 'team', target_id: targetId },
+          select: ['id'] as any,
+        });
+        if (!hasPlan) {
+          throw new BadRequestException('开启订阅套餐前，请先在团队设置里将团队设为「对外展示」');
+        }
+      }
       // owner 或 maintainer 可设置 —— 与前端「管理」入口的 canManage = is_owner || is_manager
       // 保持一致。原先后端只认 owner_user_id，maintainer 在前端点得到按钮却必吃 403。
       const isOwner = team.owner_user_id === uid;
@@ -202,13 +236,106 @@ export class PaymentsController {
     row.yearly_cents = y;
     row.currency = 'CNY';
     const saved = await this.planRepo.save(row);
-    // 套餐存在 → 该创作者/团队名下所有付费技能的「会员可免费下载」置 true（订阅者可免费下）
-    await this.syncOwnerMemberIncluded(targetType, targetId, true);
+    // 0047：团队技能的下载权已完全由订阅墙判定，不再依赖技能级 member_included。
+    // 仅保留 user（个人创作者）分支——个人会员仍靠它生效，绝不能一起停掉。
+    if (targetType !== 'team') {
+      await this.syncOwnerMemberIncluded(targetType, targetId, true);
+    }
     return {
       targetType,
       targetId,
       plans: { monthly: saved.monthly_cents, quarterly: saved.quarterly_cents, yearly: saved.yearly_cents },
+      enabled: (saved as any).enabled !== false,
+      released: !!(saved as any).released_at,
     };
+  }
+
+  /** 0047 套餐管理权限：仅团队 owner / maintainer（与 setMembershipPlan 同口径）。 */
+  private async assertTeamPlanManager(targetId: string, uid: string) {
+    const team = await this.teamRepo.findOne({ where: { id: targetId } });
+    if (!team) throw new NotFoundException('团队不存在');
+    const isOwner = team.owner_user_id === uid;
+    const isMaintainer =
+      !isOwner &&
+      !!(await this.teamMemberRepo.findOne({
+        where: { team_id: targetId, user_id: uid, role: MemberRole.MAINTAINER },
+      }));
+    if (!isOwner && !isMaintainer) {
+      throw new ForbiddenException('只有团队所有者或管理员可管理订阅套餐');
+    }
+    const plan = await this.planRepo.findOne({ where: { target_type: 'team', target_id: targetId } });
+    if (!plan) throw new NotFoundException('该团队尚未设置订阅套餐');
+    return plan;
+  }
+
+  /** 停售：不再接受新购/续费，已有订阅与订阅墙保持不变。 */
+  @Put('membership/plan/stop')
+  async stopTeamPlan(@Req() req: Request, @Body() body: any) {
+    const targetId = body?.targetId;
+    if (!targetId) throw new BadRequestException('缺少 targetId');
+    const plan = await this.assertTeamPlanManager(targetId, this.uid(req));
+    if (plan.released_at) throw new BadRequestException('该团队已释放，不可再变更售卖状态');
+    plan.enabled = false;
+    await this.planRepo.save(plan);
+    return { targetId, enabled: false, released: false };
+  }
+
+  /** 重新启用：释放后禁止重新启用（避免「免费 → 墙回来」伤害用户预期）。 */
+  @Put('membership/plan/resume')
+  async resumeTeamPlan(@Req() req: Request, @Body() body: any) {
+    const targetId = body?.targetId;
+    if (!targetId) throw new BadRequestException('缺少 targetId');
+    const plan = await this.assertTeamPlanManager(targetId, this.uid(req));
+    if (plan.released_at) throw new BadRequestException('该团队已开放免费下载，不可重新启用套餐');
+    plan.enabled = true;
+    await this.planRepo.save(plan);
+    return { targetId, enabled: true, released: false };
+  }
+
+  /** 立即释放：整团队技能立刻免费。前端必须二次确认（confirm=true），24h 内可撤销。 */
+  @Post('membership/plan/release')
+  async releaseTeamPlan(@Req() req: Request, @Body() body: any) {
+    const targetId = body?.targetId;
+    if (!targetId) throw new BadRequestException('缺少 targetId');
+    const plan = await this.assertTeamPlanManager(targetId, this.uid(req));
+    // 幂等保护：重复释放会刷新 released_at，等于把 24h 撤销窗口无限延长，必须拒绝。
+    if (plan.released_at) throw new BadRequestException('该团队已释放，无需重复操作');
+    const rows = await this.planRepo.manager.query(
+      `SELECT count(*)::int AS cnt FROM creator_subscriptions
+        WHERE target_type = 'team' AND target_id = $1
+          AND status = 'active' AND expires_at > now()`,
+      [targetId],
+    );
+    const activeSubscribers = Number(rows?.[0]?.cnt) || 0;
+    if (body?.confirm !== true) {
+      throw new BadRequestException(
+        `释放后全部技能立即免费且不可重新启用；当前仍有 ${activeSubscribers} 个有效订阅，请确认后再操作`,
+      );
+    }
+    // 先存释放前的 enabled，撤销时精确回滚（不把原本「停售」的团队隐式改回「售卖中」）。
+    plan.enabled_before_release = plan.enabled;
+    plan.released_at = new Date();
+    plan.enabled = false;
+    await this.planRepo.save(plan);
+    return { targetId, enabled: false, released: true, activeSubscribers };
+  }
+
+  /** 撤销释放：24h 冷静期，给误操作一个逃生口。 */
+  @Post('membership/plan/release/undo')
+  async undoReleaseTeamPlan(@Req() req: Request, @Body() body: any) {
+    const targetId = body?.targetId;
+    if (!targetId) throw new BadRequestException('缺少 targetId');
+    const plan = await this.assertTeamPlanManager(targetId, this.uid(req));
+    if (!plan.released_at) throw new BadRequestException('该团队未处于释放状态');
+    if (Date.now() - new Date(plan.released_at).getTime() > 24 * 3600_000) {
+      throw new BadRequestException('释放已超过 24 小时，不可撤销');
+    }
+    // 精确回滚到释放前的售卖状态；无快照的历史行保守回到「停售」，绝不隐式重新开卖。
+    plan.enabled = plan.enabled_before_release ?? false;
+    plan.released_at = null;
+    plan.enabled_before_release = null;
+    await this.planRepo.save(plan);
+    return { targetId, enabled: plan.enabled, released: false };
   }
 
   /** 发起创作者会员订阅下单 */
