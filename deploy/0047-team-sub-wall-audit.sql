@@ -83,7 +83,7 @@ SELECT o.order_no, o.user_id, o.paid_cents, o.expire_at,
   -- 用 subject_id 而非 snapshot->>'targetId'：避免对脏快照做 ::uuid 强转报错，
   -- 且 p.target_type='team' 天然排除 user 目标订阅。
   JOIN creator_membership_plans p
-    ON p.target_type = 'team' AND p.target_id::text = i.subject_id
+    ON p.target_type = 'team' AND p.target_id::text = i.subject_id::text
  WHERE o.status = 'PENDING_PAY' AND o.type = 'creator_membership'
    AND (p.enabled = false OR p.released_at IS NOT NULL)
  ORDER BY o.created_at DESC;
