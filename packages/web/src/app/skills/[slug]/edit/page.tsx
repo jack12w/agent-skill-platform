@@ -201,10 +201,10 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
       <div className="mb-10 p-5 sm:p-6 border rounded-xl bg-white">
         <h2 className="text-xl font-bold mb-1">{t('edit.pricingTitle')}</h2>
         {form.owner_team_id && (
-          /* 0047-B：团队技能不单卖——免费=所有人可下载；付费=纳入团队订阅墙（须订阅后下载） */
+          /* 0047-B / P4：有墙时免费=所有人可下载、付费=须订阅团队；未开套餐时按定价单卖 */
           <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 mb-4">{t('edit.pricingTeamHint')}</p>
         )}
-        <p className="text-xs text-neutral-500 mb-4">{t('edit.pricingDesc')}</p>
+        <p className="text-xs text-neutral-500 mb-4">{form.owner_team_id ? t('edit.pricingTeamDesc') : t('edit.pricingDesc')}</p>
 
         {/* 收费模式 */}
         <div className="grid grid-cols-2 gap-2 mb-4">

@@ -460,9 +460,9 @@ export class SkillsService {
         patch.owner_team_id = teamId;
         patch.owner_user_id = null;
       } else {
-        // 0047：解绑团队后技能恢复个人归属，历史 skill_pricing 立刻重新生效。
-        // 团队技能此前不允许定价，可能残留 price_cents<100 的老脏数据 →
-        // 下单时 orders.service.ts 会判「定价异常（0 元）」，付费墙陷入死锁。
+        // 0047 / P4：解绑团队后技能恢复个人归属，历史 skill_pricing 立刻重新生效。
+        // 团队技能的价格可能只是「纳入订阅墙」的标记、不参与交易，若残留
+        // price_cents<100 的 paid 行，转个人后会变成「0 元单」→ 下单被拒、下载被拦的死锁。
         // 缺定价行 = 免费，不会死锁，无需拦。
         if (skill.owner_team_id) {
           const legacy = await this.pricingRepository.findOne({ where: { skill_id: skill.id } });
@@ -656,12 +656,18 @@ export class SkillsService {
     const ownerType = skill.owner_team_id ? 'team' : 'user';
     const ownerId = skill.owner_team_id || skill.owner_user_id;
     const hasPlan = await this.hasCreatorPlan(ownerType, ownerId);
-    // 0047-B：团队技能定价如实返回——免费=直接下载；paid=纳入订阅墙（不显示 ¥ 单价，
-    // 前端按 teamPlan 显示「订阅后可下载」）。单卖禁令在 orders 层，详情页不再伪装成免费。
-    const pricing = await this.getPricingObject(idOrSlug);
+    // 0047-B / P4：团队技能定价如实返回——有墙时 free 直接下载、paid 纳入订阅墙；
+    // 从未开过套餐的团队按技能定价走单卖。详情页不再伪装成免费。
+    // 定价表以 skill.id（uuid）为键，绝不能用 idOrSlug：用 slug 访问详情页时
+    // 查不到定价行，会把 paid 团队技能误标成「免费下载」（旧实现踩过的坑）。
+    const pricing = await this.getPricingObject(skill.id);
 
     const value = { skill, versions, pricing, hasPlan };
-    this.coreCache.set(idOrSlug, { value, exp: now + 10_000 });
+    // P5：定价查询异常是「不确定」，绝不能把降级的 free 写进 10s 跨用户共享缓存
+    // （否则窗口内所有访客都看到「免费下载」，而下载门禁会 fail-closed 抛 500）。
+    if (!(pricing as any).unavailable) {
+      this.coreCache.set(idOrSlug, { value, exp: now + 10_000 });
+    }
     // 简单容量保护：超过 1000 条时淘汰最旧一条，避免内存无限增长
     if (this.coreCache.size > 1000) {
       const oldest = this.coreCache.keys().next().value;
@@ -720,7 +726,10 @@ export class SkillsService {
     return { skill: displaySkill, versions, pricing: core.pricing, hasPlan: core.hasPlan, membershipStatus, isTeamMember, teamPlan };
   }
 
-  /** 复制 PricingController.pricing 的公开查询 + 免费降级 */
+  /**
+   * 定价公开查询。异常时返回 unavailable 标记（三态铁律：不确定 ≠ 免费），
+   * 由调用方决定是否展示「暂不可用」；绝不伪装成 free 让详情页显示「免费下载」。
+   */
   private async getPricingObject(skillId: string) {
     const free = {
       pricing_mode: 'free',
@@ -732,8 +741,9 @@ export class SkillsService {
     try {
       const p = await this.pricingRepository.findOne({ where: { skill_id: skillId } });
       return p || free;
-    } catch {
-      return free;
+    } catch (e: any) {
+      this.logger.warn(`定价查询失败，详情页标记不可用 skill=${skillId}: ${e?.message || e}`);
+      return { ...free, unavailable: true };
     }
   }
 

@@ -247,7 +247,7 @@ export default function SubmitSkill() {
         const uploadData = new FormData(); uploadData.append('file', file);
         const uploadRes = await fetch(`/api/skills/${skill.id}/versions`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: uploadData });
         if (!uploadRes.ok) { const body = await uploadRes.json().catch(() => ({})); throw new Error(body.message || `HTTP ${uploadRes.status}`); }
-        // 0047-B：团队技能同样保存定价（免费/付费=是否纳入订阅墙），个人归属照旧
+        // 0047-B / P4：团队技能同样保存定价（墙生效时决定是否纳入订阅墙；未开套餐时作为单卖价）
         // 保存付费设置（失败仅告警，不阻断发布）
         try {
           const pr = await fetch(`/api/pay/pricing/${skill.id}`, {
@@ -259,8 +259,15 @@ export default function SubmitSkill() {
               commercial_price_cents: Math.max(0, Math.round((Number(pricing.commercial_price_cents) || 0) * 100)),
             }),
           });
-          if (!pr.ok) { const e = await pr.json().catch(() => ({})); console.warn('pricing save failed:', e.message || pr.status); }
-        } catch (pe: any) { console.warn('pricing save error:', pe?.message); }
+          if (!pr.ok) {
+            const e = await pr.json().catch(() => ({}));
+            // P1：定价决定团队技能是否纳入订阅墙。保存失败必须让用户看见，
+            // 绝不能静默吞掉后直接跳走（否则团长以为加了墙，实际任何人可免费下载）。
+            alert(t('edit.pricingSaveFailed') + ': ' + (e.message || `HTTP ${pr.status}`) + '\n' + t('submit.pricingFailedHint'));
+          }
+        } catch (pe: any) {
+          alert(t('edit.pricingSaveFailed') + ': ' + (pe?.message || 'network error') + '\n' + t('submit.pricingFailedHint'));
+        }
         router.push('/dashboard');
       } catch (uploadErr: any) {
         // 回滚：删除已创建但无版本的技能，保证整体失败不留残留数据
@@ -418,10 +425,10 @@ export default function SubmitSkill() {
         <div className="p-5 sm:p-6 border rounded-xl bg-white">
           <h2 className="text-xl font-bold mb-1">{t('edit.pricingTitle')}</h2>
           {formData.owner_team_id && (
-            /* 0047-B：团队技能不单卖——免费=所有人可下载；付费=纳入团队订阅墙（须订阅后下载） */
+            /* 0047-B / P4：有墙时免费=所有人可下载、付费=须订阅团队；未开套餐时按定价单卖 */
             <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 mb-4">{t('edit.pricingTeamHint')}</p>
           )}
-          <p className="text-xs text-neutral-500 mb-4">{t('edit.pricingDesc')}</p>
+          <p className="text-xs text-neutral-500 mb-4">{formData.owner_team_id ? t('edit.pricingTeamDesc') : t('edit.pricingDesc')}</p>
 
           {/* 收费模式 */}
           <div className="grid grid-cols-2 gap-2 mb-4">

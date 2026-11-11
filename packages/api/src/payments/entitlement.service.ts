@@ -42,7 +42,7 @@ export class EntitlementService {
    *
    * 规则：
    *   个人技能                      → 返回 false，完全交回原有逐技能定价逻辑（零影响）
-   *   无套餐                        → 全免费（团队技能一律不单卖）
+   *   从未开过套餐（P4 定案）       → 返回 false，交回逐技能定价：paid 走单买/会员，free 直接下载
    *   已「立即释放」                → 全免费
    *   停售且已无任何有效订阅         → 自动全免费（最后一个订阅到期即开放）
    *   有墙 + 技能免费/无定价         → 直接放行（B 口径：墙只管「设了价」的技能，
@@ -51,6 +51,7 @@ export class EntitlementService {
    *                                   历史买断 放行；其余 402 TEAM_SUBSCRIPTION_REQUIRED
    *
    * 返回 true 表示本方法已完成判定（放行或抛错），调用方必须立即 return。
+   * 返回 false 表示「本团队没有订阅墙」，调用方须继续走原有逐技能定价路径。
    * 单条 SQL 拿全状态，避免培训现场并发把 DB 打爆；DB 异常一律 500（三态铁律），
    * 绝不当作「未订阅」抛 402，避免已付费用户被误判、重复付款。
    */
@@ -99,7 +100,11 @@ export class EntitlementService {
     }
 
     const plan = rows?.[0];
-    if (!plan) return true;                                  // 无套餐 → 免费，且绝不读 skill_pricing
+    // P4 定案（2026-11-11）：团队「从未开过套餐」→ 不存在订阅墙，交回逐技能定价
+    // （assertCanDownload 的个人路径：paid 走单买/会员，free 直接下载）。
+    // 必须与下面两种「曾开过套餐、现已免费」区分：立即释放 / 停售且最后订阅到期，
+    // 那两种是团长主动开放，仍由本方法直接放行，不回到单卖。
+    if (!plan) return false;
     if (plan.released_at) return true;                        // 团长立即释放 → 免费
     if (plan.enabled === false && !plan.any_active) return true;  // 停售且最后一个订阅已到期 → 自动免费
 
@@ -196,8 +201,9 @@ export class EntitlementService {
   }
 
   async assertCanDownload(skill: Skill, userId?: string, isAdmin = false): Promise<void> {
-    // 0047-B 团队订阅墙：paid 团队技能走订阅墙；免费/无定价直接放行；
-    // 无套餐/释放/停售无订阅全放行。命中即 return，不进下面的个人路径。
+    // 0047-B / P4：有墙时 paid 团队技能走订阅墙、free 直接放行；释放/停售到期全放行。
+    // 团队从未开过套餐 → 本方法返回 false，继续走下面的逐技能定价（paid 单买/会员，free 免费）。
+    // 返回 true 表示已判定完毕（放行或抛错），必须立即 return，不进个人路径。
     if (await this.assertTeamSkillAccess(skill, userId, isAdmin)) return;
 
     const pricing = await this.loadPricing(skill);

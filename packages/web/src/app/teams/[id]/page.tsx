@@ -285,7 +285,8 @@ export default function TeamShowcase({ params }: { params: { id: string } }) {
         openLoginInNewTab();
         return;
       }
-      // 0047 团队订阅墙：团队技能一律不单卖（含免费技能），402 只对应订阅窗，绝不进收银台。
+      // 0047-B / P4：墙生效时团队技能不单卖，此 402 只对应订阅窗；
+      // 从未开过套餐的团队按技能定价返回 PAYMENT_REQUIRED，走下面的收银台分支。
       if (result.kind === 'team-subscription-required') {
         if (result.team?.enabled === false || planStatus?.released) {
           alert(t('detail.teamPlanStopped'));

@@ -237,8 +237,9 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
         openLoginInNewTab();
         return;
       }
-      // 0047 团队订阅墙：团队技能一律不单卖（含免费技能），402 只对应订阅窗。
-      // 绝不落到下面的收银台分支 —— 免费技能没有单买价，会触发「该技能无需付费」0 元死锁。
+      // 0047-B / P4：墙生效的团队技能不单卖，402 只对应订阅窗；
+      // 免费技能后端直接放行、不会产生 402；从未开过套餐的团队按技能自身定价
+      // 走下面的 PAYMENT_REQUIRED → 收银台（单买）。
       if (result.kind === 'team-subscription-required') {
         if (result.team?.enabled === false) {
           alert(t('detail.teamPlanStopped'));
@@ -292,15 +293,27 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
   // 免费关注 ≠ 付费订阅：文案必须区分，避免用户误以为点「关注」就能下载团队技能
   const showSubscribed = planOn ? paidSubscribed : !!freeSub;
   const defaultVersionLabel = `v${versions.find((v) => v.id === skill?.latest_version_id)?.version || versions[0]?.version || 'latest'}`;
+  // P3/P4/P5：按钮状态必须逐条对齐后端 assertTeamSkillAccess，四种情形分开：
+  //   ① 从未开套餐(hasPlan=false) → 按技能自身定价：paid 走收银台、free 免费下载
+  //   ② 墙生效(wallActive)       → paid 未订阅拦订阅窗；free 直接下载；已订阅正常下载
+  //   ③ 曾开套餐但墙已消失      → 释放 / 停售到期，全部免费下载
+  //   ④ 定价或套餐查询失败      → 「暂不可用」，绝不显示「免费下载」（三态铁律）
+  const pricingUnavailable = !!(teamPlan?.unavailable || pricing?.unavailable);
+  const teamWallGone = isTeamSkill && !!teamPlan?.hasPlan && !teamPlan?.wallActive;
+  const needsTeamSub = isTeamSkill && !!teamPlan?.wallActive && !teamPlan?.subscribed && pricing?.pricing_mode === 'paid';
+  const teamFree = isTeamSkill && (pricing?.pricing_mode !== 'paid' || teamWallGone);
+  // P4：从未开过套餐的团队技能可单买，详情页应展示单价（墙生效时隐藏，避免「看得见买不了」）
+  const showPrice = !!pricing && !pricing.unavailable && pricing.pricing_mode !== 'free'
+    && (!isTeamSkill || (isTeamSkill && !!teamPlan && !teamPlan.hasPlan && !teamPlan.unavailable));
   const downloadLabel = acting === 'download'
     ? t('detail.downloading')
     : versions.length === 0
       ? t('detail.noVersionYet')
-      : isTeamSkill && teamPlan?.unavailable
+      : isTeamSkill && pricingUnavailable
         ? t('detail.teamPlanUnavailable')
-        : isTeamSkill && teamPlan?.wallActive && !teamPlan?.subscribed && pricing?.pricing_mode === 'paid'
+        : needsTeamSub
           ? t('detail.subscribeToDownload')
-          : isTeamSkill
+          : teamFree
             ? t('detail.freeDownload')
             : `${t('detail.download')} ${defaultVersionLabel}`;
 
@@ -431,11 +444,12 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
           <div className="p-6 border rounded-xl">
             <div className="text-center mb-6"><span className="text-sm text-neutral-500">{t('detail.skillScore')}</span><div className="text-3xl sm:text-4xl font-black text-brand-600">{parseFloat(skill.stats?.total_score || 0).toFixed(1)}</div></div>
             <div className="grid grid-cols-2 gap-4 text-center mb-6"><div className="p-3 bg-neutral-100 rounded-lg"><div className="font-bold">{skill.stats?.likes_total || 0}</div><div className="text-xs text-neutral-500">{t('detail.likes')}</div></div><div className="p-3 bg-neutral-100 rounded-lg"><div className="font-bold">{skill.stats?.downloads_total || 0}</div><div className="text-xs text-neutral-500">{t('detail.downloads')}</div></div></div>
-            {/* 0047：团队技能一律不单卖，隐藏单价区，避免出现一个「看得见买不了」的价格 */}
-            {pricing && !isTeamSkill && pricing.pricing_mode !== 'free' && (
+            {/* 0047-B / P4：墙生效的团队技能不单卖 → 隐藏单价，避免「看得见买不了」；
+                团队从未开过套餐时按技能定价单卖 → 必须显示价格。 */}
+            {showPrice && (
               <div className="mb-3 flex items-center justify-center gap-2">
                 <span className="text-2xl font-black text-brand-700">¥{((pricing.price_cents || 0) / 100).toFixed(2)}</span>
-                {pricing.member_included ? (
+                {pricing.member_included && !isTeamSkill ? (
                   <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">{t('pay.included')}</span>
                 ) : (
                   <span className="text-[11px] px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500">{t('pay.needSeparatePurchase')}</span>

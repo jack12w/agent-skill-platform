@@ -131,7 +131,8 @@ const zh = {
     // ── 付费设置 ──
     pricingTitle: '付费设置',
     pricingDesc: '设置技能的收费方式。免费技能所有人可下载；付费技能需单次购买，或订阅你的会员后免费下载。修改保存后实时生效。',
-    pricingTeamHint: '该技能归属团队，不能单独售卖：免费 = 所有人可直接下载；付费 = 需订阅团队后下载（价格金额不用于单卖）。',
+    pricingTeamDesc: '团队技能的收费方式：订阅墙生效时，免费 = 所有人可下载、付费 = 须订阅团队（价格金额不参与交易）；团队未开套餐时，按此定价单独购买。',
+    pricingTeamHint: '该技能归属团队：开启订阅套餐时，免费 = 所有人可直接下载、付费 = 须订阅团队；团队未开套餐时，按技能定价单独购买。',
     modeFree: '免费',
     modeFreeDesc: '所有人可免费下载',
     modePaid: '付费下载',
@@ -164,6 +165,7 @@ const zh = {
     teamLabel: '关联团队',
     teamPersonal: '个人（无团队）',
     teamHint: '团队技能计入团队排行榜。',
+    pricingFailedHint: '技能已发布，但付费设置未保存成功。请到编辑页重新设置，否则该技能可能被当作免费技能直接下载。',
     zipLabel: '上传 ZIP 包',
     zipHint: '上传包含 SKILL.md 的 .zip 文件（放在根目录或单层文件夹内均可），文件必须以 YAML frontmatter 开头，至少包含 name 和 version。',
     zipLimitHint: '限制 {limit} KB 以内',

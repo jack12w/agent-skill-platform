@@ -60,8 +60,8 @@ export class PricingController {
       currency: 'CNY',
     };
     try {
-      // 0047-B：团队技能定价如实返回——它决定「免费直接下载」还是「纳入订阅墙」，
-      // 不再用于单卖（单卖禁令在 orders 层）。历史强制 free 会让前端把 paid 技能误标成免费。
+      // 0047-B / P4：团队技能定价如实返回——有墙时决定「免费直接下载」还是「纳入订阅墙」；
+      // 从未开过套餐的团队按此定价单卖。历史强制 free 会把 paid 技能误标成免费。
       const membership = await this.settings.getMembershipPrices();
       const pricing = await this.pricingRepo.findOne({ where: { skill_id: skillId } });
       return { pricing: pricing || free, membership };
@@ -154,9 +154,9 @@ export class PricingController {
     const skill = await this.skillRepo.findOne({ where: { id: skillId } });
     if (!skill) throw new NotFoundException('Skill not found');
 
-    // 0047-B：团队技能允许写定价——免费/付费决定技能是否纳入团队订阅墙
-    // （免费=所有人可直接下载；付费=须订阅团队）。价格金额本身不再用于单卖，
-    // 单卖禁令由 orders.service 对团队技能返回 400 把守。
+    // 0047-B / P4：团队技能允许写定价——免费/付费决定是否纳入订阅墙。
+    // 墙生效时团队技能不单卖（orders.service 400）；团队从未开过套餐时按技能定价单买。
+    // 价格金额对「墙生效」的团队技能不参与交易，仅作标记。
 
     const isAdmin = req.user?.role === 'admin';
     const uid = req.user.sub;
@@ -196,24 +196,35 @@ export class PricingController {
     const memberIncluded = mode === 'paid' ? hasPlan : false;
 
     /*
-     * 单卖价下限校验：paid 模式下 price_cents 不能低于 ¥1，
+     * 单卖价下限校验（仅个人技能）：paid 模式下 price_cents 不能低于 ¥1，
      * 否则付费墙拦截下载但下单金额为 0 会被微信拒绝（最低 1 分），技能陷入死锁。
+     *
+     * P2：团队技能在订阅墙生效时不单卖，价格金额只是「免费 / 纳入墙」的标记，
+     * 不参与任何交易 → 不应要求团长填一个无意义的 ¥1。旧逻辑下投稿页选
+     * 「付费下载」却不填价格会 400，而该失败被前端静默吞掉后技能仍是 free，
+     * 订阅墙根本没生效。团队 paid 时把金额归一化到 ¥1 占位，保证后续
+     * 「团队转个人」归属切换不会被 skills.service.ts 的 <100 死锁校验拦住。
      */
     const MIN_SELL_CENTS = 100; // ¥1
+    const isTeamSkill = !!skill.owner_team_id;
     const sellable = mode === 'paid';
-    if (sellable && priceCents < MIN_SELL_CENTS) {
+    if (sellable && !isTeamSkill && priceCents < MIN_SELL_CENTS) {
       throw new BadRequestException(`单独售卖价不能低于 ${MIN_SELL_CENTS / 100} 元。`);
     }
-    if (sellable && commercialCents > 0 && commercialCents < MIN_SELL_CENTS) {
+    if (sellable && !isTeamSkill && commercialCents > 0 && commercialCents < MIN_SELL_CENTS) {
       throw new BadRequestException(`商用授权价不能低于 ${MIN_SELL_CENTS / 100} 元`);
     }
+    const effectivePriceCents = sellable
+      ? (isTeamSkill ? Math.max(priceCents, MIN_SELL_CENTS) : priceCents)
+      : 0;
+    const effectiveCommercialCents = sellable && !isTeamSkill ? commercialCents : 0;
 
     const pricing = this.pricingRepo.create({
       skill_id: skillId,
       pricing_mode: mode,
-      price_cents: sellable ? priceCents : 0,
+      price_cents: effectivePriceCents,
       member_included: memberIncluded,
-      commercial_price_cents: sellable ? commercialCents : 0,
+      commercial_price_cents: effectiveCommercialCents,
       currency: 'CNY',
     });
 

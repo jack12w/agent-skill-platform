@@ -215,14 +215,51 @@ export class OrdersService implements OnModuleInit {
    * 即便发生也只是多一笔待支付订单（用户只会扫其中一个码），无资金风险。
    */
   /**
-   * 0047 下单前置门禁 —— 必须在 findReusablePendingOrder() **之前**执行。
+   * 0047 / P4 下单前置门禁 —— 必须在 findReusablePendingOrder() **之前**执行。
    *
    * 原因：复用待支付订单是 createOrder 的最早返回路径，早于下方的定价/状态校验。
    * 若把团队技能禁售、套餐停售/释放只写在下方分支里，用户手里一张旧的
-   * PENDING_PAY 二维码就能绕过全部新规则：团长刚「立即释放」全免费，用户仍可付款；
-   * 团队技能也仍能走历史单买订单付钱。这里统一收口，且只作用于 skill / creator_membership，
-   * 不触碰 membership / plugin 分支。
+   * PENDING_PAY 二维码就能绕过全部新规则。这里统一收口，且只作用于
+   * skill / creator_membership，不触碰 membership / plugin 分支。
    */
+  /**
+   * P4：团队订阅墙三态，判定口径与 EntitlementService.assertTeamSkillAccess 逐条对齐。
+   *   none = 从未开过套餐 → 团队技能按自身定价走单买/会员
+   *   wall = 墙生效       → 团队技能不单卖（订阅制）
+   *   free = 立即释放 / 停售且最后一个订阅到期 → 全团队免费，无需购买
+   * 下单门禁与 createOrder 主分支共用同一方法，杜绝两处判定漂移。
+   */
+  private async getTeamWallState(teamId: string): Promise<'none' | 'wall' | 'free'> {
+    const rows: any[] = await this.planRepo.manager.query(
+      `SELECT p.enabled, p.released_at,
+              EXISTS (
+                SELECT 1 FROM creator_subscriptions cs
+                 WHERE cs.target_type = 'team' AND cs.target_id = $1
+                   AND cs.status = 'active' AND cs.expires_at > now()
+              ) AS any_active
+         FROM creator_membership_plans p
+        WHERE p.target_type = 'team' AND p.target_id = $1
+        LIMIT 1`,
+      [teamId],
+    );
+    const plan = rows?.[0];
+    if (!plan) return 'none';
+    if (plan.released_at) return 'free';
+    if (plan.enabled === false && !plan.any_active) return 'free';
+    return 'wall';
+  }
+
+  /** P4：团队技能单买门禁 —— 仅墙生效时禁售；免费态明确拦，避免用户付冤枉钱。 */
+  private async assertTeamSkillSellable(teamId: string): Promise<void> {
+    const state = await this.getTeamWallState(teamId);
+    if (state === 'wall') {
+      throw new BadRequestException('该团队已开启订阅，团队技能不支持单独购买，请订阅该团队');
+    }
+    if (state === 'free') {
+      throw new BadRequestException('该技能当前已免费开放，无需购买');
+    }
+  }
+
   private async assert0047OrderAllowed(input: CreateOrderInput): Promise<void> {
     if (input.type === 'skill' && input.skillId) {
       const skill = await this.skillRepo.findOne({
@@ -230,7 +267,8 @@ export class OrdersService implements OnModuleInit {
         select: ['id', 'owner_team_id'] as any,
       });
       if (skill?.owner_team_id) {
-        throw new BadRequestException('团队技能不支持单独购买，请订阅该团队');
+        // P4：从未开过套餐的团队允许按技能定价单买，不再一刀切 400。
+        await this.assertTeamSkillSellable(skill.owner_team_id);
       }
     // 0047 回归边界：只收口「团队订阅」。个人创作者订阅（targetType='user'）必须
     // 完全走原有路径，不能被团队套餐的停售/释放状态误拦。
@@ -319,10 +357,10 @@ export class OrdersService implements OnModuleInit {
       if (!input.skillId) throw new BadRequestException('缺少 skillId');
       const pricing = await this.pricingRepo.findOne({ where: { skill_id: input.skillId } });
       const skill = await this.skillRepo.findOne({ where: { id: input.skillId } });
-      // 0047：团队 = 订阅制、个人 = 单卖制。团队技能一律不单卖，
-      // 顺带封死「团队技能 owner_user_id 为 null → 单卖收入无归属」的历史洞。
+      // 0047 / P4：墙生效时团队 = 订阅制（不单卖）；从未开过套餐的团队 = 单卖制，
+      // 按技能自身定价走收银台。两处门禁（前置 + 主分支）用同一三态判定，防止绕过。
       if (skill?.owner_team_id) {
-        throw new BadRequestException('团队技能不支持单独购买，请订阅该团队');
+        await this.assertTeamSkillSellable(skill.owner_team_id);
       }
       if (!pricing || pricing.pricing_mode === 'free') throw new BadRequestException('该技能无需付费');
       total = Number(pricing.price_cents);
@@ -335,10 +373,24 @@ export class OrdersService implements OnModuleInit {
         throw new BadRequestException('该技能定价异常（0 元），请联系作者重新设置价格');
       }
       description = `技能下载:${skill?.name || 'Skill'}`;
+      // P4：团队技能 owner_user_id 恒为 NULL，若照旧直接写入 seller_user_id 会留下
+      // 「单卖收入无归属」的资金洞。与 creator_membership 分支同口径：钱进团队 owner。
+      // 个人技能保持原值不变（零影响），仅团队技能补归属并做 fail-closed 校验。
+      let sellerUserId: string | null = skill?.owner_user_id || null;
+      if (!sellerUserId && skill?.owner_team_id) {
+        const team = await this.teamRepo.findOne({
+          where: { id: skill.owner_team_id },
+          select: ['id', 'owner_user_id'] as any,
+        });
+        sellerUserId = team?.owner_user_id || null;
+        if (!sellerUserId) {
+          throw new BadRequestException('该团队技能暂未设置收款方，请联系团长完成团队归属设置');
+        }
+      }
       item = {
         subject_type: 'skill',
         subject_id: input.skillId,
-        seller_user_id: skill?.owner_user_id,
+        seller_user_id: sellerUserId,
         unit_cents: total,
         qty: 1,
         snapshot: { name: skill?.name, pricing_mode: pricing.pricing_mode },

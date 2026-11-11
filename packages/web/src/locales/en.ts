@@ -131,7 +131,8 @@ const en = {
     // ── Pricing ──
     pricingTitle: 'Pricing',
     pricingDesc: 'Set how your skill is charged. Free skills are downloadable by anyone; paid skills require a one-time purchase, or are free for your members. Changes apply immediately after saving.',
-    pricingTeamHint: 'This skill belongs to a team and cannot be sold separately: Free = downloadable by anyone; Paid = requires a team subscription (the price itself is not charged per skill).',
+    pricingTeamDesc: 'Team skill pricing: while a subscription wall is active, Free = anyone can download, Paid = requires a team subscription (the amount is not charged per skill); if the team has no plan, this price is used for one-time purchase.',
+    pricingTeamHint: 'This skill belongs to a team: with a plan active, Free = anyone can download and Paid = requires a team subscription; with no plan, the skill is sold separately at its own price.',
     modeFree: 'Free',
     modeFreeDesc: 'Anyone can download for free',
     modePaid: 'Paid Download',
@@ -164,6 +165,7 @@ const en = {
     teamLabel: 'Associate with team',
     teamPersonal: 'Personal (no team)',
     teamHint: 'Team-owned skills count toward the team leaderboard.',
+    pricingFailedHint: 'The skill was published but its pricing could not be saved. Please set it again on the edit page, otherwise it may be treated as a free skill.',
     zipLabel: 'Upload ZIP package',
     zipHint: 'Upload a .zip containing SKILL.md (at the zip root or inside a single top-level folder). The file must start with YAML frontmatter declaring at least name and version.',
     zipLimitHint: 'Limit {limit} KB',

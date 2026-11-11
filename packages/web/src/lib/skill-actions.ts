@@ -38,7 +38,7 @@ export async function likeSkill(skillId: string, token: string | null): Promise<
  * 发起下载。返回结构化结果：
  * - unauthorized：未登录（含 401）
  * - payment-required：付费墙拦截，pricing 为后端 402 回传的整套定价快照，可直接喂 CheckoutModal
- * - redirect：已放行，url 为 OSS 公开直链
+ * - redirect：已放行，url 为 300s（团队）/ 3600s（个人）限时的 OSS 签名直链
  * - error：网络异常 / 其它状态码
  */
 /**
@@ -87,8 +87,8 @@ export async function startDownload(
 
   if (res.status === 402) {
     const info = await res.json().catch(() => ({} as any));
-    // 0047 团队订阅墙：团队技能一律不单卖（含免费技能），必须强制弹团队订阅窗。
-    // 绝不能落到 payment-required → 收银台，否则会下 0 元单、被后端判「该技能无需付费」死锁。
+    // 0047-B / P4：墙生效的团队技能不单卖，此 code 强制弹团队订阅窗；
+    // 免费技能后端直接放行、无 402；从未开套餐的团队按技能定价走收银台。
     if (info?.code === 'TEAM_SUBSCRIPTION_REQUIRED') {
       return { kind: 'team-subscription-required', team: info?.team ?? null };
     }

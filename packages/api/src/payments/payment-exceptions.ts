@@ -15,9 +15,9 @@ export class PaymentRequiredException extends HttpException {
 }
 
 /**
- * 402 团队订阅墙（0047）：该团队已设置套餐，必须订阅团队才能下载名下技能。
- * 与 PAYMENT_REQUIRED 严格区分 —— 团队技能一律不单卖，前端收到本 code 时
- * 必须强制弹团队订阅窗，绝不进收银台（否则免费技能会触发「该技能无需付费」0 元死锁）。
+ * 402 团队订阅墙（0047 / P4）：订阅墙生效时，团队名下 paid 技能须订阅团队才能下载。
+ * 与 PAYMENT_REQUIRED 严格区分 —— 墙生效时团队技能不单卖，前端收到本 code
+ * 必须弹团队订阅窗；团队从未开过套餐时按技能定价返回 PAYMENT_REQUIRED 走收银台。
  */
 export class TeamSubscriptionRequiredException extends HttpException {
   constructor(team: any) {
