@@ -1,6 +1,7 @@
 -- 0047 团队订阅墙 · 阶段 0 只读盘点（生产 psql 执行）
 -- 全部为 SELECT，不写库、不改任何数据。执行前先确认连的是生产库。
--- 用法: psql "$DATABASE_URL" -f diagnostic-0047-team-sub-wall.sql
+-- 用法: psql "$DATABASE_URL" -f deploy/0047-team-sub-wall-audit.sql
+--      （全部只读 SELECT；上线前跑 1)~12)，上线后跑 9) + 13) 做巡检）
 
 -- 1) 存量有效团队订阅（迁移 0047 会回填这些人为 team_members VIEWER）
 SELECT count(*) AS active_team_subscriptions
@@ -23,7 +24,9 @@ SELECT p.target_id, t.name, t.is_public, p.enabled, p.released_at
   JOIN teams t ON t.id = p.target_id
  WHERE p.target_type = 'team' AND t.is_public = false;
 
--- 4) 团队技能的定价行分布（判定层完全不读，仅用于确认历史脏数据规模）
+-- 4) 团队技能的定价行分布
+--    P4 口径下「从未开套餐」的团队仍按此定价单买/会员，所以这张表不是死数据：
+--    pricing_mode 决定 free 直接下载 / paid 纳入墙或单买，price_cents<100 的行需人工核对。
 SELECT s.owner_team_id IS NOT NULL AS is_team_skill,
        sp.pricing_mode,
        count(*) AS rows,
@@ -69,9 +72,10 @@ SELECT
   (SELECT count(*) FROM creator_membership_plans
     WHERE released_at IS NOT NULL) AS released_plans;
 
--- 10) 0047 上线前必须人工处置：停售 / 已释放团队下仍存在的待支付订阅订单。
---     新代码的 createOrder 前置门禁只拦「新下单/复用」，这些存量 PENDING_PAY 单
---     若被用户支付仍会发货（钱货两清），需运营决定：主动关单或通知用户。
+-- 10) 上线前核对：停售 / 已释放团队下仍存在的待支付订阅订单。
+--     新代码在 stop/release 请求里会主动微信关单 + 本地置 CLOSED（closeTeamPendingOrders），
+--     但历史存量单、以及关单失败（日志 [0047-close]）的单仍需人工关单，逐笔确认。
+--     期望：上线前此查询为空（或全部已人工处置）。
 SELECT o.order_no, o.user_id, o.paid_cents, o.expire_at,
        p.enabled, p.released_at, i.subject_id AS target_id
   FROM orders o
@@ -99,3 +103,26 @@ SELECT o.order_no, o.user_id, o.paid_cents, o.expire_at, s.name AS skill_name
 SELECT indexname, indexdef
   FROM pg_indexes
  WHERE tablename = 'creator_membership_plans' AND indexdef ILIKE '%UNIQUE%';
+
+-- 13) 上线后巡检：付款与「立即释放 / 最后一个订阅到期」并发时，
+--     deliver() 防线②会跳过发货并把订单留在 PAID（日志关键字 [0047-REFUND-NEEDED]）。
+--     这些订单技能本来就全免费，用户无权益损失，但钱已收 → 必须人工退款。
+--     ⚠️ 其它原因（如余额入账临时失败）也可能让订单停在 PAID，需逐笔对照日志甄别。
+--     期望：长期为 0；非空时逐笔走后台退款并核对 refunded_cents。
+SELECT o.order_no, o.user_id, o.paid_cents, o.paid_at, o.status,
+       i.snapshot->>'targetId' AS team_id,
+       p.released_at IS NOT NULL AS released
+  FROM orders o
+  JOIN order_items i ON i.order_id = o.id
+  JOIN creator_membership_plans p
+    ON p.target_type = 'team'
+   AND p.target_id::text = (i.snapshot->>'targetId')
+ WHERE o.type = 'creator_membership'
+   AND o.status = 'PAID'                       -- 非 DELIVERED = 发货未完成
+   AND (i.snapshot->>'targetType') = 'team'
+   AND (p.released_at IS NOT NULL
+        OR (p.enabled = false AND NOT EXISTS (
+             SELECT 1 FROM creator_subscriptions cs
+              WHERE cs.target_type = 'team' AND cs.target_id = p.target_id
+                AND cs.status = 'active' AND cs.expires_at > now())))
+ ORDER BY o.paid_at DESC;

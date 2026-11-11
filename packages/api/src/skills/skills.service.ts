@@ -12,7 +12,7 @@ import { Team } from '../teams/team.entity';
 import { SkillPricing, CreatorMembershipPlan, CreatorSubscription } from '../payments/payments.entity';
 import { Subscription, SubscriptionTargetType } from '../subscriptions/subscription.entity';
 import { OssService } from '../storage/oss.service';
-import { SkillPackageStorageService } from './skill-package-storage.service';
+import { SkillPackageStorageService, isInsecureOssMockAllowed } from './skill-package-storage.service';
 import { EntitlementService } from '../payments/entitlement.service';
 import { EventType, SkillStatus, parseSkillMd, MemberRole } from '@platform/shared';
 import AdmZip from 'adm-zip';
@@ -848,8 +848,8 @@ export class SkillsService {
     if (!signedUrl) {
       // 0047：绝不把 DB 里的 package_url 裸链发给前端 —— 那就是订阅墙的后门。
       // 不依赖 NODE_ENV：生产 env 漏配 / 被覆盖 / 用非 prod compose 启动时也必须 fail-closed。
-      // 仅「显式本地开关 + 确为 mock URL」才允许降级，真实 OSS 直链任何时候都不回退。
-      const allowMock = process.env.ALLOW_INSECURE_OSS_MOCK === 'true';
+      // 仅「显式本地开关 + 无生产证据 + 确为 mock URL」才允许降级，真实 OSS 直链任何时候都不回退。
+      const allowMock = isInsecureOssMockAllowed();
       const isMockUrl = !version.package_url || version.package_url.startsWith('https://storage.example.com/');
       if (!allowMock || !isMockUrl) {
         this.logger.error(`技能包签名失败，拒绝回退裸链 skill=${skill.id} key=${objectKey}`);

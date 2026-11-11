@@ -236,11 +236,11 @@ export class PaymentsController {
     row.yearly_cents = y;
     row.currency = 'CNY';
     const saved = await this.planRepo.save(row);
-    // 0047：团队技能的下载权已完全由订阅墙判定，不再依赖技能级 member_included。
-    // 仅保留 user（个人创作者）分支——个人会员仍靠它生效，绝不能一起停掉。
-    if (targetType !== 'team') {
-      await this.syncOwnerMemberIncluded(targetType, targetId, true);
-    }
+    // 0047-B / P4：恢复与旧版一致的口径——所有 targetType 都同步。
+    // 墙生效时判定层不读 member_included，同步结果无副作用；但「团队转个人」后
+    // 技能回到逐技能定价路径，若残留 false，402 会把用户引向单买而非会员。
+    // 同时保留「先定价、后开套餐」时序下 paid 技能可走会员的既有能力。
+    await this.syncOwnerMemberIncluded(targetType, targetId, true);
     return {
       targetType,
       targetId,
@@ -277,7 +277,22 @@ export class PaymentsController {
     if (plan.released_at) throw new BadRequestException('该团队已释放，不可再变更售卖状态');
     plan.enabled = false;
     await this.planRepo.save(plan);
-    return { targetId, enabled: false, released: false };
+    // 0047 TOCTOU：停售后不再接受新购/续费，同步关掉停售前生成的待支付二维码。
+    const closedPendingOrders = await this.safeCloseTeamPendingOrders(targetId);
+    return { targetId, enabled: false, released: false, closedPendingOrders };
+  }
+
+  /**
+   * 0047：关单失败不能回滚已经生效的套餐状态（状态变更是主业务，关单是收敛动作），
+   * 但必须留日志让运维按审计 SQL 核对残留待支付订单。
+   */
+  private async safeCloseTeamPendingOrders(targetId: string): Promise<number> {
+    try {
+      return await this.orders.closeTeamPendingOrders(targetId);
+    } catch (e: any) {
+      this.logger.error(`[0047-close] team=${targetId} 关闭待支付订单失败: ${e?.message || e}`);
+      return 0;
+    }
   }
 
   /** 重新启用：释放后禁止重新启用（避免「免费 → 墙回来」伤害用户预期）。 */
@@ -317,7 +332,10 @@ export class PaymentsController {
     plan.released_at = new Date();
     plan.enabled = false;
     await this.planRepo.save(plan);
-    return { targetId, enabled: false, released: true, activeSubscribers };
+    // 0047 TOCTOU：释放后技能已全免费，立刻关掉旧二维码，避免用户为一个
+    // 已无价值的订阅继续付款；在途回调由 orders.deliver() 的防线②兜住。
+    const closedPendingOrders = await this.safeCloseTeamPendingOrders(targetId);
+    return { targetId, enabled: false, released: true, activeSubscribers, closedPendingOrders };
   }
 
   /** 撤销释放：24h 冷静期，给误操作一个逃生口。 */

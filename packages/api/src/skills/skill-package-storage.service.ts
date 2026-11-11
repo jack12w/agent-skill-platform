@@ -3,6 +3,24 @@ import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common
 import OSS = require('ali-oss');
 
 /**
+ * 0047：本地 mock 降级开关是否允许生效（上传与下载两处共用同一判据）。
+ *
+ * 原实现只判断 `ALLOW_INSECURE_OSS_MOCK === 'true'`，生产一旦误配/被覆盖就会把
+ * 公开裸链发回前端，等于订阅墙后门。这里加三重生产证据，任一命中即强制关闭：
+ *   NODE_ENV=production / PUBLIC_BASE_URL 指向线上域名 / 已配置真实 OSS 凭据。
+ * 不单独依赖 NODE_ENV —— 生产用非 prod compose 启动、或 env 漏配时也要拦住。
+ * 纯函数，便于验证脚本用真实源码直接断言。
+ */
+export function isInsecureOssMockAllowed(): boolean {
+  if (process.env.ALLOW_INSECURE_OSS_MOCK !== 'true') return false;
+  const prodLike =
+    process.env.NODE_ENV === 'production' ||
+    /skills\.rehomi\.com/i.test(process.env.PUBLIC_BASE_URL || '') ||
+    !!process.env.OSS_ACCESS_KEY_ID;
+  return !prodLike;
+}
+
+/**
  * 技能包专用存储（0047 订阅墙地基）。
  *
  * 独立存在的理由：OssService.putBuffer 同时被头像（auth.service.ts）和插件安装包
@@ -24,6 +42,12 @@ export class SkillPackageStorageService {
   private publicHost = '';
 
   constructor() {
+    // 生产环境误开 mock 开关时留下显式错误日志（下面 assertUsable 会强制 fail-closed）。
+    if (process.env.ALLOW_INSECURE_OSS_MOCK === 'true' && !isInsecureOssMockAllowed()) {
+      this.logger.error(
+        'ALLOW_INSECURE_OSS_MOCK 在生产环境被强制忽略（检测到 NODE_ENV / PUBLIC_BASE_URL / OSS_ACCESS_KEY_ID）',
+      );
+    }
     const { OSS_REGION, OSS_BUCKET, OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_PUBLIC_HOST } =
       process.env;
 
@@ -52,7 +76,7 @@ export class SkillPackageStorageService {
 
   /** 生产缺配置直接失败，避免写出一个公开可读的 mock 直链；不依赖 NODE_ENV。 */
   private assertUsable(): void {
-    if (!this.client && process.env.ALLOW_INSECURE_OSS_MOCK !== 'true') {
+    if (!this.client && !isInsecureOssMockAllowed()) {
       throw new InternalServerErrorException('技能包存储未配置，请联系管理员');
     }
   }

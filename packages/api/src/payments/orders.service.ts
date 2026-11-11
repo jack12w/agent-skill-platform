@@ -729,6 +729,20 @@ export class OrdersService implements OnModuleInit {
       const plan = snap?.plan || 'monthly';
       const targetType = snap?.targetType;
       const targetId = snap?.targetId;
+      // 0047 TOCTOU 防线②：付款与「立即释放 / 最后一个订阅到期」并发时，
+      // 微信回调仍可能抵达。此时全团队技能已免费，再激活订阅只会让用户白付钱、
+      // 团长平白多一笔收入。这里跳过发货（也不入账），把订单留在 PAID 非 DELIVERED，
+      // 打 [0047-REFUND-NEEDED] 让运营按审计 SQL 人工退款；用户无权益损失。
+      // 个人创作者订阅（targetType='user'）完全不进这条分支，零影响。
+      if (targetType === 'team' && targetId) {
+        const wallState = await this.getTeamWallState(targetId);
+        if (wallState === 'free') {
+          this.logger.error(
+            `[0047-REFUND-NEEDED] 团队订阅订单在套餐释放/到期后付款，已跳过发货，需人工退款 order=${order.id} team=${targetId} user=${order.user_id} cents=${order.paid_cents}`,
+          );
+          return;
+        }
+      }
       await this.membership.activateCreatorSub(
         order.user_id,
         targetType,
@@ -984,6 +998,48 @@ export class OrdersService implements OnModuleInit {
     } catch (e) {
       this.logger.warn('主动查单失败', e);
     }
+  }
+
+  /**
+   * 0047 TOCTOU 防线①：套餐停售 / 立即释放时，主动关闭该团队全部待支付订阅订单。
+   *
+   * 前置门禁只拦「新下单 / 复用待支付单」，用户手里已生成的旧二维码在释放后仍可付款
+   * 并触发回调发货（钱付了、技能其实已全免费）。这里在状态变更的同一请求里同步关单：
+   * 微信侧 closeOrder 让二维码立即失效，本地订单置 CLOSED 让复用路径也不再命中。
+   * 微信关单失败不回滚套餐状态（多为「已支付/已关闭」），但要留日志供运维核对；
+   * 真正已在途的支付回调由 deliver() 的防线②兜住。
+   *
+   * 只处理 creator_membership + targetType='team' 的 PENDING_PAY 订单：
+   * 个人创作者订阅、插件订单、技能单买一律不碰（插件零改动硬约束）。
+   */
+  async closeTeamPendingOrders(teamId: string): Promise<number> {
+    const rows: any[] = await this.orderRepo.manager.query(
+      `SELECT DISTINCT o.id, o.order_no
+         FROM orders o
+         JOIN order_items i ON i.order_id = o.id
+        WHERE o.status = 'PENDING_PAY'
+          AND o.type = 'creator_membership'
+          AND i.snapshot->>'targetType' = 'team'
+          AND i.snapshot->>'targetId' = $1`,
+      [teamId],
+    );
+    let closed = 0;
+    for (const row of rows) {
+      try {
+        await this.wechat.closeOrder(row.order_no);
+      } catch (e: any) {
+        this.logger.warn(`[0047-close] 微信关单失败 order=${row.order_no}: ${e?.message || e}`);
+      }
+      // 只收敛订单状态，不动 payments 流水：回调仍在途时由 handleNotify 正常置 PAID，
+      // 再交给 deliver() 防线②判断，避免把已收款的支付流水错误标成 CLOSED。
+      const r = await this.orderRepo.update(
+        { id: row.id, status: 'PENDING_PAY' },
+        { status: 'CLOSED', closed_at: new Date() },
+      );
+      if (r.affected) closed += 1;
+    }
+    if (closed > 0) this.logger.log(`[0047-close] team=${teamId} 关闭待支付订阅订单 ${closed} 笔`);
+    return closed;
   }
 
   /** 定时清扫：关闭 15min 未支付订单 */

@@ -11,6 +11,8 @@
  *   node deploy/oss-skills-acl-backfill.cjs --probe          # ① 探针：验证对象 private 是否真的 403
  *   node deploy/oss-skills-acl-backfill.cjs                  # ② 干跑：只统计 skills/ 对象数
  *   node deploy/oss-skills-acl-backfill.cjs --run            # ③ 实际刷存量对象 ACL
+ *   node deploy/oss-skills-acl-backfill.cjs --verify         # ④ 验收：抽样匿名 HEAD 必须全 403
+ *   node deploy/oss-skills-acl-backfill.cjs --verify --limit=50
  *   node deploy/oss-skills-acl-backfill.cjs --probe --cleanup-probe
  *
  * --run 对每个 skills/ 对象做两件事（顺序不可颠倒）：
@@ -33,7 +35,13 @@ const https = require('https');
 const path = require('path');
 
 const argv = process.argv.slice(2);
-const mode = argv.includes('--probe') ? 'probe' : argv.includes('--run') ? 'run' : 'dry';
+const mode = argv.includes('--probe')
+  ? 'probe'
+  : argv.includes('--verify')
+    ? 'verify'
+    : argv.includes('--run')
+      ? 'run'
+      : 'dry';
 const cleanupProbe = argv.includes('--cleanup-probe');
 
 try {
@@ -111,6 +119,45 @@ async function probe() {
   }
 }
 
+/**
+ * 验收：匿名 HEAD 抽样 skills/ 对象，必须全部 403。
+ * 走的是 publicHost（可能挂 CDN），因此同时能检出「源站已 private、_edge 还留着公开副本」。
+ * 任何非 403 都判失败并给出处置提示；退出码非 0 才能作为 checklist 的硬判据。
+ */
+async function verify() {
+  const limitArg = argv.find((a) => a.startsWith('--limit='));
+  const parsed = Number(limitArg && limitArg.split('=')[1]);
+  const limit = Math.max(1, Math.min(200, Number.isFinite(parsed) && parsed > 0 ? parsed : 20));
+  const res = await client.list({ prefix: 'skills/', 'max-keys': limit }, {});
+  const keys = (res.objects || [])
+    .map((o) => o && o.name)
+    .filter((k) => !!k && k.startsWith('skills/') && !k.includes('__acl_probe__'));
+  if (keys.length === 0) {
+    console.log('[verify] skills/ 下没有可验收对象（新站或尚未上传技能包）');
+    return;
+  }
+  let privateOk = 0;
+  let bad = 0;
+  for (const key of keys) {
+    const status = await anonymousHead(key);
+    if (status === 403) privateOk += 1;
+    else {
+      bad += 1;
+      console.error(`[verify-fail] https://${publicHost}/${key} → ${status}（期望 403）`);
+    }
+  }
+  console.log(`[verify] 抽样 ${keys.length} 个 skills/ 对象：403=${privateOk} 异常=${bad}`);
+  if (bad > 0) {
+    console.error(
+      '[verify] 存在仍可匿名读取的对象：① 确认 Bucket Policy 未放行匿名 GetObject；' +
+      '② 重跑 --run；③ 做 CDN / OSS 目录刷新 skills/；④ 再跑本命令。',
+    );
+    process.exitCode = 1;
+  } else {
+    console.log('[verify] 抽样对象均 403，ACL 生效。（仍须确认已执行 CDN 目录刷新 skills/）');
+  }
+}
+
 async function backfill() {
   let marker;
   let total = 0;
@@ -166,14 +213,20 @@ async function backfill() {
 
   console.log(`[${mode}] skills/ 对象总数=${total} ACL成功=${ok} ACL失败=${fail} 元数据失败=${metaFail}`);
   if (mode === 'run') {
-    if (metaFail > 0) console.warn('有对象元数据刷新失败，请补刷后再做 CDN 目录刷新。');
-    console.log('下一步（必须）：CDN / OSS 目录刷新 skills/，然后跑验收 curl（裸链 403、签名 URL 200、301s 后 403）。');
+    if (metaFail > 0) {
+      // fail-closed：元数据没刷成，CDN 上的公开缓存副本仍可能被匿名读取，
+      // 不能让 --run 以「ACL 成功」的假象退出 0，否则验收清单会误判上线完成。
+      console.error(`[run] ${metaFail} 个对象 Cache-Control 刷新失败，必须补刷后再做 CDN 目录刷新`);
+      process.exitCode = 1;
+    }
+    console.log('下一步（必须）：CDN / OSS 目录刷新 skills/ → 再跑 --verify（抽样匿名 HEAD 全 403）');
   }
   if (fail > 0) process.exitCode = 1;
 }
 
 (async () => {
   if (mode === 'probe') await probe();
+  else if (mode === 'verify') await verify();
   else await backfill();
 })().catch((e) => {
   console.error(e);
