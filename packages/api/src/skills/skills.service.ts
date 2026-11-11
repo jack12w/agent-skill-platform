@@ -363,15 +363,12 @@ export class SkillsService {
   }
 
   async createSkill(data: Partial<Skill>, userId: string) {
-    // Validate owner_team_id: must be null or a team the user belongs to
+    // Validate owner_team_id: must be null or a team the user can manage (OWNER/MAINTAINER).
+    // 0047 回归修复：订阅成功会自动入团（VIEWER），若只判「成员存在」，
+    // 订阅者也能以团队名义投稿，留下无人可管理的待审核孤儿技能。必须与 isSkillManager 同口径。
     const teamId: string | null = (data.owner_team_id as string) || null;
-    if (teamId) {
-      const membership = await this.teamMemberRepository.findOne({
-        where: { team_id: teamId, user_id: userId },
-      });
-      if (!membership) {
-        throw new ForbiddenException('You are not a member of that team');
-      }
+    if (teamId && !(await this.isTeamManager(teamId, userId))) {
+      throw new ForbiddenException('Only the team owner or a maintainer can publish skills to this team');
     }
 
     const name = (data.name || '').trim();
@@ -714,9 +711,14 @@ export class SkillsService {
       ? await this.getMembershipStatus(ownerType, ownerId, userId, core.hasPlan)
       : null;
 
-    const isTeamMember = skill.owner_team_id && userId
-      ? !!(await this.teamMemberRepository.findOne({ where: { team_id: skill.owner_team_id, user_id: userId } }))
-      : false;
+    // 0047 回归修复：订阅成功自动入团写入 VIEWER，此字段被前端用于「归属者/编辑」判定，
+    // 必须与 isSkillManager 同口径（OWNER/MAINTAINER），否则订阅者在详情页看到编辑按钮与审核横幅。
+    // VIEWER 的下载/订阅权益由 entitlement（订阅墙）与 membershipStatus 判定，与本字段无关。
+    const myMembership = skill.owner_team_id && userId
+      ? await this.teamMemberRepository.findOne({ where: { team_id: skill.owner_team_id, user_id: userId } })
+      : null;
+    const isTeamMember = !!myMembership
+      && (myMembership.role === MemberRole.OWNER || myMembership.role === MemberRole.MAINTAINER);
 
     // 0047 团队套餐状态：per-request 实时查，绝不进 getSkillCoreCached（10s 缓存会让停售/释放后 UI 串味）
     const teamPlan = skill.owner_team_id

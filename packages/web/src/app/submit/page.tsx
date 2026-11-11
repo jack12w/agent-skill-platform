@@ -129,7 +129,9 @@ export default function SubmitSkill() {
     if (!token) return;
     fetch('/api/teams/my', { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => res.ok ? res.json() : [])
-      .then((teams) => setMyTeams(Array.isArray(teams) ? teams : []))
+      // 0047 回归修复：订阅入团写入 VIEWER；投稿归属只能选自己可管理的团队（OWNER/MAINTAINER），
+      // 与后端 createSkill 归属校验同口径，避免订阅者留下待审核孤儿团队技能。
+      .then((teams) => setMyTeams((Array.isArray(teams) ? teams : []).filter((m: any) => m.role === 'owner' || m.role === 'maintainer')))
       .catch(() => {});
   }, []);
 

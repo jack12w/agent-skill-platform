@@ -479,8 +479,8 @@ export default function TeamSettings({ params }: { params: { id: string } }) {
             )}
           </div>
 
-          {/* 团队会员定价 */}
-          {team.is_owner && (
+          {/* 团队会员定价（0047：owner 与 maintainer 均可管理套餐，与后端 assertTeamPlanManager 同口径） */}
+          {canManage && (
             <div className="p-6 border rounded-xl bg-white">
               <h2 className="text-xl font-bold mb-1">{t('team.membershipTitle')}</h2>
               <p className="text-sm text-neutral-500 mb-2">{t('team.membershipHint')}</p>

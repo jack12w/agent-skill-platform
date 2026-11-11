@@ -57,11 +57,13 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
         // 与真实原因完全不符。失败必须显式报错，不做权限判定。
         if (!tRes.ok) throw new Error(`HTTP ${tRes.status}`);
         const myTeamsData = await tRes.json();
-        const isTeamMember = !!s.owner_team_id && myTeamsData.some((tm: any) => tm.team?.id === s.owner_team_id);
-        if (s.owner_user_id !== uid && !isTeamMember) { setError('You are not the owner of this skill.'); setSkill(s); return; }
+        // 0047 回归修复：订阅入团写入 VIEWER；编辑权限与后端 isSkillManager 同口径（OWNER/MAINTAINER），
+        // 订阅者（viewer）不得进入团队技能编辑页。
+        const isTeamManager = !!s.owner_team_id && myTeamsData.some((tm: any) => tm.team?.id === s.owner_team_id && (tm.role === 'owner' || tm.role === 'maintainer'));
+        if (s.owner_user_id !== uid && !isTeamManager) { setError('You are not the owner of this skill.'); setSkill(s); return; }
         setSkill(s); setForm({ name: s.name ?? '', content_md: s.content_md ?? '', tags: (s.tags ?? []).filter((t: string) => t !== '社区').join(', '), cover_url: s.cover_url ?? '', owner_team_id: s.owner_team_id ?? '' });
         if (vRes.ok) setVersions(await vRes.json());
-        setMyTeams(myTeamsData);
+        setMyTeams(myTeamsData.filter((tm: any) => tm.role === 'owner' || tm.role === 'maintainer'));
         // 载入现行定价（公开接口，失败不影响页面）
         try {
           const pResp = await fetch(`/api/pay/pricing/${s.id}`);

@@ -30,7 +30,9 @@ export default function HelpCenterPage() {
     fetch('/api/teams/my', { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        const teams = Array.isArray(data) ? data : [];
+        // 0047 回归修复：订阅入团写入 VIEWER；只有可管理的团队（OWNER/MAINTAINER）才引导到设置页，
+        // 纯订阅者（viewer）落回个人中心。
+        const teams = (Array.isArray(data) ? data : []).filter((m: any) => m.role === 'owner' || m.role === 'maintainer');
         if (teams.length === 1 && teams[0]?.team?.id) {
           setTeamHref(`/teams/${teams[0].team.id}/settings`);
         } else {
