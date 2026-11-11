@@ -298,9 +298,9 @@ export default function SkillDetail({ params }: { params: { slug: string } }) {
       ? t('detail.noVersionYet')
       : isTeamSkill && teamPlan?.unavailable
         ? t('detail.teamPlanUnavailable')
-        : isTeamSkill && teamPlan?.wallActive && !teamPlan?.subscribed
+        : isTeamSkill && teamPlan?.wallActive && !teamPlan?.subscribed && pricing?.pricing_mode === 'paid'
           ? t('detail.subscribeToDownload')
-          : isTeamSkill && (teamPlan?.released || !teamPlan?.wallActive)
+          : isTeamSkill
             ? t('detail.freeDownload')
             : `${t('detail.download')} ${defaultVersionLabel}`;
 

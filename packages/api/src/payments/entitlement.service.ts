@@ -38,14 +38,16 @@ export class EntitlementService {
   }
 
   /**
-   * 团队订阅墙（0047）—— 团队技能下载的唯一判定入口。
+   * 团队订阅墙（0047 · B 口径，2026-11-11 产品定案）—— 团队技能下载的唯一判定入口。
    *
-   * 规则（产品定案）：
+   * 规则：
    *   个人技能                      → 返回 false，完全交回原有逐技能定价逻辑（零影响）
    *   无套餐                        → 全免费（团队技能一律不单卖）
    *   已「立即释放」                → 全免费
    *   停售且已无任何有效订阅         → 自动全免费（最后一个订阅到期即开放）
-   *   有墙                          → admin / 团队 owner,maintainer / 有效付费订阅 /
+   *   有墙 + 技能免费/无定价         → 直接放行（B 口径：墙只管「设了价」的技能，
+   *                                   免费下载体验与旧版完全一致）
+   *   有墙 + 技能 paid              → admin / 团队 owner,maintainer / 有效付费订阅 /
    *                                   历史买断 放行；其余 402 TEAM_SUBSCRIPTION_REQUIRED
    *
    * 返回 true 表示本方法已完成判定（放行或抛错），调用方必须立即 return。
@@ -101,6 +103,11 @@ export class EntitlementService {
     if (plan.released_at) return true;                        // 团长立即释放 → 免费
     if (plan.enabled === false && !plan.any_active) return true;  // 停售且最后一个订阅已到期 → 自动免费
 
+    // 0047-B 口径：墙只管「设了价」的技能。免费/无定价的团队技能直接放行，
+    // 与旧版「免费技能任何人可下载」体验一致；此查询仅在墙生效时执行。
+    const pricing = await this.loadPricing(skill);
+    if (!pricing || pricing.pricing_mode === 'free') return true;
+
     if (isAdmin) return true;
     if (userId && plan.viewer_manager) return true;            // owner / maintainer 管理侧特权
     if (userId && plan.viewer_subscribed) return true;         // 唯一解锁依据：有效付费订阅
@@ -115,6 +122,27 @@ export class EntitlementService {
         yearly: Number(plan.yearly_cents) || 0,
       },
     });
+  }
+
+  /**
+   * 读取技能定价（含 fail-closed 降级）。团队墙与个人路径共用，各场景至多调用一次。
+   */
+  private async loadPricing(skill: Skill): Promise<SkillPricing | null> {
+    try {
+      return await this.pricingRepo.findOne({ where: { skill_id: skill.id } });
+    } catch (e: any) {
+      const msg = e?.message || '';
+      // 部署期安全：迁移 0010 尚未执行（skill_pricing 表不存在）时，按免费放行，
+      // 避免阻断原有的免费下载能力（与 pricing GET 接口的降级保持一致）。
+      if (/skill_pricing/i.test(msg) && /does not exist/i.test(msg)) {
+        this.logger.warn(`定价表不存在，按免费放行 skill=${skill.id}: ${msg}`);
+        return null;
+      }
+      // 运行时数据库异常：绝不能放行付费内容。改为 fail-closed 让调用方重试，
+      // 避免 DB 抖动期间付费技能被白嫖（原实现为 fail-open，等于任意付费技能可免费下载）。
+      this.logger.error(`定价查询失败，fail-closed 拒绝下载 skill=${skill.id}: ${msg}`);
+      throw new InternalServerErrorException('资源暂不可用，请稍后重试');
+    }
   }
 
   /**
@@ -168,25 +196,11 @@ export class EntitlementService {
   }
 
   async assertCanDownload(skill: Skill, userId?: string, isAdmin = false): Promise<void> {
-    // 0047 团队订阅墙：团队技能完全由订阅墙判定，不再读 skill_pricing / member_included。
+    // 0047-B 团队订阅墙：paid 团队技能走订阅墙；免费/无定价直接放行；
+    // 无套餐/释放/停售无订阅全放行。命中即 return，不进下面的个人路径。
     if (await this.assertTeamSkillAccess(skill, userId, isAdmin)) return;
 
-    let pricing: SkillPricing | null = null;
-    try {
-      pricing = await this.pricingRepo.findOne({ where: { skill_id: skill.id } });
-    } catch (e: any) {
-      const msg = e?.message || '';
-      // 部署期安全：迁移 0010 尚未执行（skill_pricing 表不存在）时，按免费放行，
-      // 避免阻断原有的免费下载能力（与 pricing GET 接口的降级保持一致）。
-      if (/skill_pricing/i.test(msg) && /does not exist/i.test(msg)) {
-        this.logger.warn(`定价表不存在，按免费放行 skill=${skill.id}: ${msg}`);
-        return;
-      }
-      // 运行时数据库异常：绝不能放行付费内容。改为 fail-closed 让调用方重试，
-      // 避免 DB 抖动期间付费技能被白嫖（原实现为 fail-open，等于任意付费技能可免费下载）。
-      this.logger.error(`定价查询失败，fail-closed 拒绝下载 skill=${skill.id}: ${msg}`);
-      throw new InternalServerErrorException('资源暂不可用，请稍后重试');
-    }
+    const pricing = await this.loadPricing(skill);
 
     // 1. 免费 / 无定价
     if (!pricing || pricing.pricing_mode === 'free') {

@@ -114,27 +114,24 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
       const payload = { name: form.name.trim(), content_md: form.content_md, cover_url: form.cover_url, tags, owner_team_id: form.owner_team_id || null };
       const res = await fetch(`/api/skills/${skill.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(payload) });
       if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.message || `HTTP ${res.status}`); }
-      // 0047：团队技能的下载权由团队订阅套餐控制，后端 PUT 定价一律 400。
-      // 若照旧发起，团长每次编辑团队技能都会弹「定价保存失败」，误以为技能信息也没保存成功。
-      // 判断依据是「保存后的归属」：本次把技能从团队转成个人时，仍要正常写定价。
-      if (!payload.owner_team_id) {
-        // 保存定价（与技能信息一起提交，失败仅告警不阻断）
-        try {
-          const pr = await fetch(`/api/pay/pricing/${skill.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({
-              pricing_mode: pricing.pricing_mode,
-              price_cents: Math.max(0, Math.round((Number(pricing.price_cents) || 0) * 100)),
-              commercial_price_cents: Math.max(0, Math.round((Number(pricing.commercial_price_cents) || 0) * 100)),
-            }),
-          });
-          if (!pr.ok) {
-            const e = await pr.json().catch(() => ({}));
-            alert(t('edit.pricingSaveFailed') + ': ' + (e.message || `HTTP ${pr.status}`));
-          }
-        } catch (e: any) { console.warn('pricing save error:', e?.message); }
-      }
+      // 0047-B：团队技能同样保存定价——免费/付费决定是否纳入团队订阅墙；
+      // 价格金额不用于单卖（单卖禁令在订单层）。个人归属照旧。
+      // 保存定价（与技能信息一起提交，失败仅告警不阻断）
+      try {
+        const pr = await fetch(`/api/pay/pricing/${skill.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            pricing_mode: pricing.pricing_mode,
+            price_cents: Math.max(0, Math.round((Number(pricing.price_cents) || 0) * 100)),
+            commercial_price_cents: Math.max(0, Math.round((Number(pricing.commercial_price_cents) || 0) * 100)),
+          }),
+        });
+        if (!pr.ok) {
+          const e = await pr.json().catch(() => ({}));
+          alert(t('edit.pricingSaveFailed') + ': ' + (e.message || `HTTP ${pr.status}`));
+        }
+      } catch (e: any) { console.warn('pricing save error:', e?.message); }
       router.push(`/skills/${skill.slug || skill.id}`);
     } catch (err: any) { alert(t('edit.saveFailed') + ': ' + err.message); }
     finally { setSaving(false); }
@@ -203,11 +200,10 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
       {/* ── 付费设置 ── */}
       <div className="mb-10 p-5 sm:p-6 border rounded-xl bg-white">
         <h2 className="text-xl font-bold mb-1">{t('edit.pricingTitle')}</h2>
-        {form.owner_team_id ? (
-          /* 0047：团队技能不单卖，定价表单整体隐藏，避免「设置了价格却不生效」 */
-          <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">{t('edit.pricingTeamHint')}</p>
-        ) : (
-          <>
+        {form.owner_team_id && (
+          /* 0047-B：团队技能不单卖——免费=所有人可下载；付费=纳入团队订阅墙（须订阅后下载） */
+          <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 mb-4">{t('edit.pricingTeamHint')}</p>
+        )}
         <p className="text-xs text-neutral-500 mb-4">{t('edit.pricingDesc')}</p>
 
         {/* 收费模式 */}
@@ -265,8 +261,6 @@ export default function EditSkill({ params }: { params: { slug: string } }) {
           </div>
         ) : (
           <p className="text-xs text-neutral-500">{t('edit.modeFreeNote')}</p>
-        )}
-          </>
         )}
       </div>
 

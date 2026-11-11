@@ -247,9 +247,7 @@ export default function SubmitSkill() {
         const uploadData = new FormData(); uploadData.append('file', file);
         const uploadRes = await fetch(`/api/skills/${skill.id}/versions`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: uploadData });
         if (!uploadRes.ok) { const body = await uploadRes.json().catch(() => ({})); throw new Error(body.message || `HTTP ${uploadRes.status}`); }
-        // 0047：团队技能不单卖，后端 PUT 定价会 400。按最终归属跳过，
-        // 避免发布流程里产生一次必然失败（且用户看不见）的定价写入。
-        if (!formData.owner_team_id) {
+        // 0047-B：团队技能同样保存定价（免费/付费=是否纳入订阅墙），个人归属照旧
         // 保存付费设置（失败仅告警，不阻断发布）
         try {
           const pr = await fetch(`/api/pay/pricing/${skill.id}`, {
@@ -263,7 +261,6 @@ export default function SubmitSkill() {
           });
           if (!pr.ok) { const e = await pr.json().catch(() => ({})); console.warn('pricing save failed:', e.message || pr.status); }
         } catch (pe: any) { console.warn('pricing save error:', pe?.message); }
-        }
         router.push('/dashboard');
       } catch (uploadErr: any) {
         // 回滚：删除已创建但无版本的技能，保证整体失败不留残留数据
@@ -420,11 +417,10 @@ export default function SubmitSkill() {
         {/* ── 付费设置 ── */}
         <div className="p-5 sm:p-6 border rounded-xl bg-white">
           <h2 className="text-xl font-bold mb-1">{t('edit.pricingTitle')}</h2>
-          {formData.owner_team_id ? (
-            /* 0047：团队技能不单卖，定价表单整体隐藏，避免「设置了价格却不生效」 */
-            <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">{t('edit.pricingTeamHint')}</p>
-          ) : (
-            <>
+          {formData.owner_team_id && (
+            /* 0047-B：团队技能不单卖——免费=所有人可下载；付费=纳入团队订阅墙（须订阅后下载） */
+            <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 mb-4">{t('edit.pricingTeamHint')}</p>
+          )}
           <p className="text-xs text-neutral-500 mb-4">{t('edit.pricingDesc')}</p>
 
           {/* 收费模式 */}
@@ -484,8 +480,6 @@ export default function SubmitSkill() {
             </div>
           ) : (
             <p className="text-xs text-neutral-500">{t('edit.modeFreeNote')}</p>
-          )}
-            </>
           )}
         </div>
 

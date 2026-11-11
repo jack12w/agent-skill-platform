@@ -60,14 +60,9 @@ export class PricingController {
       currency: 'CNY',
     };
     try {
-      // 0047：团队技能一律不单卖，公开定价接口对它直接返回免费，
-      // 不让历史 paid 定价行泄漏成一个「看得见买不了」的价格。
-      const skill = await this.skillRepo.findOne({
-        where: { id: skillId },
-        select: ['id', 'owner_team_id'],
-      });
+      // 0047-B：团队技能定价如实返回——它决定「免费直接下载」还是「纳入订阅墙」，
+      // 不再用于单卖（单卖禁令在 orders 层）。历史强制 free 会让前端把 paid 技能误标成免费。
       const membership = await this.settings.getMembershipPrices();
-      if (skill?.owner_team_id) return { pricing: free, membership };
       const pricing = await this.pricingRepo.findOne({ where: { skill_id: skillId } });
       return { pricing: pricing || free, membership };
     } catch {
@@ -159,11 +154,9 @@ export class PricingController {
     const skill = await this.skillRepo.findOne({ where: { id: skillId } });
     if (!skill) throw new NotFoundException('Skill not found');
 
-    // 0047：团队技能一律不单卖，禁止设置任何定价（避免出现「看得见买不了」的价格）。
-    // 历史 skill_pricing 行原样保留、判定层完全不读；技能转个人归属时自动恢复生效。
-    if (skill.owner_team_id) {
-      throw new BadRequestException('团队技能不支持单独定价或售卖，下载权由团队订阅套餐控制');
-    }
+    // 0047-B：团队技能允许写定价——免费/付费决定技能是否纳入团队订阅墙
+    // （免费=所有人可直接下载；付费=须订阅团队）。价格金额本身不再用于单卖，
+    // 单卖禁令由 orders.service 对团队技能返回 400 把守。
 
     const isAdmin = req.user?.role === 'admin';
     const uid = req.user.sub;

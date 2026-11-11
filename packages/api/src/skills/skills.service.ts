@@ -656,11 +656,9 @@ export class SkillsService {
     const ownerType = skill.owner_team_id ? 'team' : 'user';
     const ownerId = skill.owner_team_id || skill.owner_user_id;
     const hasPlan = await this.hasCreatorPlan(ownerType, ownerId);
-    // 0047：团队技能一律不单卖，详情聚合直接给免费定价（复用已查到的 skill，零额外查询），
-    // 避免历史 paid 行在页面上留成一个「看得见买不了」的价格。
-    const pricing = skill.owner_team_id
-      ? { pricing_mode: 'free', price_cents: 0, member_included: false, commercial_price_cents: 0, currency: 'CNY' }
-      : await this.getPricingObject(idOrSlug);
+    // 0047-B：团队技能定价如实返回——免费=直接下载；paid=纳入订阅墙（不显示 ¥ 单价，
+    // 前端按 teamPlan 显示「订阅后可下载」）。单卖禁令在 orders 层，详情页不再伪装成免费。
+    const pricing = await this.getPricingObject(idOrSlug);
 
     const value = { skill, versions, pricing, hasPlan };
     this.coreCache.set(idOrSlug, { value, exp: now + 10_000 });

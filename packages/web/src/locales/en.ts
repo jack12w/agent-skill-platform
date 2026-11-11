@@ -131,7 +131,7 @@ const en = {
     // ── Pricing ──
     pricingTitle: 'Pricing',
     pricingDesc: 'Set how your skill is charged. Free skills are downloadable by anyone; paid skills require a one-time purchase, or are free for your members. Changes apply immediately after saving.',
-    pricingTeamHint: 'This skill belongs to a team. Download access is controlled by the team subscription plan; individual pricing is not available.',
+    pricingTeamHint: 'This skill belongs to a team and cannot be sold separately: Free = downloadable by anyone; Paid = requires a team subscription (the price itself is not charged per skill).',
     modeFree: 'Free',
     modeFreeDesc: 'Anyone can download for free',
     modePaid: 'Paid Download',
