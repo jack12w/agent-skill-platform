@@ -24,6 +24,11 @@ interface Props {
   options?: CheckoutOption[];
   /** 打开时默认选中的商品 id；不传或不在 options 里则用 pluginId */
   defaultOptionId?: string;
+  /**
+   * true = 没有可信的默认档位时**不静默兜底**，强制用户手动选一档。
+   * 授权页续费用：历史档位解析不到就兜到 ¥49/月主插件会让年付用户按月付下单。
+   */
+  requireChoice?: boolean;
   onClose: () => void;
   /** 支付成功回调 */
   onPaid: () => void;
@@ -47,6 +52,7 @@ export default function PluginCheckoutModal({
   listCents,
   options,
   defaultOptionId,
+  requireChoice,
   onClose,
   onPaid,
 }: Props) {
@@ -58,11 +64,22 @@ export default function PluginCheckoutModal({
   const [selectedId, setSelectedId] = useState<string>(
     opts && defaultOptionId && opts.some((o) => o.id === defaultOptionId)
       ? defaultOptionId
-      : pluginId,
+      : opts && requireChoice
+        ? ''
+        : pluginId,
   );
-  const sel =
+  /**
+   * requireChoice 且未选档时为 null：金额显示「—」，支付按钮禁用，不允许下空单。
+   * ⚠️ 其余情况必须保留原来的 opts[0] 兜底 —— 市场页/账号页共用本弹窗，
+   *    选中 id 不在 options 里时静默禁用支付就是回归（2026-11-14 复核修正）。
+   */
+  const sel: CheckoutOption | null =
     opts?.find((o) => o.id === selectedId) ??
-    opts?.[0] ?? { id: pluginId, name: pluginName, priceCents, listCents };
+    (opts
+      ? requireChoice && !selectedId
+        ? null
+        : opts[0]
+      : { id: pluginId, name: pluginName ?? '', priceCents, listCents });
 
   const [creating, setCreating] = useState(false);
   const [orderNo, setOrderNo] = useState<string | null>(null);
@@ -120,6 +137,8 @@ export default function PluginCheckoutModal({
   );
 
   const createOrder = async () => {
+    // 未选档（requireChoice）时不允许下单：sel 为 null 会拿到空 pluginId
+    if (!sel) return;
     setErr(null);
     setCreating(true);
     try {
@@ -164,7 +183,7 @@ export default function PluginCheckoutModal({
     setErr(null);
   };
 
-  const amount = sel.priceCents || 0;
+  const amount = sel?.priceCents || 0;
   const mmss = `${String(Math.floor(left / 60)).padStart(2, '0')}:${String(left % 60).padStart(2, '0')}`;
 
   return (
@@ -190,13 +209,18 @@ export default function PluginCheckoutModal({
               {opts ? (
                 <select
                   className="w-full px-3 py-2 text-sm font-medium text-neutral-900 border border-neutral-200 rounded-lg bg-white focus:outline-none focus:border-brand-400"
-                  value={sel.id}
+                  value={sel?.id ?? ''}
                   onChange={(e) => {
                     // 切档即作废未支付订单（二维码/倒计时都对应旧 pluginId）
                     setSelectedId(e.target.value);
                     resetOrder();
                   }}
                 >
+                  {requireChoice && (
+                    <option value="" disabled>
+                      {t('pay.chooseTier')}
+                    </option>
+                  )}
                   {opts.map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.name}
@@ -204,17 +228,19 @@ export default function PluginCheckoutModal({
                   ))}
                 </select>
               ) : (
-                <div className="font-medium truncate">{sel.name || t('plugins.title')}</div>
+                <div className="font-medium truncate">{sel?.name || t('plugins.title')}</div>
               )}
             </div>
 
             <div className="flex items-baseline justify-between mb-4">
               <span className="text-sm text-neutral-500">{t('pay.amount')}</span>
               <span className="flex items-baseline gap-2">
-                {!!sel.listCents && sel.listCents > amount && (
+                {!!sel?.listCents && sel.listCents > amount && (
                   <span className="text-sm text-neutral-400 line-through">¥{yuan(sel.listCents)}</span>
                 )}
-                <span className="text-2xl font-bold text-brand-700">¥{yuan(amount)}</span>
+                <span className="text-2xl font-bold text-brand-700">
+                  {sel ? `¥${yuan(amount)}` : '—'}
+                </span>
               </span>
             </div>
 
@@ -245,7 +271,7 @@ export default function PluginCheckoutModal({
             ) : (
               <button
                 onClick={createOrder}
-                disabled={creating || !amount}
+                disabled={creating || !amount || !sel}
                 className="w-full py-3 rounded-xl bg-brand-600 text-white font-medium hover:bg-brand-700 disabled:opacity-50"
               >
                 {creating ? t('pay.creating') : t('pay.payNow')}

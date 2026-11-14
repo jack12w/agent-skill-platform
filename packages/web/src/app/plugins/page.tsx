@@ -332,7 +332,13 @@ export default function PluginsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [plugins],
   );
-  const defaultOptionId = plugins.find((p) => p.slug === 'alibaba-toolkit-b2b')?.id;
+  /**
+   * 收银台默认档位：Pro 标准版（alibaba-toolkit-year，¥499/年）。
+   * 该档下架/改名时退回原 Team 专业版，避免下拉没有有效默认项。
+   */
+  const defaultOptionId =
+    plugins.find((p) => p.slug === 'alibaba-toolkit-year')?.id ??
+    plugins.find((p) => p.slug === 'alibaba-toolkit-b2b')?.id;
 
   /* Hero / 结尾 CTA 的主角插件：优先取已订阅的那一个，否则取第一款。
      没有上架插件时 primary 为 null，所有 CTA 自动隐藏（不再渲染空按钮）。 */

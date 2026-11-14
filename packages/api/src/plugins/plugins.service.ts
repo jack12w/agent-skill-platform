@@ -20,6 +20,7 @@ import {
   resolveEntitlementParent,
 } from '../payments/orders.service';
 import { OssService } from '../storage/oss.service';
+import { effectivePluginPrice, listPriceCents } from './plugin-pricing.util';
 
 /**
  * 公开接口（未登录可访问）允许看到的插件字段。
@@ -185,6 +186,96 @@ export class PluginsService {
       out[p.id] = { used: u, limit, exhausted: u >= limit };
     }
     return out;
+  }
+
+  /**
+   * 授权页「订阅失效」时就地展示的可购买档位。
+   *
+   * 为什么价格必须在服务端算：下单金额走 effectivePluginPrice()，展示价也必须用同一个
+   * 纯函数；前端再抄一遍促销规则就会出现「弹窗 ¥9.9、实付 ¥39.9」。
+   *
+   * 与 createOrder 的插件下单门禁逐条对齐，过滤掉「选了也一定下单失败」的档位：
+   *   · status='active'（list() 已保证）
+   *   · 限购已用尽（purchaseLimits().exhausted）
+   *   · renew_allowed=false 且该插件族已有任何订阅行（试用 / 一次性权益）
+   *
+   * defaultId 只按历史订阅行的 plan_slug 精确匹配；解析不到返回 null，由前端要求用户
+   * 手动选档 —— 绝不兜底到主插件月付档，否则年付用户会被静默按月付下单。
+   */
+  async purchasableTiers(
+    userId: string,
+    pluginSlug: string,
+    historicalPlanSlugs: string[] = [],
+  ): Promise<{
+    options: Array<{
+      id: string;
+      name: string;
+      priceCents: number;
+      listCents: number;
+      durationDays: number;
+    }>;
+    defaultId: string | null;
+  }> {
+    const anchor = await this.getBySlug(String(pluginSlug || '').trim());
+    if (!anchor) return { options: [], defaultId: null };
+
+    // 归一到插件族主行：设备与权益都按 root 归集（与 resolveDevicePluginId 同源）。
+    const rootId = anchor.parent_plugin_id ?? anchor.id;
+    const mainSlug = anchor.parent_plugin_id
+      ? (await this.pluginRepo.findOne({ where: { id: rootId } }))?.slug ?? ''
+      : anchor.slug;
+
+    const all = await this.list();
+    const family = all.filter(
+      (p) =>
+        p.id === rootId ||
+        p.parent_plugin_id === rootId ||
+        (!!mainSlug && String(p.slug || '').startsWith(`${mainSlug}-`)),
+    );
+
+    const limits = await this.purchaseLimits(userId);
+    const hadAnySub = await this.subRepo.count({
+      where: { user_id: userId, root_plugin_id: rootId },
+    });
+
+    const options = family
+      .filter((p) => !limits[p.id]?.exhausted)
+      .filter((p) => !(p.renew_allowed === false && hadAnySub > 0))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        priceCents: effectivePluginPrice(p),
+        listCents: listPriceCents(p),
+        durationDays: Number(p.subscription_duration_days) || 30,
+      }))
+      .filter((o) => o.priceCents > 0);
+
+    // 授权页 options 已按「在期优先 → 到期最晚」排序，第一个能匹配上架商品的即原档位。
+    // 能识别原档位时必须用原档位：年付/团队档用户不该被静默换成别的档。
+    let defaultId: string | null = null;
+    for (const slug of historicalPlanSlugs) {
+      const hit = family.find(
+        (p) => p.slug === slug && options.some((o) => o.id === p.id),
+      );
+      if (hit) {
+        defaultId = hit.id;
+        break;
+      }
+    }
+    /**
+     * 识别不到历史档位（从未订阅 / 商品已改名）→ 默认 Pro 标准版。
+     * 与市场页收银台的默认口径一致；绝不兜底到主插件 ¥49/月档。
+     * 连 Pro 标准版都不可购买时返回 null，前端强制用户手动选档（requireChoice）。
+     */
+    if (!defaultId) {
+      const pro = family.find(
+        (p) =>
+          p.slug === 'alibaba-toolkit-year' &&
+          options.some((o) => o.id === p.id),
+      );
+      defaultId = pro?.id ?? null;
+    }
+    return { options, defaultId };
   }
 
   /** 订阅下单（包月，微信 Native） */

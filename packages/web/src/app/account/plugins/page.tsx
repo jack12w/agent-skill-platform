@@ -17,6 +17,8 @@ interface Plugin {
   renew_allowed?: boolean;
   /** 0041：商品类型，仅用于文案判断（trial 到期后要引导去市场重新选购） */
   kind?: 'standard' | 'tier' | 'trial';
+  /** 0041：档位商品归属的主插件 id；仅用于「无订阅行」时定位设备所在插件族 */
+  parent_plugin_id?: string | null;
 }
 
 interface MySub {
@@ -152,6 +154,8 @@ export default function MyPluginsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [payInfo, setPayInfo] = useState<{ id: string; name?: string; price: number } | null>(null);
+  /** 无订阅行时仍要能解绑：记下插件族主行 id，设备数据直接复用 deviceData */
+  const [orphanPluginIds, setOrphanPluginIds] = useState<string[]>([]);
 
   // 子 TAB：我的插件订阅 | 密钥管理（T302：AI 取数密钥，AiKeysPanel 自包含）
   const [view, setView] = useState<'subs' | 'keys'>('subs');
@@ -180,19 +184,21 @@ export default function MyPluginsPage() {
         apiFetch('/api/plugins'),
       ]);
       // 失败时保留旧数据，绝不用空数组覆盖（否则一次抖动会把列表清空）
+      let mine: MySub[] = [];
       if (mineRes.ok) {
-        const mine: MySub[] = await mineRes.json();
+        mine = await mineRes.json();
         setSubs(mine);
         setError(null);
         /* 2026-09-27 预取设备数：设备数据以前是「展开面板才拉」，于是收起状态下
          * 「已授权 N/M 台设备」只能显示兜底值 `?? 0` / `?? 2` —— 用户看到「0/2」，
          * 点开却变成真实的「1/1」，第一反应是「数字不对/有 bug」。
-         * 这里对所有**权益仍有效**的订阅各拉一次（只读接口），让收起时也是真值；
-         * 失效订阅那块面板本来就不渲染，不请求。
+         * 这里对所有订阅各拉一次（只读接口），让收起时也是真值。
+         * 2026-11-14：设备面板改为**任何订阅状态都渲染**（失效卡也要能解绑），
+         * 预取不再只挑有效订阅，否则失效卡收起态会显示兜底数字。
          * 2026-10-12 质检：按 plugin_id 去重 —— 同一用户可同时持有个人行+团队行
          * （0035），两条行的 plugin_id 相同，旧实现会对同一插件并发打两次 /devices。
          * （indexOf 去重而非 Set 展开：tsconfig target 低于 es2015。） */
-        const preloadIds = mine.filter((s) => isEntitled(s)).map((s) => s.plugin_id);
+        const preloadIds = mine.map((s) => s.plugin_id);
         preloadDevices(preloadIds.filter((id, i) => preloadIds.indexOf(id) === i));
       } else {
         setError(t('plugins.loadFailed'));
@@ -202,6 +208,18 @@ export default function MyPluginsPage() {
         const map: Record<string, Plugin> = {};
         for (const p of list) map[p.id] = p;
         setPlugins(map);
+        /**
+         * 「任何状态都能解绑」的最后一环：连订阅行都没有时，页面原本只显示
+         * 「暂无数据」，设备彻底没有入口。按插件族主行拉一次设备列表，
+         * 数据仍落在 deviceData —— 解绑后 revokeDevice 的 loadDevices 会自然刷新。
+         */
+        if (!mine.length) {
+          const rootIds = list.filter((p) => !p.parent_plugin_id).map((p) => p.id);
+          setOrphanPluginIds(rootIds);
+          void preloadDevices(rootIds.filter((id, i) => rootIds.indexOf(id) === i));
+        } else {
+          setOrphanPluginIds([]);
+        }
       }
     } catch {
       setError(t('plugins.loadFailed'));
@@ -414,9 +432,12 @@ export default function MyPluginsPage() {
    *
    * 0046 已把所有存量设备回填了归属（生产实测未归属 0 台），但代码必须兜住漏网数据：
    * 一张卡只显示「本卡设备」之后，无归属的设备会**谁都看不到、也解绑不了**，
-   * 白占一个名额。统一挂到第一张有效卡上（只挂一次，不会在多张卡里重复出现）。
+   * 白占一个名额。统一挂到第一张卡上（只挂一次，不会在多张卡里重复出现）。
+   *
+   * 2026-11-14：不再挑「第一张有效卡」—— 全过期时没有有效卡，无归属设备会挂到
+   * 一张用户看不见的卡上；设备面板改为无条件渲染后，挂第一张卡即可一直可见可解绑。
    */
-  const fallbackSubId = subs.find((x) => isEntitled(x))?.id ?? subs[0]?.id;
+  const fallbackSubId = subs[0]?.id;
 
   /**
    * 账号里是否还有**有效的团队档**（可授权账号数 > 1）。
@@ -509,11 +530,48 @@ export default function MyPluginsPage() {
       ) : loading ? (
         <div className="py-10 text-center text-sm text-neutral-400">{t('plugins.loading')}</div>
       ) : subs.length === 0 ? (
-        <div className="py-10 text-center text-sm text-neutral-400">
-          {t('home.noData')} ·{' '}
-          <Link href="/plugins" className="text-brand-600 hover:underline">
-            {t('plugins.goMarket')}
-          </Link>
+        <div className="space-y-3">
+          <div className="py-10 text-center text-sm text-neutral-400">
+            {t('home.noData')} ·{' '}
+            <Link href="/plugins" className="text-brand-600 hover:underline">
+              {t('plugins.goMarket')}
+            </Link>
+          </div>
+          {/* 无订阅行也保留解绑入口：数据来自 deviceData，解绑后由 loadDevices 自动刷新 */}
+          {orphanPluginIds.map((pid) => {
+            const rows = deviceData[pid]?.devices ?? [];
+            if (!rows.length) return null;
+            return (
+              <div key={pid} className="bg-white border border-neutral-200 rounded-xl p-4">
+                <div className="font-semibold text-sm text-neutral-900">
+                  {t('plugins.orphanDevicesTitle')}
+                </div>
+                <p className="mt-1 text-[11px] leading-relaxed text-neutral-500">
+                  {t('plugins.orphanDevicesHint')}
+                </p>
+                <ul className="mt-3 space-y-2">
+                  {rows.map((d) => {
+                    const busyKey = `orphan:${pid}:${d.device_id}`;
+                    return (
+                      <li key={d.device_id} className="flex items-center justify-between gap-3">
+                        <div className="min-w-0 text-xs text-neutral-700 truncate">
+                          {d.device_name || t('plugins.unknownDevice')}
+                          {d.platform ? ` · ${d.platform}` : ''}
+                        </div>
+                        <button
+                          onClick={() => revokeDevice(`orphan:${pid}`, pid, d.device_id)}
+                          disabled={deviceBusy === busyKey}
+                          className="shrink-0 text-[11px] text-red-600 border border-red-200 rounded-md px-2 py-1 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {deviceBusy === busyKey ? t('plugins.revoking') : t('plugins.revoke')}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="space-y-3">
@@ -625,29 +683,38 @@ export default function MyPluginsPage() {
                   </p>
                 )}
 
-                {valid && (
+                {/* 2026-11-14：设备面板不再受订阅有效性限制，任何状态都能解绑设备 */}
+                {
                   <div className="mt-3 rounded-lg bg-neutral-50 border border-neutral-100 p-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="text-xs text-neutral-600">
-                          {/* 团队行：显示席位占用（团队成员），不显示设备数 —— 团队版买的是账号数。
-                              个人行：显示**本卡**的设备授权数（一卡一台，不再是插件族总量）。 */}
-                          {isTeamSeat
-                            ? t('plugins.teamSeatsUsed', { n: members, max: seats })
-                            : dd
-                              ? t('plugins.devicesUsed', { n: devUsed, max: devQuota })
-                              : t('plugins.devicesUsedLoading')}
+                          {/* 失效卡不显示「N/M 台」：过期档额度为 0 会渲染成「1/0」这种矛盾数字，
+                              改成「已绑定 N 台（仍可解绑）」。有效卡逻辑一字不动。 */}
+                          {!valid
+                            ? dd
+                              ? t('plugins.devicesBoundExpired', { n: myDevices.length })
+                              : t('plugins.devicesUsedLoading')
+                            : isTeamSeat
+                              ? t('plugins.teamSeatsUsed', { n: members, max: seats })
+                              : dd
+                                ? t('plugins.devicesUsed', { n: devUsed, max: devQuota })
+                                : t('plugins.devicesUsedLoading')}
                         </div>
                         {/* 团队卡的第二行：团队版**同样**享受一卡一台的绑定权，
                             只是额度按人算（每个成员各占自己那 1 台），与 seats 是两个维度。 */}
-                        {isTeamSeat && dd && (
+                        {valid && isTeamSeat && dd && (
                           <div className="text-xs text-neutral-500 mt-0.5">
                             {t('plugins.teamDeviceUsed', { n: devUsed, max: devQuota })}
                           </div>
                         )}
                         {!open && (
                           <p className="mt-1 text-[11px] leading-relaxed text-neutral-400">
-                            {isTeamSeat ? t('plugins.teamSeatsHint') : t('plugins.activateHint')}
+                            {!valid
+                              ? t('plugins.expiredDevicesHint')
+                              : isTeamSeat
+                                ? t('plugins.teamSeatsHint')
+                                : t('plugins.activateHint')}
                           </p>
                         )}
                       </div>
@@ -798,7 +865,7 @@ export default function MyPluginsPage() {
                       </div>
                     )}
                   </div>
-                )}
+                }
 
                 <div className="mt-3 flex items-center justify-end gap-2">
                   {/* 0035 补漏：团长在订阅卡上直达团队管理页（邀请/移除成员、改团名）。

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import useTranslation from '../../hooks/useTranslation';
+import PluginCheckoutModal from '../components/PluginCheckoutModal';
 
 /** 可授权的订阅档位（0046，一档一台） */
 interface TierOption {
@@ -23,6 +24,15 @@ interface TierOption {
   recommended: boolean;
 }
 
+/** 订阅失效时可就地购买的档位（后端 purchasableTiers 返回，价格与下单同源） */
+interface PurchaseOption {
+  id: string;
+  name: string;
+  priceCents: number;
+  listCents: number;
+  durationDays: number;
+}
+
 interface PendingResp {
   status: 'pending' | 'approved' | 'denied' | 'expired';
   deny_reason?: string;
@@ -39,6 +49,12 @@ interface PendingResp {
   max_devices: number;
   /** 可选的订阅档位（新增）；空数组/缺省 = 老后端，退化为不显示下拉 */
   options?: TierOption[];
+  /** 仅「待授权 + 未订阅」时返回：就地付费的可选档位 */
+  purchase_options?: PurchaseOption[];
+  /** 由历史订阅 plan_slug 精确解析出的默认档位；null = 解析不到，强制手动选 */
+  purchase_default_id?: string | null;
+  /** 档位查询异常：不等于免费、不等于失效，展示「不可用 + 重试」 */
+  purchase_unavailable?: boolean;
 }
 
 /** 8 位授权码按 4+4 展示，便于与插件端逐位比对 */
@@ -125,6 +141,11 @@ export default function PluginAuthPage() {
   const [result, setResult] = useState<ApproveResp | null>(null);
   /** 用户选中的订阅档位（0046，一档一台）。默认由后端 recommended 指定 */
   const [selectedSub, setSelectedSub] = useState<string>('');
+  /** 就地付费弹窗 */
+  const [payOpen, setPayOpen] = useState(false);
+  /** 付款成功后的权益同步：成功 / 失败 / 进行中三态分开 */
+  const [syncing, setSyncing] = useState(false);
+  const [syncFailed, setSyncFailed] = useState(false);
 
   useEffect(() => {
     try {
@@ -137,23 +158,23 @@ export default function PluginAuthPage() {
     setReady(true);
   }, []);
 
-  const loadPending = useCallback(async () => {
+  const loadPending = useCallback(async (): Promise<PendingResp | null> => {
     if (!code) {
       setError(t('plugins.authNoCode'));
-      return;
+      return null;
     }
     try {
       /* ⚠️ `cache: 'no-store'` 必须加。本页顶部的「已授权 N/M 台设备」要反映用户
-       * 刚刚在「我的订阅」里做的解绑，而响应没有 Cache-Control 时浏览器会按启发式
-       * 规则复用旧快照 —— 于是「解绑成功 → 打开授权页仍显示已用满」，
-       * 用户完全无法自证（2026-09-27 生产现场：库里 revoked_at 已写入，页面却是旧值）。 */
+       * 刚刚在「我的订阅」里做的解绑，也反映刚刚付款后新写入的订阅 ——
+       * 响应没有 Cache-Control 时浏览器会按启发式规则复用旧快照，
+       * 于是「解绑/续费成功 → 打开授权页仍显示旧值」。 */
       const res = await fetch(
         `/api/plugins/auth/pending?code=${encodeURIComponent(code)}`,
         { headers: authHeaders(), cache: 'no-store' },
       );
       if (!res.ok) {
         setError(t('plugins.authNotFound'));
-        return;
+        return null;
       }
       setError(null);
       const data: PendingResp = await res.json();
@@ -165,15 +186,39 @@ export default function PluginAuthPage() {
       const opts = Array.isArray(data?.options) ? data.options : [];
       const def = opts.find((o) => o.recommended) ?? opts[0];
       setSelectedSub(def ? def.subscription_id : '');
+      return data;
     } catch {
       setError(t('plugins.loadFailed'));
+      return null;
     }
   }, [code, t]);
 
   useEffect(() => {
-    if (ready && loggedIn && code) loadPending();
+    if (ready && loggedIn && code) void loadPending();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, loggedIn, code]);
+
+  /**
+   * 支付成功 ≠ 发货完成：轮询到 PAID 时支付回调可能还没写完订阅行。
+   * 带重试重拉 pending，直到 subscribed=true，按钮自动变成「确认授权」，全程不跳页。
+   * 6 次仍拿不到 → 归「不确定」：显示「付款已成功、状态待确认」+ 手动重试，
+   * 绝不退回「未订阅」引导用户重复付款（三态铁律）。
+   */
+  const syncAfterPaid = async () => {
+    setPayOpen(false);
+    setSyncing(true);
+    setSyncFailed(false);
+    for (let i = 0; i < 6; i++) {
+      const data = await loadPending();
+      if (data?.subscribed) {
+        setSyncing(false);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    setSyncing(false);
+    setSyncFailed(true);
+  };
 
   const decide = async (action: 'approve' | 'deny') => {
     setBusy(true);
@@ -252,11 +297,22 @@ export default function PluginAuthPage() {
    *   · options 为空（老后端 / 无订阅）→ 不渲染这一行
    *   · 只有 1 档 → 不渲染下拉，只显示文案（单档用户零感知，界面与改动前一致）
    *   · ≥2 档 → 渲染下拉，满了/过期的项置灰（不隐藏：用户要知道自己买过 Pro）
+   * 订阅失效时不给下拉：此时没有可用档位，选了也没用，且会和收银台的档位下拉打架。
    */
   const tierOptions = info?.options ?? [];
   const currentTier =
     tierOptions.find((o) => o.subscription_id === selectedSub) ?? tierOptions[0];
   const tierBlocked = !!currentTier && (!currentTier.entitled || currentTier.full);
+
+  /** 失效态细分：options 里有「已过期」行 = 买过、现在失效 → 「续费」；否则「订阅」 */
+  const hadSubscription = tierOptions.some((o) => !o.entitled);
+  const purchase = info?.purchase_options ?? [];
+  const purchaseUnavailable = !!info?.purchase_unavailable || purchase.length === 0;
+  const defaultPurchaseId = info?.purchase_default_id || null;
+  const chosenDefault = defaultPurchaseId
+    ? purchase.find((o) => o.id === defaultPurchaseId) ?? null
+    : null;
+  const modalBase = chosenDefault ?? purchase[0] ?? null;
 
   return (
     <div className="max-w-lg mx-auto px-4 py-16">
@@ -354,14 +410,14 @@ export default function PluginAuthPage() {
                     })}
               </dd>
             </div>
-            {/* 授权使用哪一档（0046 一档一台）：单档只显示文案，多档才出下拉 */}
+            {/* 授权使用哪一档（0046 一档一台）：失效时只显示文案，不给下拉 */}
             {currentTier && (
               <div className="flex justify-between items-center gap-3">
                 <dt className="text-neutral-400 whitespace-nowrap">
                   {t('plugins.authTier')}
                 </dt>
                 <dd className="text-neutral-700 text-right min-w-0">
-                  {tierOptions.length > 1 ? (
+                  {info.subscribed && tierOptions.length > 1 ? (
                     <select
                       value={currentTier.subscription_id}
                       onChange={(e) => setSelectedSub(e.target.value)}
@@ -383,7 +439,7 @@ export default function PluginAuthPage() {
                 </dd>
               </div>
             )}
-            {tierBlocked && (
+            {tierBlocked && info.subscribed && (
               <div className="text-[11px] leading-relaxed text-amber-600 text-right">
                 {t('plugins.authTierBlocked')}
               </div>
@@ -404,15 +460,51 @@ export default function PluginAuthPage() {
 
           {!info.subscribed ? (
             <div className="mt-5 space-y-3">
-              <p className="text-xs text-neutral-500 text-center">
-                {t('plugins.authSubscribeFirst')}
-              </p>
-              <Link
-                href="/plugins"
-                className="block text-center text-sm text-white bg-brand-600 rounded-lg px-4 py-2.5 hover:bg-brand-700"
-              >
-                {t('plugins.goMarket')}
-              </Link>
+              {syncing || syncFailed ? (
+                /* 付款已完成、权益同步结果未知 = 「不确定」态。隐藏支付按钮，
+                   给重试而不是重新引导付费，避免重复下单。 */
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-center">
+                  <p>{syncing ? t('plugins.authSyncing') : t('plugins.authSyncFailed')}</p>
+                  {!syncing && (
+                    <button
+                      onClick={() => void syncAfterPaid()}
+                      className="mt-2 text-brand-600 underline"
+                    >
+                      {t('plugins.authSyncRetry')}
+                    </button>
+                  )}
+                </div>
+              ) : purchaseUnavailable ? (
+                /* 档位查询失败 / 没上架商品 ≠ 免费、≠ 订阅失效：给重试和市场页兜底入口 */
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-center">
+                  <p>{t('plugins.authTiersUnavailable')}</p>
+                  <button
+                    onClick={() => void loadPending()}
+                    className="mt-2 text-brand-600 underline"
+                  >
+                    {t('plugins.authSyncRetry')}
+                  </button>
+                  <Link href="/plugins" className="block mt-2 text-neutral-500 underline">
+                    {t('plugins.goMarket')}
+                  </Link>
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-neutral-500 text-center">
+                    {hadSubscription
+                      ? t('plugins.authExpiredSubscribeHint')
+                      : t('plugins.authSubscribeFirst')}
+                  </p>
+                  <button
+                    onClick={() => setPayOpen(true)}
+                    className="block w-full text-center text-sm text-white bg-brand-600 rounded-lg px-4 py-2.5 hover:bg-brand-700"
+                  >
+                    {hadSubscription
+                      ? t('plugins.authRenewNow')
+                      : t('plugins.authSubscribeNow')}
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             <div className="mt-5 flex gap-3">
@@ -438,6 +530,26 @@ export default function PluginAuthPage() {
             {t('plugins.authTip')}
           </p>
         </div>
+      )}
+
+      {/* 就地收银台：复用市场页同一个弹窗，付款成功后重拉 pending 自动回到确认授权 */}
+      {payOpen && !info?.subscribed && modalBase && (
+        <PluginCheckoutModal
+          pluginId={modalBase.id}
+          pluginName={modalBase.name}
+          priceCents={modalBase.priceCents}
+          listCents={modalBase.listCents}
+          options={purchase.map((o) => ({
+            id: o.id,
+            name: o.name,
+            priceCents: o.priceCents,
+            listCents: o.listCents,
+          }))}
+          defaultOptionId={chosenDefault?.id || undefined}
+          requireChoice={!chosenDefault && purchase.length > 1}
+          onClose={() => setPayOpen(false)}
+          onPaid={() => void syncAfterPaid()}
+        />
       )}
     </div>
   );

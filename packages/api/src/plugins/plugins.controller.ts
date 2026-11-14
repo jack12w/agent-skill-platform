@@ -123,8 +123,31 @@ export class PluginsController {
   /** 授权页读取请求详情：哪个插件、已授权几台、当前账号是否已订阅 */
   @Get('auth/pending')
   @Header('Cache-Control', 'no-store')
-  pending(@Req() req: Request, @Query('code') code: string) {
-    return this.auth.pending(this.uid(req), code);
+  async pending(@Req() req: Request, @Query('code') code: string) {
+    const data: any = await this.auth.pending(this.uid(req), code);
+    /**
+     * 订阅失效引导：只给「待授权 + 未订阅」这一条路径补上可购买档位，
+     * 其余状态（码过期 / 已批准 / 已拒绝 / 已订阅）的响应体一字不变。
+     * 授权核心逻辑（plugins-auth.service）不碰，档位查询失败也不影响授权页读取。
+     */
+    if (!data || data.status !== 'pending' || data.subscribed) return data;
+    try {
+      const purchase = await this.svc.purchasableTiers(
+        this.uid(req),
+        String(data.plugin?.slug || ''),
+        (Array.isArray(data.options) ? data.options : [])
+          .map((o: any) => String(o?.plan_slug || ''))
+          .filter(Boolean),
+      );
+      return {
+        ...data,
+        purchase_options: purchase.options,
+        purchase_default_id: purchase.defaultId,
+      };
+    } catch (e) {
+      // 档位查询失败 ≠ 免费、≠ 订阅失效：单独标记「不可用」，前端给重试入口。
+      return { ...data, purchase_options: [], purchase_unavailable: true };
+    }
   }
 
   /**
