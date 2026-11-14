@@ -10,10 +10,12 @@ import {
   Header,
   UseGuards,
   Request,
+  Res,
   UseInterceptors,
   UploadedFile,
   BadRequestException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -215,6 +217,34 @@ export class PluginsAdminController {
   @Header('Cache-Control', 'no-store')
   listUsers(@Param('id') id: string, @Query() q: any) {
     return this.svc.adminListUsers(id, q);
+  }
+
+  /**
+   * 导出订阅用户 CSV（搜索 + 排序与列表同源，不分页）。
+   *
+   * 为什么用 @Res() 手写响应：要设置 Content-Disposition + BOM，且不能让
+   * Nest 的 JSON 序列化碰 csv 字符串（否则引号/换行会被破坏）。
+   * 必须声明在 `:id` 之前？—— `:id` 只匹配一段，三段路径不会截胡，
+   * 但为可读性仍把它紧挨在 `:id/users` 后面。
+   *
+   * 权限沿用类级 AuthGuard + AdminGuard；内容含用户邮箱，响应 no-store。
+   */
+  @Get(':id/users/export')
+  async exportUsers(
+    @Param('id') id: string,
+    @Query() q: any,
+    @Res() res: Response,
+  ) {
+    const { filename, csv } = await this.svc.adminListUsersCsv(id, q);
+    // filename* 走 RFC 5987，中文文件名在 Chrome/Edge 才不乱码；filename 给老客户端兜底
+    const ascii = `plugin-users-${Date.now()}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    );
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(csv);
   }
 
   @Get(':id')

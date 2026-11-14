@@ -333,12 +333,11 @@ export default function PluginsPage() {
     [plugins],
   );
   /**
-   * 收银台默认档位：Pro 标准版（alibaba-toolkit-year，¥499/年）。
-   * 该档下架/改名时退回原 Team 专业版，避免下拉没有有效默认项。
+   * 收银台默认档位（2026-11-15）：
+   * 改为「点哪个档就默认哪个档」（defaultOptionId = payId），不再全局默认 Pro。
+   * 原实现默认 Pro ¥499/年，用户点 ¥49/月 的卡片却看到 ¥499 —— 跨价误购风险。
+   * 授权页「识别不到历史档位」时仍回落 Pro 标准版，那里没有「点击入口价」可继承。
    */
-  const defaultOptionId =
-    plugins.find((p) => p.slug === 'alibaba-toolkit-year')?.id ??
-    plugins.find((p) => p.slug === 'alibaba-toolkit-b2b')?.id;
 
   /* Hero / 结尾 CTA 的主角插件：优先取已订阅的那一个，否则取第一款。
      没有上架插件时 primary 为 null，所有 CTA 自动隐藏（不再渲染空按钮）。 */
@@ -877,7 +876,7 @@ export default function PluginsPage() {
               : 0
           }
           options={checkoutOptions}
-          defaultOptionId={defaultOptionId}
+          defaultOptionId={payId}
           onClose={() => setPayId(null)}
           onPaid={onPaid}
         />

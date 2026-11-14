@@ -143,15 +143,36 @@ export default function HubPluginsPage() {
   const [usersSearch, setUsersSearch] = useState('');
   /** 2026-10-12 三轮质检：「订阅用户」弹窗的加载错误（原实现失败时静默置空列表） */
   const [usersErr, setUsersErr] = useState('');
+  /**
+   * 排序状态（2026-11-15）：只允许「最近到期 / 使用日期」两列，服务端白名单排序。
+   * 必须由服务端排、不能在当前页内存排 —— 否则翻页后顺序会「乱回去」。
+   */
+  const [usersSort, setUsersSort] = useState<'expire_date' | 'last_plugin_at'>('expire_date');
+  const [usersOrder, setUsersOrder] = useState<'asc' | 'desc'>('desc');
+  /** CSV 导出：独立 loading/错误，避免和列表加载态互相覆盖 */
+  const [exporting, setExporting] = useState(false);
+  const [exportErr, setExportErr] = useState('');
 
   const loadUsers = useCallback(
-    async (pluginId: string, page: number, search: string) => {
+    async (
+      pluginId: string,
+      page: number,
+      search: string,
+      sort: 'expire_date' | 'last_plugin_at' = 'expire_date',
+      order: 'asc' | 'desc' = 'desc',
+    ) => {
       const token = getToken();
       if (!token) return;
       setUsersLoading(true);
       setUsersErr('');
       try {
-        const params = new URLSearchParams({ page: String(page), size: '50', search });
+        const params = new URLSearchParams({
+          page: String(page),
+          size: '50',
+          search,
+          sort,
+          order,
+        });
         const res = await fetch(`/api/admin/plugins/${pluginId}/users?${params.toString()}`, {
           // 与后端 no-store 呼应：避免磁盘缓存复用旧快照
           cache: 'no-store',
@@ -178,7 +199,60 @@ export default function HubPluginsPage() {
     setUsers([]);
     setUsersTotal(0);
     setUsersSearch('');
+    setUsersSort('expire_date');
+    setUsersOrder('desc');
+    setExportErr('');
     loadUsers(p.id, 1, '');
+  };
+
+  /** 点表头切换排序：同列再点切方向，换列默认倒序；每次回到第 1 页 */
+  const toggleUsersSort = (col: 'expire_date' | 'last_plugin_at') => {
+    if (!usersPlugin) return;
+    const nextOrder: 'asc' | 'desc' =
+      usersSort === col && usersOrder === 'desc' ? 'asc' : 'desc';
+    setUsersSort(col);
+    setUsersOrder(nextOrder);
+    loadUsers(usersPlugin.id, 1, usersSearch, col, nextOrder);
+  };
+
+  /**
+   * 导出 CSV：走服务端导出端点（带 BOM / CSV 转义 / 公式注入防护）。
+   * 必须 fetch + blob（不能用 window.open）：需要带 Authorization header。
+   */
+  const exportUsers = async () => {
+    if (!usersPlugin || exporting) return;
+    const token = getToken();
+    if (!token) return;
+    setExporting(true);
+    setExportErr('');
+    try {
+      const params = new URLSearchParams({
+        search: usersSearch,
+        sort: usersSort,
+        order: usersOrder,
+      });
+      const res = await fetch(
+        `/api/admin/plugins/${usersPlugin.id}/users/export?${params.toString()}`,
+        { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      if (!blob.size) throw new Error('empty');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      // 本地日期（sv-SE → YYYY-MM-DD），不用 toISOString 以免 UTC 差一天
+      const stamp = new Date().toLocaleDateString('sv-SE').replace(/-/g, '');
+      a.href = url;
+      a.download = `${usersPlugin.name}-订阅用户-${stamp}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setExportErr(t('admin.usersExportFailed'));
+    } finally {
+      setExporting(false);
+    }
   };
 
   const fetchData = useCallback(async () => {
@@ -978,15 +1052,36 @@ export default function HubPluginsPage() {
             </div>
 
             <div className="px-5 pt-4 pb-3 shrink-0">
-              <input
-                className={field}
-                placeholder={t('admin.usersSearch')}
-                value={usersSearch}
-                onChange={(e) => setUsersSearch(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') loadUsers(usersPlugin.id, 1, usersSearch);
-                }}
-              />
+              {/* 搜索 + CSV 导出：导出按当前搜索与排序全量生成，不是只导当前页 */}
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <input
+                    className={field}
+                    placeholder={t('admin.usersSearch')}
+                    value={usersSearch}
+                    onChange={(e) => setUsersSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        loadUsers(usersPlugin.id, 1, usersSearch, usersSort, usersOrder);
+                      }
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={exportUsers}
+                  disabled={exporting}
+                  className="shrink-0 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 bg-white hover:border-brand-400 hover:text-brand-600 disabled:opacity-50"
+                >
+                  {exporting ? t('admin.usersExporting') : t('admin.usersExport')}
+                </button>
+              </div>
+
+              {exportErr && (
+                <div className="mt-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  {exportErr}
+                </div>
+              )}
 
               {/* 2026-10-12 三轮质检：加载失败必须显式可见，不能伪装成「无用户」 */}
               {usersErr && (
@@ -1018,9 +1113,32 @@ export default function HubPluginsPage() {
                         <th className="sticky top-0 z-10 bg-neutral-100 px-3 py-2 text-left">{t('admin.usersName')}</th>
                         <th className="sticky top-0 z-10 bg-neutral-100 px-3 py-2 text-left">{t('admin.usersEmail')}</th>
                         <th className="sticky top-0 z-10 bg-neutral-100 px-3 py-2 text-left">{t('admin.usersStartDate')}</th>
-                        <th className="sticky top-0 z-10 bg-neutral-100 px-3 py-2 text-left">{t('admin.usersRecentDate')}</th>
-                        {/* 最近使用日期 = 扩展端联网校验授权当天（plugin_devices.last_seen_at 取 MAX），只到日期 */}
-                        <th className="sticky top-0 z-10 bg-neutral-100 px-3 py-2 text-left">{t('admin.usersLastUseDate')}</th>
+                        {/* 可排序：最近到期 / 使用日期（服务端白名单排序，跨页有效） */}
+                        <th className="sticky top-0 z-10 bg-neutral-100 px-3 py-2 text-left">
+                          <button
+                            type="button"
+                            onClick={() => toggleUsersSort('expire_date')}
+                            className="inline-flex items-center gap-1 hover:text-neutral-800"
+                          >
+                            {t('admin.usersRecentDate')}
+                            <span className="text-[10px] text-neutral-400">
+                              {usersSort === 'expire_date' ? (usersOrder === 'asc' ? '▲' : '▼') : '↕'}
+                            </span>
+                          </button>
+                        </th>
+                        {/* 使用日期 = 扩展端联网校验授权当天（plugin_devices.last_seen_at 取 MAX），只到日期 */}
+                        <th className="sticky top-0 z-10 bg-neutral-100 px-3 py-2 text-left">
+                          <button
+                            type="button"
+                            onClick={() => toggleUsersSort('last_plugin_at')}
+                            className="inline-flex items-center gap-1 hover:text-neutral-800"
+                          >
+                            {t('admin.usersLastUseDate')}
+                            <span className="text-[10px] text-neutral-400">
+                              {usersSort === 'last_plugin_at' ? (usersOrder === 'asc' ? '▲' : '▼') : '↕'}
+                            </span>
+                          </button>
+                        </th>
                         <th className="sticky top-0 z-10 bg-neutral-100 px-3 py-2 text-left">{t('admin.usersStatus')}</th>
                       </tr>
                     </thead>

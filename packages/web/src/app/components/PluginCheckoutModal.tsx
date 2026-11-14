@@ -87,6 +87,16 @@ export default function PluginCheckoutModal({
   const [paid, setPaid] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [left, setLeft] = useState(0);
+  /**
+   * 服务端实付价与展示价不一致时（典型：本页停留期间促销刚好结束），
+   * 记下服务端返回的最新价；按 pluginId 绑定，切档自动失效。
+   * 绝不按未确认的价格展示二维码。
+   */
+  const [pricePatch, setPricePatch] = useState<{
+    id: string;
+    priceCents: number;
+    listCents?: number;
+  } | null>(null);
 
   const timerRef = useRef<any>(null);
   const tickRef = useRef<any>(null);
@@ -157,6 +167,34 @@ export default function PluginCheckoutModal({
         throw new Error(e.message || `HTTP ${res.status}`);
       }
       const data = await res.json();
+      /**
+       * 服务端金额二次校验（2026-11-15）：
+       * 展示价来自页面打开时的快照，促销可能在停留期间结束 —— 服务端 `createOrder`
+       * 永远按当下实价建单。两者不一致时**绝不展示二维码**（微信侧金额已不可改），
+       * 更新展示价并提示用户确认后重付；订单 15 分钟自动关闭，无资损。
+       */
+      const serverTotal = Number(data?.totalCents);
+      if (
+        sel &&
+        Number.isFinite(serverTotal) &&
+        serverTotal > 0 &&
+        serverTotal !== amount
+      ) {
+        setPricePatch({
+          id: sel.id,
+          priceCents: serverTotal,
+          listCents: sel.listCents,
+        });
+        setOrderNo(null);
+        setQr(null);
+        setErr(t('pay.priceUpdated', { amount: yuan(serverTotal) }));
+        return;
+      }
+      /**
+       * 校验通过时**不要**清空 pricePatch：props 里的价是页面打开时的快照，
+       * 清空会让金额回落到旧值（实测：服务端 ¥399，界面又显示 ¥49 并出码）。
+       * patch 按 pluginId 绑定，切档自然失效；弹窗关闭即随组件卸载销毁。
+       */
       setOrderNo(data.orderNo);
       const codeUrl = data?.pay?.code_url;
       if (codeUrl) {
@@ -183,7 +221,10 @@ export default function PluginCheckoutModal({
     setErr(null);
   };
 
-  const amount = sel?.priceCents || 0;
+  /** 服务端校验过的最新价优先于 props（props 是页面打开时的快照） */
+  const shown = pricePatch && sel && pricePatch.id === sel.id ? pricePatch : null;
+  const amount = (shown ? shown.priceCents : sel?.priceCents) || 0;
+  const shownList = shown ? shown.listCents : sel?.listCents;
   const mmss = `${String(Math.floor(left / 60)).padStart(2, '0')}:${String(left % 60).padStart(2, '0')}`;
 
   return (
@@ -235,8 +276,8 @@ export default function PluginCheckoutModal({
             <div className="flex items-baseline justify-between mb-4">
               <span className="text-sm text-neutral-500">{t('pay.amount')}</span>
               <span className="flex items-baseline gap-2">
-                {!!sel?.listCents && sel.listCents > amount && (
-                  <span className="text-sm text-neutral-400 line-through">¥{yuan(sel.listCents)}</span>
+                {!!shownList && shownList > amount && (
+                  <span className="text-sm text-neutral-400 line-through">¥{yuan(shownList)}</span>
                 )}
                 <span className="text-2xl font-bold text-brand-700">
                   {sel ? `¥${yuan(amount)}` : '—'}

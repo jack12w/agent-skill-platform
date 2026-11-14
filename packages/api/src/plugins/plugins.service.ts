@@ -421,106 +421,203 @@ export class PluginsService {
   async adminListUsers(pluginId: string, q: any) {
     const plugin = await this.adminGet(pluginId); // 插件不存在 → 直接 404
 
-    /**
-     * 「最近使用插件」= 设备最后一次通过授权校验的时刻（plugin_devices.last_seen_at）。
-     * 该列由扩展端 POST /plugins/entitlement 校验通过时刷新、令牌首次签发时写入，
-     * 网页登录 / 后台操作不会污染，因此比 users.last_seen_at（网站活跃）更贴近
-     * 「插件是否真的在跑」。NULL = 从未授权成功过（或迁移前的老数据）。
-     *
-     * 关联口径：本接口收到的是**商品 id**（可能是 Pro / Team 档位行），而设备行
-     * plugin_id 恒绑主插件 id。先归一到族根，再匹配族内全部商品 id，
-     * 否则档位商品的订阅用户会被误判成「从未使用」。含已解绑设备：反映的是历史事实，
-     * 不是「当前还绑着几台」。
-     */
-    const rootId = plugin.parent_plugin_id ?? plugin.id;
-
     const page = Math.max(1, Math.floor(Number(q?.page) || 1));
     const size = Math.min(200, Math.max(1, Math.floor(Number(q?.size) || 50)));
     const search = String(q?.search ?? '').trim();
+    const { sortCol, sortDir } = this.parseUsersSort(q);
 
-    // items 与 total 必须走**完全相同**的 where，否则分页数会对不上
-    const apply = (qb: any) => {
-      qb.where('s.plugin_id = :pluginId', { pluginId });
-      if (search) {
-        qb.andWhere('(u.email ILIKE :kw OR u.name ILIKE :kw)', { kw: `%${search}%` });
-      }
-      return qb;
-    };
+    /**
+     * 使用日期必须在**主查询**里，才能按它跨页排序。
+     * 0050 的实现是「另发一条批量查询再内存合并」，那样只能排当前页 ——
+     * 用户点表头后第 2 页又乱回去，等于排序是假的。
+     * 分组列 s.user_id 在 GROUP BY 中，PG 允许相关子查询引用它；
+     * 每页 ≤200 行，走 uq_plugin_devices_uid_pid_did 的 (user_id, plugin_id) 前缀。
+     */
+    let items: any[];
+    try {
+      items = await this.usersAggQuery(plugin, search, true)
+        .orderBy(sortCol, sortDir, 'NULLS LAST')
+        .offset((page - 1) * size)
+        .limit(size)
+        .getRawMany();
+    } catch (e: any) {
+      /**
+       * fail-soft：设备子查询万一异常，回退到「不含使用日期」的原查询，
+       * 运营仍能打开名单（排序退回默认：最近到期倒序）。只留日志，不抛 500。
+       */
+      this.logger.warn(
+        `订阅用户「使用日期」查询失败，已回退为不含该列的查询：${e?.message ?? e}`,
+      );
+      items = await this.usersAggQuery(plugin, search, false)
+        .orderBy('expire_date', 'DESC', 'NULLS LAST')
+        .offset((page - 1) * size)
+        .limit(size)
+        .getRawMany();
+    }
 
-    const items = await apply(
-      this.subRepo.createQueryBuilder('s').leftJoin(User, 'u', 'u.id = s.user_id'),
-    )
-      .select([
-        's.user_id AS user_id',
-        'u.email AS user_email',
-        'u.name AS user_name',
-        'MIN(s.started_at) AS start_date',
-        'MAX(s.expires_at) AS expire_date',
-        // 仍在期 = 与 isSubscriptionEntitled 同口径（status 有效 + 未到期）
-        `COUNT(*) FILTER (WHERE s.status IN ('active', 'cancelled') AND s.expires_at > now())::int AS valid_cnt`,
-        'COUNT(*)::int AS row_cnt',
-      ])
-      .groupBy('s.user_id')
-      .addGroupBy('u.email')
-      .addGroupBy('u.name')
-      .orderBy('expire_date', 'DESC', 'NULLS LAST')
-      .offset((page - 1) * size)
-      .limit(size)
-      .getRawMany();
-
-    const totalRow = await apply(
+    // total 与 items 必须走**完全相同**的 where，否则分页数会对不上
+    const totalRow = await this.usersWhere(
+      plugin,
+      search,
       this.subRepo.createQueryBuilder('s').leftJoin(User, 'u', 'u.id = s.user_id'),
     )
       .select('COUNT(DISTINCT s.user_id)', 'c')
       .getRawOne();
 
-    /**
-     * 「最近使用日期」走独立批量查询：上面那条订阅聚合 SQL 的 where / group by /
-     * 排序 / 分页一个字都不改，新增字段只在内存里合并，杜绝回归原名单口径。
-     * 本页最多 size(≤200) 人，一次 ANY($1::uuid[]) 走
-     * uq_plugin_devices_uid_pid_did 的 (user_id, plugin_id) 前缀即可。
-     *
-     * fail-soft：这个只读展示列查询失败时只留日志、整列回落空值，
-     * 绝不让原本能打开的订阅用户名单整个 500。
-     */
-    const userIds: string[] = [];
-    for (const r of items) {
-      const id = String(r.user_id ?? '');
-      // indexOf 而非 Set 展开：项目 tsconfig target 低于 es2015
-      if (id && userIds.indexOf(id) === -1) userIds.push(id);
-    }
-    const lastAtByUser: Record<string, any> = {};
-    if (userIds.length) {
-      try {
-        const seenRows: any[] = await this.subRepo.manager.query(
-          `SELECT d.user_id, MAX(d.last_seen_at) AS last_plugin_at
-             FROM plugin_devices d
-            WHERE d.user_id = ANY($1::uuid[])
-              AND d.plugin_id IN (
-                SELECT p2.id FROM plugins p2
-                 WHERE p2.id = $2 OR p2.parent_plugin_id = $2
-              )
-            GROUP BY d.user_id`,
-          [userIds, rootId],
-        );
-        for (const r of seenRows) {
-          lastAtByUser[String(r.user_id)] = r.last_plugin_at;
-        }
-      } catch (e: any) {
-        this.logger.warn(
-          `订阅用户「最近使用日期」查询失败，回落为空：${e?.message ?? e}`,
-        );
-      }
-    }
-
     return {
       items: items.map((r: any) => ({
         ...r,
-        last_plugin_at: lastAtByUser[String(r.user_id)] ?? null,
+        last_plugin_at: r.last_plugin_at ?? null,
       })),
       total: Number(totalRow?.c ?? 0),
       page,
       size,
+      /** 回显本次实际生效的排序，前端据此画箭头（白名单外的值不会生效） */
+      sort: sortCol,
+      order: sortDir.toLowerCase(),
+    };
+  }
+
+  /**
+   * 排序白名单。只允许「最近到期 / 使用日期」两列，方向只允许 asc/desc；
+   * 任何其它入参都退回默认值，绝不把字符串拼进 SQL。
+   */
+  private parseUsersSort(q: any): {
+    sortCol: 'expire_date' | 'last_plugin_at';
+    sortDir: 'ASC' | 'DESC';
+  } {
+    const sortCol: 'expire_date' | 'last_plugin_at' =
+      String(q?.sort ?? '') === 'last_plugin_at' ? 'last_plugin_at' : 'expire_date';
+    const sortDir: 'ASC' | 'DESC' =
+      String(q?.order ?? '').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    return { sortCol, sortDir };
+  }
+
+  /** 订阅用户聚合的公共 where（列表与 CSV 必须逐字一致） */
+  private usersWhere(plugin: Plugin, search: string, qb: any) {
+    qb.where('s.plugin_id = :pluginId', { pluginId: plugin.id });
+    if (search) {
+      qb.andWhere('(u.email ILIKE :kw OR u.name ILIKE :kw)', { kw: `%${search}%` });
+    }
+    return qb;
+  }
+
+  /**
+   * 订阅用户聚合查询：一人一行（distinct user_id），字段与后台弹窗一一对应。
+   *
+   * 「使用日期」= 该用户在本插件族内所有设备的 MAX(last_seen_at)。
+   * 设备行 plugin_id 恒绑主插件 id，本接口收到的是商品 id（可能是 Pro/Team 档位行），
+   * 所以先归一到族根（parent_plugin_id ?? id），再匹配族内全部商品。
+   * 含已解绑设备：反映历史事实，不是「当前还绑着几台」。
+   *
+   * withSeen=false 仅用于异常回退（不含设备子查询），此时 last_plugin_at 恒为 null。
+   */
+  private usersAggQuery(plugin: Plugin, search: string, withSeen: boolean) {
+    const rootId = plugin.parent_plugin_id ?? plugin.id;
+    const lastSeenSql = `(SELECT MAX(d.last_seen_at)
+        FROM plugin_devices d
+       WHERE d.user_id = s.user_id
+         AND d.plugin_id IN (
+           SELECT p2.id FROM plugins p2
+            WHERE p2.id = :rootId OR p2.parent_plugin_id = :rootId
+         ))`;
+
+    const selects = [
+      's.user_id AS user_id',
+      'u.email AS user_email',
+      'u.name AS user_name',
+      'MIN(s.started_at) AS start_date',
+      'MAX(s.expires_at) AS expire_date',
+      // 仍在期 = 与 isSubscriptionEntitled 同口径（status 有效 + 未到期）
+      `COUNT(*) FILTER (WHERE s.status IN ('active', 'cancelled') AND s.expires_at > now())::int AS valid_cnt`,
+      'COUNT(*)::int AS row_cnt',
+    ];
+    if (withSeen) selects.push(`${lastSeenSql} AS last_plugin_at`);
+
+    const qb = this.subRepo
+      .createQueryBuilder('s')
+      .leftJoin(User, 'u', 'u.id = s.user_id')
+      .select(selects)
+      .setParameters({ rootId })
+      .groupBy('s.user_id')
+      .addGroupBy('u.email')
+      .addGroupBy('u.name');
+
+    return this.usersWhere(plugin, search, qb);
+  }
+
+  /** CSV 单元格：全字段加引号 + 双引号转义 + 公式注入防护 */
+  private csvCell(v: unknown): string {
+    const raw = v == null ? '' : String(v);
+    // Excel 会把 = + - @ 开头的单元格当公式执行（CSV injection）。
+    // 用户昵称/邮箱是外部输入，导出前必须前置单引号，否则可被用来构造恶意公式。
+    const guarded = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+    return `"${guarded.replace(/"/g, '""')}"`;
+  }
+
+  /**
+   * CSV 时间：显式按中国时区输出，避免服务器在 UTC 时运营看到的时间差 8 小时。
+   * dateOnly=true → `YYYY/MM/DD`（使用日期只到日）。
+   */
+  private fmtCsvTime(v: any, dateOnly = false): string {
+    if (!v) return '';
+    const d = v instanceof Date ? v : new Date(v);
+    if (!Number.isFinite(d.getTime())) return '';
+    const parts = new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      ...(dateOnly ? {} : { hour: '2-digit', minute: '2-digit' }),
+      hour12: false,
+    }).formatToParts(d);
+    const m: Record<string, string> = {};
+    for (const p of parts) m[p.type] = p.value;
+    return dateOnly
+      ? `${m.year}/${m.month}/${m.day}`
+      : `${m.year}/${m.month}/${m.day} ${m.hour}:${m.minute}`;
+  }
+
+  /**
+   * 后台：导出订阅用户 CSV（按当前搜索 + 排序，不分页）。
+   * 与 adminListUsers 共用 usersAggQuery/usersWhere，口径不可能漂移。
+   * 上限 10000 行：管理端点，防超大表一次性拉爆内存。
+   */
+  async adminListUsersCsv(
+    pluginId: string,
+    q: any,
+  ): Promise<{ filename: string; csv: string }> {
+    const plugin = await this.adminGet(pluginId);
+    const search = String(q?.search ?? '').trim();
+    const { sortCol, sortDir } = this.parseUsersSort(q);
+
+    const rows = await this.usersAggQuery(plugin, search, true)
+      .orderBy(sortCol, sortDir, 'NULLS LAST')
+      .offset(0)
+      .limit(10000)
+      .getRawMany();
+
+    const header = ['用户名称', '邮箱', '首次订阅', '最近到期', '使用日期', '状态']
+      .map((c) => this.csvCell(c))
+      .join(',');
+    const lines = rows.map((r: any) =>
+      [
+        r.user_name ?? '',
+        r.user_email ?? '',
+        this.fmtCsvTime(r.start_date),
+        this.fmtCsvTime(r.expire_date),
+        this.fmtCsvTime(r.last_plugin_at, true),
+        Number(r.valid_cnt) > 0 ? '有效' : '已过期',
+      ]
+        .map((v) => this.csvCell(v))
+        .join(','),
+    );
+
+    const stamp = this.fmtCsvTime(new Date(), true).replace(/\//g, '');
+    return {
+      filename: `订阅用户-${plugin.name}-${stamp}.csv`,
+      // BOM 必须保留：没有它 Excel 打开中文是乱码
+      csv: '\uFEFF' + [header, ...lines].join('\r\n'),
     };
   }
 

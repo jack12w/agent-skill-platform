@@ -580,7 +580,19 @@ export class OrdersService implements OnModuleInit {
     });
     await this.payRepo.save(payment);
 
-    return { orderNo, tradeType, pay: payResult, expireAt: order.expire_at };
+    /**
+     * totalCents = 服务端实付金额。只**追加**一个只读字段，不改金额计算与任何门禁。
+     * 前端收银台据此与本页展示价比对：促销恰好在本页停留期间结束时，
+     * 会出现「页面显示促销价、下单按原价」——前端发现不一致就提示并禁止展示二维码，
+     * 避免用户按未确认的价格付款（2026-11-15）。
+     */
+    return {
+      orderNo,
+      tradeType,
+      pay: payResult,
+      expireAt: order.expire_at,
+      totalCents: total,
+    };
   }
 
   /** 查询订单状态（前端轮询；卡住时后台主动查单兜底） */
