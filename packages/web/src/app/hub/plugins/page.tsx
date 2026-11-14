@@ -959,8 +959,10 @@ export default function HubPluginsPage() {
       {/* 订阅用户弹窗：点击列表里的「订阅数」打开 */}
       {usersOpen && usersPlugin && (
         <Modal onClose={() => setUsersOpen(false)} align="top" backdrop="bg-black/40">
-          <div className="bg-white rounded-xl w-full max-w-3xl my-8 shadow-xl">
-            <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">
+          {/* 用户数多时弹窗不得撑破视口：自身限高，标题/搜索固定，仅表格区内部滚动。
+              只改本弹窗，共用 Modal 组件与其它弹窗行为不变。 */}
+          <div className="bg-white rounded-xl w-full max-w-3xl my-8 shadow-xl max-h-[80vh] flex flex-col overflow-hidden">
+            <div className="px-5 py-4 border-b border-neutral-100 flex items-center justify-between shrink-0">
               <h2 className="font-semibold text-neutral-900">
                 {usersPlugin.name} · {t('admin.usersTitle')}
                 <span className="ml-2 text-sm font-normal text-neutral-500">
@@ -975,7 +977,7 @@ export default function HubPluginsPage() {
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
+            <div className="px-5 pt-4 pb-3 shrink-0">
               <input
                 className={field}
                 placeholder={t('admin.usersSearch')}
@@ -988,11 +990,14 @@ export default function HubPluginsPage() {
 
               {/* 2026-10-12 三轮质检：加载失败必须显式可见，不能伪装成「无用户」 */}
               {usersErr && (
-                <div className="mb-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                <div className="mt-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                   {usersErr}
                 </div>
               )}
+            </div>
 
+            {/* 唯一滚动容器：min-h-0 是 flex 子项能收缩的前提，缺了会撑破 max-h */}
+            <div className="flex-1 min-h-0 overflow-auto px-5 pb-5">
               {usersLoading ? (
                 <div className="flex justify-center py-12">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600" />
@@ -1004,17 +1009,19 @@ export default function HubPluginsPage() {
                   </div>
                 )
               ) : (
-                <div className="bg-white border border-neutral-200 rounded-xl overflow-x-auto">
+                <div className="bg-white border border-neutral-200 rounded-xl">
                   <table className="w-full text-sm">
-                    <thead className="bg-neutral-100 text-neutral-500 text-xs uppercase">
+                    {/* 表头吸顶：横向/纵向滚动都由上面的唯一滚动容器承担，
+                        sticky 放在 th 上（部分浏览器对 thead sticky 支持不一致） */}
+                    <thead className="text-neutral-500 text-xs uppercase">
                       <tr>
-                        <th className="px-3 py-2 text-left">{t('admin.usersName')}</th>
-                        <th className="px-3 py-2 text-left">{t('admin.usersEmail')}</th>
-                        <th className="px-3 py-2 text-left">{t('admin.usersStartDate')}</th>
-                        <th className="px-3 py-2 text-left">{t('admin.usersRecentDate')}</th>
+                        <th className="sticky top-0 z-10 bg-neutral-100 px-3 py-2 text-left">{t('admin.usersName')}</th>
+                        <th className="sticky top-0 z-10 bg-neutral-100 px-3 py-2 text-left">{t('admin.usersEmail')}</th>
+                        <th className="sticky top-0 z-10 bg-neutral-100 px-3 py-2 text-left">{t('admin.usersStartDate')}</th>
+                        <th className="sticky top-0 z-10 bg-neutral-100 px-3 py-2 text-left">{t('admin.usersRecentDate')}</th>
                         {/* 最近使用日期 = 扩展端联网校验授权当天（plugin_devices.last_seen_at 取 MAX），只到日期 */}
-                        <th className="px-3 py-2 text-left">{t('admin.usersLastUseDate')}</th>
-                        <th className="px-3 py-2 text-left">{t('admin.usersStatus')}</th>
+                        <th className="sticky top-0 z-10 bg-neutral-100 px-3 py-2 text-left">{t('admin.usersLastUseDate')}</th>
+                        <th className="sticky top-0 z-10 bg-neutral-100 px-3 py-2 text-left">{t('admin.usersStatus')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100">
