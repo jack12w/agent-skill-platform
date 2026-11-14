@@ -288,10 +288,10 @@ export default function HubPluginsPage() {
        * 后端 fail-soft 时会回这个头：名单照常导出，但「使用日期」列整列为空
        * （表头已标注「本次查询失败」）。这不是失败，但必须告诉运营，
        * 别让人以为这批用户都没用过插件。
+       * 先存起来、等下载真正触发后再展示 —— 否则 blob 拉取失败时会出现
+       * 「已导出」和「导出失败」两条自相矛盾的提示。
        */
-      if (res.headers.get('x-users-seen-unavailable') === '1') {
-        setExportWarn(t('admin.usersExportSeenMissing'));
-      }
+      const seenMissing = res.headers.get('x-users-seen-unavailable') === '1';
       const blob = await res.blob();
       if (!blob.size) throw new Error('empty');
       const url = URL.createObjectURL(blob);
@@ -304,7 +304,10 @@ export default function HubPluginsPage() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      if (seenMissing) setExportWarn(t('admin.usersExportSeenMissing'));
     } catch {
+      // 失败时清掉降级提示，避免与错误信息同时出现
+      setExportWarn('');
       setExportErr(t('admin.usersExportFailed'));
     } finally {
       setExporting(false);
