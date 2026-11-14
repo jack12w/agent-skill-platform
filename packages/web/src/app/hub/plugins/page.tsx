@@ -1008,20 +1008,18 @@ export default function HubPluginsPage() {
                   <table className="w-full text-sm">
                     <thead className="bg-neutral-100 text-neutral-500 text-xs uppercase">
                       <tr>
-                        <th className="px-3 py-2 text-left">{t('admin.usersUuid')}</th>
                         <th className="px-3 py-2 text-left">{t('admin.usersName')}</th>
                         <th className="px-3 py-2 text-left">{t('admin.usersEmail')}</th>
                         <th className="px-3 py-2 text-left">{t('admin.usersStartDate')}</th>
                         <th className="px-3 py-2 text-left">{t('admin.usersRecentDate')}</th>
+                        {/* 最近使用日期 = 扩展端联网校验授权当天（plugin_devices.last_seen_at 取 MAX），只到日期 */}
+                        <th className="px-3 py-2 text-left">{t('admin.usersLastUseDate')}</th>
                         <th className="px-3 py-2 text-left">{t('admin.usersStatus')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-neutral-100">
                       {users.map((u) => (
                         <tr key={u.user_id} className="hover:bg-neutral-50">
-                          <td className="px-3 py-2">
-                            <code className="text-xs text-neutral-500 break-all">{u.user_id}</code>
-                          </td>
                           <td className="px-3 py-2 text-neutral-800">{u.user_name || '—'}</td>
                           <td className="px-3 py-2 text-neutral-600">{u.user_email || '—'}</td>
                           <td className="px-3 py-2 text-neutral-500 tabular-nums whitespace-nowrap">
@@ -1029,6 +1027,13 @@ export default function HubPluginsPage() {
                           </td>
                           <td className="px-3 py-2 text-neutral-500 tabular-nums whitespace-nowrap">
                             {u.expire_date ? new Date(u.expire_date).toLocaleString('zh-CN') : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-neutral-500 tabular-nums whitespace-nowrap">
+                            {u.last_plugin_at ? (
+                              new Date(u.last_plugin_at).toLocaleDateString('zh-CN')
+                            ) : (
+                              <span className="text-neutral-400">{t('admin.usersNeverUsed')}</span>
+                            )}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             {Number(u.valid_cnt) > 0 ? (

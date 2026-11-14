@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ConflictException,
@@ -34,6 +35,8 @@ export type PublicPlugin = Omit<Plugin, 'download_key' | 'download_filename'>;
 
 @Injectable()
 export class PluginsService {
+  private readonly logger = new Logger('PluginsService');
+
   constructor(
     @InjectRepository(Plugin) private readonly pluginRepo: Repository<Plugin>,
     @InjectRepository(PluginSubscription)
@@ -407,6 +410,7 @@ export class PluginsService {
    *   · start_date = 最早一次订阅 started_at（首次开通）
    *   · expire_date= 最晚一次到期 expires_at
    *   · valid_cnt  = 其中仍在期的行数（>0 即当前有效，前端据此打标）
+   *   · last_plugin_at = 该用户在本插件族内所有设备的 MAX(last_seen_at)
    *
    * ⚠️ 旧实现查 plugin_devices（设备授权用户）：设备恒绑主插件 id，导致试用 / Pro /
    * 团队版点开是空的、基础版又混进别档用户 —— 2026-10-28 用户实测反馈后改为订阅口径。
@@ -415,7 +419,20 @@ export class PluginsService {
    * （避免往 module ENTITIES 加 User 触发 502）。
    */
   async adminListUsers(pluginId: string, q: any) {
-    await this.adminGet(pluginId); // 插件不存在 → 直接 404
+    const plugin = await this.adminGet(pluginId); // 插件不存在 → 直接 404
+
+    /**
+     * 「最近使用插件」= 设备最后一次通过授权校验的时刻（plugin_devices.last_seen_at）。
+     * 该列由扩展端 POST /plugins/entitlement 校验通过时刷新、令牌首次签发时写入，
+     * 网页登录 / 后台操作不会污染，因此比 users.last_seen_at（网站活跃）更贴近
+     * 「插件是否真的在跑」。NULL = 从未授权成功过（或迁移前的老数据）。
+     *
+     * 关联口径：本接口收到的是**商品 id**（可能是 Pro / Team 档位行），而设备行
+     * plugin_id 恒绑主插件 id。先归一到族根，再匹配族内全部商品 id，
+     * 否则档位商品的订阅用户会被误判成「从未使用」。含已解绑设备：反映的是历史事实，
+     * 不是「当前还绑着几台」。
+     */
+    const rootId = plugin.parent_plugin_id ?? plugin.id;
 
     const page = Math.max(1, Math.floor(Number(q?.page) || 1));
     const size = Math.min(200, Math.max(1, Math.floor(Number(q?.size) || 50)));
@@ -457,7 +474,54 @@ export class PluginsService {
       .select('COUNT(DISTINCT s.user_id)', 'c')
       .getRawOne();
 
-    return { items, total: Number(totalRow?.c ?? 0), page, size };
+    /**
+     * 「最近使用日期」走独立批量查询：上面那条订阅聚合 SQL 的 where / group by /
+     * 排序 / 分页一个字都不改，新增字段只在内存里合并，杜绝回归原名单口径。
+     * 本页最多 size(≤200) 人，一次 ANY($1::uuid[]) 走
+     * uq_plugin_devices_uid_pid_did 的 (user_id, plugin_id) 前缀即可。
+     *
+     * fail-soft：这个只读展示列查询失败时只留日志、整列回落空值，
+     * 绝不让原本能打开的订阅用户名单整个 500。
+     */
+    const userIds: string[] = [];
+    for (const r of items) {
+      const id = String(r.user_id ?? '');
+      // indexOf 而非 Set 展开：项目 tsconfig target 低于 es2015
+      if (id && userIds.indexOf(id) === -1) userIds.push(id);
+    }
+    const lastAtByUser: Record<string, any> = {};
+    if (userIds.length) {
+      try {
+        const seenRows: any[] = await this.subRepo.manager.query(
+          `SELECT d.user_id, MAX(d.last_seen_at) AS last_plugin_at
+             FROM plugin_devices d
+            WHERE d.user_id = ANY($1::uuid[])
+              AND d.plugin_id IN (
+                SELECT p2.id FROM plugins p2
+                 WHERE p2.id = $2 OR p2.parent_plugin_id = $2
+              )
+            GROUP BY d.user_id`,
+          [userIds, rootId],
+        );
+        for (const r of seenRows) {
+          lastAtByUser[String(r.user_id)] = r.last_plugin_at;
+        }
+      } catch (e: any) {
+        this.logger.warn(
+          `订阅用户「最近使用日期」查询失败，回落为空：${e?.message ?? e}`,
+        );
+      }
+    }
+
+    return {
+      items: items.map((r: any) => ({
+        ...r,
+        last_plugin_at: lastAtByUser[String(r.user_id)] ?? null,
+      })),
+      total: Number(totalRow?.c ?? 0),
+      page,
+      size,
+    };
   }
 
   /** 后台详情（含下架），未找到抛 404 */
