@@ -152,6 +152,8 @@ export default function HubPluginsPage() {
   /** CSV 导出：独立 loading/错误，避免和列表加载态互相覆盖 */
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState('');
+  /** 使用日期列本次是否不可用（后端 fail-soft）—— 不可用时显示「—」而不是「从未使用」 */
+  const [usersSeenUnavailable, setUsersSeenUnavailable] = useState(false);
 
   const loadUsers = useCallback(
     async (
@@ -182,6 +184,18 @@ export default function HubPluginsPage() {
         const data = await res.json();
         setUsers(data.items || []);
         setUsersTotal(data.total || 0);
+        setUsersSeenUnavailable(!!data.seen_unavailable);
+        /**
+         * 箭头以后端**实际生效**的排序为准：使用日期子查询异常时后端会回退成
+         * 「最近到期倒序」并在响应里修正 sort/order，前端若只信本地 state
+         * 就会画出与实际数据相反的箭头（2026-11-15 复核）。
+         */
+        if (data.sort === 'expire_date' || data.sort === 'last_plugin_at') {
+          setUsersSort(data.sort);
+        }
+        if (data.order === 'asc' || data.order === 'desc') {
+          setUsersOrder(data.order);
+        }
       } catch {
         // 2026-10-12 三轮质检：原实现失败时 `setUsers([])` —— 把「加载失败」伪装成
         // 「该插件没有用户」，运营据此误判。改为保留旧数据 + 显式报错。
@@ -202,6 +216,7 @@ export default function HubPluginsPage() {
     setUsersSort('expire_date');
     setUsersOrder('desc');
     setExportErr('');
+    setUsersSeenUnavailable(false);
     loadUsers(p.id, 1, '');
   };
 
@@ -1156,6 +1171,9 @@ export default function HubPluginsPage() {
                           <td className="px-3 py-2 text-neutral-500 tabular-nums whitespace-nowrap">
                             {u.last_plugin_at ? (
                               new Date(u.last_plugin_at).toLocaleDateString('zh-CN')
+                            ) : usersSeenUnavailable ? (
+                              /* 列不可用（查询异常）≠ 从未使用：给「—」，不伪造业务事实 */
+                              <span className="text-neutral-400">—</span>
                             ) : (
                               <span className="text-neutral-400">{t('admin.usersNeverUsed')}</span>
                             )}

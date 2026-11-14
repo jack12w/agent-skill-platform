@@ -434,6 +434,13 @@ export class PluginsService {
      * 每页 ≤200 行，走 uq_plugin_devices_uid_pid_did 的 (user_id, plugin_id) 前缀。
      */
     let items: any[];
+    /** 实际生效的排序：异常回退时必须跟着改，否则前端按请求值画箭头 = 骗人 */
+    let effectiveSort: { sortCol: 'expire_date' | 'last_plugin_at'; sortDir: 'ASC' | 'DESC' } = {
+      sortCol,
+      sortDir,
+    };
+    /** 使用日期列是否因查询异常整体不可用（前端显示「—」而不是「从未使用」） */
+    let seenUnavailable = false;
     try {
       items = await this.usersAggQuery(plugin, search, true)
         .orderBy(sortCol, sortDir, 'NULLS LAST')
@@ -453,6 +460,13 @@ export class PluginsService {
         .offset((page - 1) * size)
         .limit(size)
         .getRawMany();
+      /**
+       * 回退后实际排序恒为「最近到期倒序」，回显必须同步修正；
+       * 同时标记该列不可用 —— 整列 null 若被前端渲染成「从未使用」，
+       * 等于把「查询失败」伪装成业务事实（违反三态铁律）。
+       */
+      effectiveSort = { sortCol: 'expire_date', sortDir: 'DESC' };
+      seenUnavailable = true;
     }
 
     // total 与 items 必须走**完全相同**的 where，否则分页数会对不上
@@ -467,14 +481,16 @@ export class PluginsService {
     return {
       items: items.map((r: any) => ({
         ...r,
-        last_plugin_at: r.last_plugin_at ?? null,
+        last_plugin_at: seenUnavailable ? null : (r.last_plugin_at ?? null),
       })),
       total: Number(totalRow?.c ?? 0),
       page,
       size,
       /** 回显本次实际生效的排序，前端据此画箭头（白名单外的值不会生效） */
-      sort: sortCol,
-      order: sortDir.toLowerCase(),
+      sort: effectiveSort.sortCol,
+      order: effectiveSort.sortDir.toLowerCase(),
+      /** true = 使用日期列本次不可用（查询异常），前端显示「—」而非「从未使用」 */
+      seen_unavailable: seenUnavailable,
     };
   }
 

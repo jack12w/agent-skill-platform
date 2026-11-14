@@ -322,7 +322,20 @@ export class OrdersService implements OnModuleInit {
     }
 
     this.logger.log(`复用未支付订单 ${order.order_no}（防重复下单）`);
-    return { orderNo: order.order_no, tradeType: payment.trade_type, pay: payment.prepay_data, expireAt: order.expire_at };
+    /**
+     * 与「新建订单」同口径返回实付金额（订单创建时已固化到 total_cents）。
+     * 2026-11-15 复核补：缺这个字段时前端 `Number(undefined)` = NaN，
+     * 金额二次校验会被**静默跳过** —— 而复用的旧单恰好是促销边界上最容易
+     * 出现「页面价 ≠ 实收价」的路径（15 分钟窗口内促销结束/开始）。
+     * 只读追加，不改任何金额计算与门禁。
+     */
+    return {
+      orderNo: order.order_no,
+      tradeType: payment.trade_type,
+      pay: payment.prepay_data,
+      expireAt: order.expire_at,
+      totalCents: order.total_cents,
+    };
   }
 
   /** 创建订单并发起微信支付 */

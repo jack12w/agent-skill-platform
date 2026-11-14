@@ -318,7 +318,8 @@ export default function PluginsPage() {
 
   // ── 收银台档位下拉（2026-10-09）──
   // 选项 = 当前全部上架插件（个人版/企业版），价格沿用促销判定；
-  // 默认选中企业版（用户拍板：点「订阅」先看到企业版，下拉可切回个人版）。
+  // 默认选中调用方传入的 defaultOptionId —— 2026-11-15 起 = **点击入口的档位**，
+  // 不再全局固定企业版（点 ¥49 却默认 ¥499 属跨价误购）。
   // ⚠️ 必须放在 payCents/strikeCents 声明之后：useMemo 工厂在 render 时同步执行，
   //    放前面会命中 const 的暂时性死区（TDZ）→ Cannot access before initialization。
   const checkoutOptions = useMemo(
