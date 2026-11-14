@@ -108,6 +108,13 @@ function yuanToCentsOrNull(v: string): number | null {
   return Math.round(n * 100);
 }
 
+/**
+ * 「订阅用户」弹窗每页条数（2026-11-15 加分页）。
+ * 后端 size 上限 200，这里固定 50：既够一屏翻阅，又让页码不会太碎。
+ * 只影响这个弹窗的列表，CSV 导出始终是「按当前搜索+排序全量」，与分页无关。
+ */
+const USERS_PAGE_SIZE = 50;
+
 function getToken() {
   try {
     return localStorage.getItem('token');
@@ -152,8 +159,15 @@ export default function HubPluginsPage() {
   /** CSV 导出：独立 loading/错误，避免和列表加载态互相覆盖 */
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState('');
+  /** 导出成功但「使用日期」列本次不可用（后端降级）—— 提示用户，不当作失败 */
+  const [exportWarn, setExportWarn] = useState('');
   /** 使用日期列本次是否不可用（后端 fail-soft）—— 不可用时显示「—」而不是「从未使用」 */
   const [usersSeenUnavailable, setUsersSeenUnavailable] = useState(false);
+  /**
+   * 当前页码（2026-11-15）：由服务端回显，不在前端猜测。
+   * 排序/搜索一律重置回第 1 页，否则会停在一个已不存在的页上。
+   */
+  const [usersPage, setUsersPage] = useState(1);
 
   const loadUsers = useCallback(
     async (
@@ -170,7 +184,7 @@ export default function HubPluginsPage() {
       try {
         const params = new URLSearchParams({
           page: String(page),
-          size: '50',
+          size: String(USERS_PAGE_SIZE),
           search,
           sort,
           order,
@@ -185,6 +199,11 @@ export default function HubPluginsPage() {
         setUsers(data.items || []);
         setUsersTotal(data.total || 0);
         setUsersSeenUnavailable(!!data.seen_unavailable);
+        /** 页码以后端回显为准（后端会 clamp 非法入参），前端不自己猜 */
+        const echoedPage = Number(data.page);
+        if (Number.isFinite(echoedPage) && echoedPage >= 1) {
+          setUsersPage(Math.floor(echoedPage));
+        }
         /**
          * 箭头以后端**实际生效**的排序为准：使用日期子查询异常时后端会回退成
          * 「最近到期倒序」并在响应里修正 sort/order，前端若只信本地 state
@@ -216,8 +235,21 @@ export default function HubPluginsPage() {
     setUsersSort('expire_date');
     setUsersOrder('desc');
     setExportErr('');
+    setExportWarn('');
     setUsersSeenUnavailable(false);
+    setUsersPage(1);
     loadUsers(p.id, 1, '');
+  };
+
+  /** 总页数：至少 1（空列表也显示「1 / 1」，避免出现「0 / 1」） */
+  const usersTotalPages = Math.max(1, Math.ceil(usersTotal / USERS_PAGE_SIZE));
+
+  /** 翻页：页码夹在 [1, 总页数] 内；搜索/排序参数沿用当前状态 */
+  const goUsersPage = (next: number) => {
+    if (!usersPlugin || usersLoading) return;
+    const target = Math.min(usersTotalPages, Math.max(1, next));
+    if (target === usersPage) return;
+    loadUsers(usersPlugin.id, target, usersSearch, usersSort, usersOrder);
   };
 
   /** 点表头切换排序：同列再点切方向，换列默认倒序；每次回到第 1 页 */
@@ -240,6 +272,7 @@ export default function HubPluginsPage() {
     if (!token) return;
     setExporting(true);
     setExportErr('');
+    setExportWarn('');
     try {
       const params = new URLSearchParams({
         search: usersSearch,
@@ -251,6 +284,14 @@ export default function HubPluginsPage() {
         { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } },
       );
       if (!res.ok) throw new Error(String(res.status));
+      /**
+       * 后端 fail-soft 时会回这个头：名单照常导出，但「使用日期」列整列为空
+       * （表头已标注「本次查询失败」）。这不是失败，但必须告诉运营，
+       * 别让人以为这批用户都没用过插件。
+       */
+      if (res.headers.get('x-users-seen-unavailable') === '1') {
+        setExportWarn(t('admin.usersExportSeenMissing'));
+      }
       const blob = await res.blob();
       if (!blob.size) throw new Error('empty');
       const url = URL.createObjectURL(blob);
@@ -1098,6 +1139,13 @@ export default function HubPluginsPage() {
                 </div>
               )}
 
+              {/* 导出成功但「使用日期」列降级：不是失败，用中性色提示，避免误读为「全部从未使用」 */}
+              {exportWarn && (
+                <div className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  {exportWarn}
+                </div>
+              )}
+
               {/* 2026-10-12 三轮质检：加载失败必须显式可见，不能伪装成「无用户」 */}
               {usersErr && (
                 <div className="mt-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -1196,6 +1244,35 @@ export default function HubPluginsPage() {
                 </div>
               )}
             </div>
+
+            {/* 分页条：放在滚动容器之外（shrink-0），翻页按钮不会被表格滚走。
+                超过 1 页才出现，1 页时保持原样、不占空间。 */}
+            {usersTotalPages > 1 && (
+              <div className="shrink-0 px-5 py-3 border-t border-neutral-100 flex items-center justify-end gap-2 text-xs">
+                <span className="mr-auto text-neutral-400">
+                  {t('admin.usersPageHint', { size: USERS_PAGE_SIZE })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => goUsersPage(usersPage - 1)}
+                  disabled={usersPage <= 1 || usersLoading}
+                  className="px-2 py-1 border border-neutral-200 rounded disabled:opacity-40 hover:border-brand-400 hover:text-brand-600"
+                >
+                  {t('admin.prevPage')}
+                </button>
+                <span className="text-neutral-500 tabular-nums">
+                  {usersPage} / {usersTotalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => goUsersPage(usersPage + 1)}
+                  disabled={usersPage >= usersTotalPages || usersLoading}
+                  className="px-2 py-1 border border-neutral-200 rounded disabled:opacity-40 hover:border-brand-400 hover:text-brand-600"
+                >
+                  {t('admin.nextPage')}
+                </button>
+              </div>
+            )}
           </div>
         </Modal>
       )}

@@ -33,6 +33,12 @@ import { effectivePluginPrice, listPriceCents } from './plugin-pricing.util';
  */
 export type PublicPlugin = Omit<Plugin, 'download_key' | 'download_filename'>;
 
+/**
+ * 后台 CSV 导出单次上限。管理端点，防止超大表一次性拉爆内存；
+ * 超出部分静默截断（当前体量 43 人，远未触及）。
+ */
+const CSV_MAX_ROWS = 10000;
+
 @Injectable()
 export class PluginsService {
   private readonly logger = new Logger('PluginsService');
@@ -597,23 +603,52 @@ export class PluginsService {
   /**
    * 后台：导出订阅用户 CSV（按当前搜索 + 排序，不分页）。
    * 与 adminListUsers 共用 usersAggQuery/usersWhere，口径不可能漂移。
-   * 上限 10000 行：管理端点，防超大表一次性拉爆内存。
+   *
+   * 2026-11-15：与列表对齐为 fail-soft。原实现没有 try/catch ——
+   * 「使用日期」的设备子查询一旦异常（超时 / 索引缺失 / 迁移未跑），
+   * 列表还能打开（降级为不含该列），导出却整个 500，运营拿到的只是一句
+   * 「导出失败」而不是一份可用的名单。现在同样降级导出，并把表头改成
+   * 「使用日期（本次查询失败）」明确标注该列不可用 —— 不允许用一片空白
+   * 冒充「从未使用」（三态铁律：不确定 ≠ 不存在）。
    */
   async adminListUsersCsv(
     pluginId: string,
     q: any,
-  ): Promise<{ filename: string; csv: string }> {
+  ): Promise<{ filename: string; csv: string; seenUnavailable: boolean }> {
     const plugin = await this.adminGet(pluginId);
     const search = String(q?.search ?? '').trim();
     const { sortCol, sortDir } = this.parseUsersSort(q);
 
-    const rows = await this.usersAggQuery(plugin, search, true)
-      .orderBy(sortCol, sortDir, 'NULLS LAST')
-      .offset(0)
-      .limit(10000)
-      .getRawMany();
+    let rows: any[];
+    /** true = 使用日期列本次不可用（设备子查询异常），表头据此标注 */
+    let seenUnavailable = false;
+    try {
+      rows = await this.usersAggQuery(plugin, search, true)
+        .orderBy(sortCol, sortDir, 'NULLS LAST')
+        .offset(0)
+        .limit(CSV_MAX_ROWS)
+        .getRawMany();
+    } catch (e: any) {
+      this.logger.warn(
+        `导出订阅用户时「使用日期」查询失败，已降级为不含该列导出：${e?.message ?? e}`,
+      );
+      // 回退排序必须跟着改：降级查询没有 last_plugin_at，按它排会直接报错
+      rows = await this.usersAggQuery(plugin, search, false)
+        .orderBy('expire_date', 'DESC', 'NULLS LAST')
+        .offset(0)
+        .limit(CSV_MAX_ROWS)
+        .getRawMany();
+      seenUnavailable = true;
+    }
 
-    const header = ['用户名称', '邮箱', '首次订阅', '最近到期', '使用日期', '状态']
+    const header = [
+      '用户名称',
+      '邮箱',
+      '首次订阅',
+      '最近到期',
+      seenUnavailable ? '使用日期（本次查询失败）' : '使用日期',
+      '状态',
+    ]
       .map((c) => this.csvCell(c))
       .join(',');
     const lines = rows.map((r: any) =>
@@ -634,6 +669,8 @@ export class PluginsService {
       filename: `订阅用户-${plugin.name}-${stamp}.csv`,
       // BOM 必须保留：没有它 Excel 打开中文是乱码
       csv: '\uFEFF' + [header, ...lines].join('\r\n'),
+      /** 供控制器回一个响应头，前端据此提示「该列本次不可用」 */
+      seenUnavailable,
     };
   }
 

@@ -468,6 +468,10 @@ const zh = {
     usersExport: '下载 CSV',
     usersExporting: '导出中…',
     usersExportFailed: '导出失败，请重试',
+    /* 2026-11-15：导出改为 fail-soft，使用日期列降级时明确告知，不让空列被读成「从未使用」 */
+    usersExportSeenMissing: '已导出，但「使用日期」列本次查询失败，该列为空（不代表从未使用）',
+    /* 2026-11-15：订阅用户弹窗分页（每页固定 50 条） */
+    usersPageHint: '每页 {size} 人',
     usersStatus: '状态',
     usersStatusValid: '有效',
     usersStatusExpired: '已过期',

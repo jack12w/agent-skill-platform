@@ -468,6 +468,11 @@ const en = {
     usersExport: 'Export CSV',
     usersExporting: 'Exporting…',
     usersExportFailed: 'Export failed, please retry',
+    /* 2026-11-15: export degrades gracefully; make the empty usage-date column explicit */
+    usersExportSeenMissing:
+      'Exported, but the usage-date column failed to load this time and is empty (this does not mean "never used").',
+    /* 2026-11-15: subscriber popup paging (fixed 50 per page) */
+    usersPageHint: '{size} per page',
     usersStatus: 'Status',
     usersStatusValid: 'Active',
     usersStatusExpired: 'Expired',

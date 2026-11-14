@@ -228,6 +228,8 @@ export class PluginsAdminController {
    * 但为可读性仍把它紧挨在 `:id/users` 后面。
    *
    * 权限沿用类级 AuthGuard + AdminGuard；内容含用户邮箱，响应 no-store。
+   * 2026-11-15：与列表同口径 fail-soft ——「使用日期」子查询异常时仍导出其余列，
+   * 表头标注该列不可用，并回 `X-Users-Seen-Unavailable` 供前端提示。
    */
   @Get(':id/users/export')
   async exportUsers(
@@ -235,7 +237,7 @@ export class PluginsAdminController {
     @Query() q: any,
     @Res() res: Response,
   ) {
-    const { filename, csv } = await this.svc.adminListUsersCsv(id, q);
+    const { filename, csv, seenUnavailable } = await this.svc.adminListUsersCsv(id, q);
     // filename* 走 RFC 5987，中文文件名在 Chrome/Edge 才不乱码；filename 给老客户端兜底
     const ascii = `plugin-users-${Date.now()}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -244,6 +246,7 @@ export class PluginsAdminController {
       `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
     );
     res.setHeader('Cache-Control', 'no-store');
+    if (seenUnavailable) res.setHeader('X-Users-Seen-Unavailable', '1');
     res.send(csv);
   }
 
