@@ -366,6 +366,59 @@ export default function PluginsPage() {
     </div>
   );
 
+  /* 2026-11-15：安装包相关文案里的「下载」统一变成可点下载入口（点即走 handleDownload）。
+     只覆盖**安装包 / 扩展包**语境：hero 注脚、免费清单、定价说明、三步上手、结尾 CTA、FAQ。
+     **刻意不覆盖**「素材下载 / 一键下载图片视频 / 打包下载 / 入队即下载素材」——那是插件内部的
+     功能描述，挂上下载链接会误导成「点了就下扩展包」，属于骗点击。
+     实现：split 后逐段判断，只把等于关键词的那一段变成按钮，句子其余部分保持纯文本；
+     primary 为空（没上架商品）时整句原样返回，不产生死链。 */
+  const DL_EXACT = /^(下载安装包|下载|Download|download)$/;
+  const DL_BTN_CLASS =
+    'font-semibold text-[#E8112D] underline decoration-[#E8112D]/40 underline-offset-2 hover:text-[#D9102A]';
+  /* 结尾 CTA 是红底白字，红色链接会直接消失 —— 单独一套反白样式。 */
+  const DL_BTN_CLASS_ON_RED =
+    'font-semibold text-white underline decoration-white/60 underline-offset-2 hover:text-[#FFF0F2]';
+  const renderDl = (text: string, onRed = false) => {
+    const p = primary;
+    if (!p) return text;
+    return text.split(/(下载安装包|下载|Download|download)/g).map((seg, i) =>
+      DL_EXACT.test(seg) ? (
+        <button
+          key={i}
+          type="button"
+          onClick={() => handleDownload(p)}
+          className={onRed ? DL_BTN_CLASS_ON_RED : DL_BTN_CLASS}
+        >
+          {seg}
+        </button>
+      ) : (
+        <span key={i}>{seg}</span>
+      ),
+    );
+  };
+
+  /* FAQ 答案走的是 RichText（要解析 [文字](url) 技能链接），不能直接用 renderDl
+     覆盖 —— 所以按下载词切段：命中段给按钮，其余段仍交给 RichText 解析链接。
+     这样「下载」可点 与 站内技能链接 能同时存在于一段文案里。 */
+  const renderDlRich = (text: string) => {
+    const p = primary;
+    if (!p) return <RichText text={text} />;
+    return text.split(/(下载安装包|下载|Download|download)/g).map((seg, i) =>
+      DL_EXACT.test(seg) ? (
+        <button
+          key={i}
+          type="button"
+          onClick={() => handleDownload(p)}
+          className="font-semibold text-[#E8112D] underline decoration-[#E8112D]/40 underline-offset-2 hover:text-[#D9102A]"
+        >
+          {seg}
+        </button>
+      ) : (
+        <RichText key={i} text={seg} />
+      ),
+    );
+  };
+
   const fields = [
     [t('plugins.page.f1Name'), t('plugins.page.f1Desc')],
     [t('plugins.page.f2Name'), t('plugins.page.f2Desc')],
@@ -386,21 +439,40 @@ export default function PluginsPage() {
     [t('plugins.page.q6q'), t('plugins.page.q6a')],
   ];
 
+  /* 2026-11-15：三组按业务线重排（店铺运营 / 业务转化 / 供应链），组内条数 5 / 5 / 4，
+     覆盖当时全部 15 个工作条。组内条数不要求相等，加条就改对应数组。 */
   const ovBars = [
     {
       name: t('plugins.page.ov1Name'),
       desc: t('plugins.page.ov1Desc'),
-      pts: [t('plugins.page.ov1p1'), t('plugins.page.ov1p2'), t('plugins.page.ov1p3')],
+      pts: [
+        t('plugins.page.ov1p1'),
+        t('plugins.page.ov1p2'),
+        t('plugins.page.ov1p3'),
+        t('plugins.page.ov1p4'),
+        t('plugins.page.ov1p5'),
+      ],
     },
     {
       name: t('plugins.page.ov2Name'),
       desc: t('plugins.page.ov2Desc'),
-      pts: [t('plugins.page.ov2p1'), t('plugins.page.ov2p2'), t('plugins.page.ov2p3')],
+      pts: [
+        t('plugins.page.ov2p1'),
+        t('plugins.page.ov2p2'),
+        t('plugins.page.ov2p3'),
+        t('plugins.page.ov2p4'),
+        t('plugins.page.ov2p5'),
+      ],
     },
     {
       name: t('plugins.page.ov3Name'),
       desc: t('plugins.page.ov3Desc'),
-      pts: [t('plugins.page.ov3p1'), t('plugins.page.ov3p2'), t('plugins.page.ov3p3')],
+      pts: [
+        t('plugins.page.ov3p1'),
+        t('plugins.page.ov3p2'),
+        t('plugins.page.ov3p3'),
+        t('plugins.page.ov3p4'),
+      ],
     },
   ];
 
@@ -415,7 +487,7 @@ export default function PluginsPage() {
 
       {/* ==================== Hero ==================== */}
       <section className="bg-gradient-to-b from-[#FFF0F2] via-[#FFF3E8] to-neutral-50">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-14 sm:py-20 text-center">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-14 sm:pt-20 pb-8 sm:pb-10 text-center">
           <div className="inline-block rounded-full bg-[#E8112D] px-4 py-1.5 text-xs font-semibold text-white border border-[#E8112D]">
             {t('plugins.page.promoBadge11')}
           </div>
@@ -460,14 +532,16 @@ export default function PluginsPage() {
             </div>
           )}
 
-          <p className="mt-4 text-xs text-neutral-400">{t('plugins.page.heroNote')}</p>
+          <p className="mt-4 text-xs text-neutral-400">{renderDl(t('plugins.page.heroNote'))}</p>
         </div>
       </section>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-20">
 
         {/* ==================== 公众号连载教程（2026-11-10 新增，纯展示） ==================== */}
-        <section className="mt-10 rounded-3xl border border-[#FFC9CF] bg-[#FFF6F8] px-5 py-7 sm:px-8 sm:py-8">
+        {/* 2026-11-15：与 hero 底距同收（方案 C）——hero pb 从 80→40px，此处 40→16px，
+            原来 120px 的空档压到 56px。 */}
+        <section className="mt-4 rounded-3xl border border-[#FFC9CF] bg-[#FFF6F8] px-5 py-7 sm:px-8 sm:py-8">
           <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8">
             <div className="min-w-0 flex-1 text-center sm:text-left">
               <p className="text-[11px] font-bold tracking-widest text-[#E8112D]">
@@ -575,7 +649,7 @@ export default function PluginsPage() {
                 ].map((x) => (
                   <li key={x} className="flex gap-2">
                     <span className="text-neutral-400 font-bold">·</span>
-                    <span>{x}</span>
+                    <span>{renderDl(x)}</span>
                   </li>
                 ))}
               </ul>
@@ -766,7 +840,7 @@ export default function PluginsPage() {
                   </div>
                 );
               })}
-              <p className="text-xs text-neutral-400">{t('plugins.page.pNote')}</p>
+              <p className="text-xs text-neutral-400">{renderDl(t('plugins.page.pNote'))}</p>
             </div>
           )}
         </section>
@@ -786,6 +860,7 @@ export default function PluginsPage() {
               [t('plugins.page.cl1Date'), t('plugins.page.cl1Desc')],
               [t('plugins.page.cl2Date'), t('plugins.page.cl2Desc')],
               [t('plugins.page.cl3Date'), t('plugins.page.cl3Desc')],
+              [t('plugins.page.cl4Date'), t('plugins.page.cl4Desc')],
             ].map(([date, desc]) => (
               <div key={date} className="relative pl-6 pb-6 last:pb-0">
                 <span className="absolute -left-[7px] top-1 h-3 w-3 rounded-full bg-[#E8112D]" />
@@ -813,8 +888,8 @@ export default function PluginsPage() {
                 <div className="h-8 w-8 rounded-lg bg-[#E8112D] text-white text-sm font-bold flex items-center justify-center">
                   {i + 1}
                 </div>
-                <h3 className="mt-3 text-base font-bold text-neutral-900">{title}</h3>
-                <p className="mt-1.5 text-sm text-neutral-600 leading-relaxed">{desc}</p>
+                <h3 className="mt-3 text-base font-bold text-neutral-900">{renderDl(title)}</h3>
+                <p className="mt-1.5 text-sm text-neutral-600 leading-relaxed">{renderDl(desc)}</p>
               </div>
             ))}
           </div>
@@ -835,9 +910,8 @@ export default function PluginsPage() {
                 </summary>
                 <p className="mt-3 text-sm text-neutral-600 leading-relaxed">
                   <span className="mr-2 font-semibold text-[#E8112D]">A</span>
-                  <RichText text={a} />
-                </p>
-              </details>
+                  {renderDlRich(a)}
+                </p>              </details>
             ))}
           </div>
         </section>
@@ -847,7 +921,7 @@ export default function PluginsPage() {
           <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
             {t('plugins.page.ctaTitle')}
           </h2>
-          <p className="mt-3 text-sm text-white/95">{t('plugins.page.ctaDesc')}</p>
+          <p className="mt-3 text-sm text-white/95">{renderDl(t('plugins.page.ctaDesc'), true)}</p>
           {primary && (
             <button
               onClick={() => handleDownload(primary)}

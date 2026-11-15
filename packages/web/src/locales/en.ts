@@ -1256,25 +1256,31 @@ const en = {
       heroManage: 'Manage subscription',
       heroNote: 'The installer is free; login activation unlocks the full feature set.',
 
-      ovTitle: 'Three daily workflows, fully covered',
-      ovLead: 'The extension floats a work bar on the page you are on: collect on product pages, mine RFQ leads, extract buyers on customer pages — works out of the box, no change to your habits.',
-      ov1Name: 'Store & product collection',
-      ov1Desc: 'Four entry points — listing, detail, growth console and ranking — to pull competitor products and store operation data.',
-      ov1p1: 'Listing page: bulk-collect store products, download images / videos / operation sheets in one click',
-      ov1p2: 'Detail page: product + category data, full media package download',
-      ov1p3: 'Growth console / ranking: best-seller analysis, full capture of hot / best / top-review lists',
-      ov2Name: 'RFQ lead mining',
-      ov2Desc: 'Full capture of RFQ detail and list pages, exported for quotation plans and market-demand analysis.',
-      ov2p1: 'Real-time RFQ list capture, export straight into your follow-up sheet, then pick it up with [RFQ Market Analysis](https://skills.rehomi.com/skills/40226de1-fff7-4877-a519-be079ef74cae) and [RFQ Quoting](https://skills.rehomi.com/skills/2386401e-8444-4638-951b-228edcf71eb0)',
-      ov2p2: 'Queue multiple keywords — one run after another',
-      ov2p3: 'Failures are flagged automatically and can be re-run individually',
-      /* 2026-10-12: group 3 renamed to “Buyer leads & customer follow-up”, now covering the
-         Golden Supplier / Visitors / Chat-message work bars (the old copy missed them). */
-      ov3Name: 'Buyer leads & customer follow-up',
-      ov3Desc: 'Full capture and export of buyer data from public-sea, Golden Supplier, visitor and chat-message pages; search-page readouts aid sourcing.',
-      ov3p1: 'Public-sea page: reuses the page’s own internal API to pull the full buyer set at once, field-level CSV export ready for your CRM',
-      ov3p2: 'Golden Supplier / Visitors / Chat pages: premium buyer lists, store visitors and chat history — all collectable and exportable',
-      ov3p3: 'Search page: live readouts of product count, supplier count and suggestion words — sourcing reference without login',
+      /* 2026-11-15: the three groups were re-cut from page-based to business-based —
+         store operation / deal conversion / supply chain — so all 15 work bars have a
+         home. Insert new work bars into the matching group; groups need not be equal size. */
+      ovTitle: 'Three tracks: store operation, deal conversion, supply chain',
+      ovLead: '15 work bars grouped by the job they actually do: store operation watches your own and competitors’ numbers, deal conversion turns buyers and inquiries into one table, supply chain runs from 1688 sourcing all the way to the draft form — works out of the box.',
+      ov1Name: 'Store operation',
+      ov1Desc: 'Product growth, product detail, listing, rankings and traffic adviser — your own and competitors’ store data laid out in tables.',
+      ov1p1: 'Product growth: one-click capture of growth data, filter demoted / upgrade-shortfall products by category and copy product IDs in bulk to go pull data',
+      ov1p2: 'Product detail: visitors / inquiries / sales / conversion plus category-level data, full media package download — competitor products work the same way',
+      ov1p3: 'Rankings + Golden Factory list: full capture of hot / best-seller / top-review lists with sales, visitors and inquiries back-filled, plus factory years, area, staff and GMV',
+      ov1p4: 'Traffic adviser · traffic destination: paged full pull, with products / regions / categories exported as three separate CSVs',
+      ov1p5: 'Product listing: whole-store products plus images, videos and the operation sheet in one click — competitor stores can be scraped the same way',
+      ov2Name: 'Deal conversion',
+      ov2Desc: 'Public sea, visitors, RFQ, chat and search — five work bars that gather the buyers and inquiries scattered across pages into one table.',
+      ov2p1: 'Public-sea buyers: reuses the page’s own internal API to pull the full buyer set at once, field-level CSV export ready for your CRM',
+      ov2p2: 'Visitors: full 21-column visitor export, with entry keywords and site-wide preferred keywords side by side',
+      ov2p3: 'RFQ: real-time list capture, export straight into your follow-up sheet, then pick it up with [RFQ Market Analysis](https://skills.rehomi.com/skills/40226de1-fff7-4877-a519-be079ef74cae) and [RFQ Quoting](https://skills.rehomi.com/skills/2386401e-8444-4638-951b-228edcf71eb0); multi-keyword queueing with auto-flagged retries',
+      ov2p4: 'Chat · inquiries: full chat history capture, exported as JSON or CSV — see at a glance who is handling which buyer',
+      ov2p5: 'Search · keywords: live readouts of product count, supplier count and suggestion words on both the classic and the new Deep Search page — sourcing reference without login',
+      ov3Name: 'Supply chain',
+      ov3Desc: 'Two 1688 sourcing work bars plus the draft-import bar: from picking a source offer to filling the publish form, one chain.',
+      ov3p1: '1688 search: each card shows 30-day sales / 48h pickup rate / stock-keep rate, read as you scroll; suggestion words exported as CSV',
+      ov3p2: '1688 offer detail: reads on mount, downloads main / SKU / description images and videos as a package, with operation metrics and category carried along',
+      ov3p3: 'Draft import: collects Alibaba.com products into a local queue and fills the publish form in one click, with exact SKU matching and read-back verification',
+      ov3p4: 'Import queue: counts, detail, delete and clear, media downloaded on enqueue — reuse across stores and listings',
 
       /* 2026-10-12: field table collapsed — one value line up front, full table behind
          fFull. f1-f8 stay as the detail rows inside the collapsed block. */
@@ -1321,19 +1327,21 @@ const en = {
          fixed landing spot for every new work bar — add pages here only, never the body. */
       clTitle: 'Changelog',
       clLead: 'New capabilities every month — one subscription, all updates included.',
-      cl1Date: '2026-10',
-      cl1Desc: 'Added Golden Supplier, Visitors and Chat-message work bars; subscription duration is now configurable per plugin.',
-      cl2Date: '2026-09',
-      cl2Desc: 'RFQ multi-keyword queueing with auto-flagged retries; field-level CSV export for public-sea buyers.',
-      cl3Date: '2026-08',
-      cl3Desc: 'Device authorization launched: log in once and keep working across machines without losing data.',
+      cl1Date: '2026-11',
+      cl1Desc: 'Added Traffic adviser · traffic destination, 1688 Search and Draft import work bars; visitors got entry-keyword dual columns (21-column export), and ranking / detail pages now enqueue into the import queue in one click.',
+      cl2Date: '2026-10',
+      cl2Desc: 'Added Golden Supplier, Visitors and Chat-message work bars; subscription duration is now configurable per plugin.',
+      cl3Date: '2026-09',
+      cl3Desc: 'RFQ multi-keyword queueing with auto-flagged retries; field-level CSV export for public-sea buyers.',
+      cl4Date: '2026-08',
+      cl4Desc: 'Device authorization launched: log in once and keep working across machines without losing data.',
 
       sTitle: 'Three steps to start',
       sLead: 'Install, activate, work — no key to copy anywhere.',
       s1Title: 'Download and install the extension',
-      /* Aligned with q5a (extract → developer mode → load unpacked): the plugin ships
-         as .zip, not .crx, so the full steps must be spelled out. */
-      s1Desc: 'Download the .zip and extract it to a folder, open chrome://extensions, enable “Developer mode” and load the unpacked folder.',
+      /* 2026-11-15: install copy (s1Desc / q5a) no longer mentions extracting — the last
+         step follows the current Chrome entry “add / drag in extension”. Keep both in sync. */
+      s1Desc: 'Download the 外贸工具箱 AI version package, open chrome://extensions, enable “Developer mode” and add or drag in the extension.',
       s2Title: 'Log in and activate on the page',
       s2Desc: 'Open any international-station page, click “Login” on the work bar and confirm the code on the web page.',
       s3Title: 'Pick a page, collect, export',
@@ -1342,7 +1350,7 @@ const en = {
       qTitle: 'FAQ',
       /* 与 zh 对齐：安装方法排第一。文案里含 [文字](url) 标记，渲染走 RichText。 */
       q5q: 'How do I install the extension?',
-      q5a: 'Download the .zip from the “Download installer” button at the top and extract it to a folder. Then open chrome://extensions, tick “Developer mode” in the top-right corner, choose “Load unpacked” and select the extracted folder. Once installed, open any international-station page, click “Login” on the work bar and confirm the code on the web page to activate. If Chrome says the same extension already exists, uninstall the old one first.',
+      q5a: 'Click the “Download installer” button at the top to get the extension package. Then open chrome://extensions, tick “Developer mode” in the top-right corner, and drag the package into the page or click “Add / drag in extension” and pick it — that is the install done. Once installed, open any international-station page, click “Login” on the work bar and confirm the code on the web page to activate. If Chrome says the same extension already exists, uninstall the old one first.',
       q1q: 'Can I use it without a subscription?',
       q1a: 'Yes. Collecting on listing / growth / ranking / RFQ / public-sea pages works, and search-page readouts are free. Export, media download and detail-page metrics unlock after subscribing. Data you already collected is kept and can be exported later.',
       q2q: 'How does billing work, and can I get a refund?',
