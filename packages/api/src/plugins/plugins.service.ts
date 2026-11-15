@@ -427,7 +427,18 @@ export class PluginsService {
   async adminListUsers(pluginId: string, q: any) {
     const plugin = await this.adminGet(pluginId); // 插件不存在 → 直接 404
 
-    const page = Math.max(1, Math.floor(Number(q?.page) || 1));
+    /**
+     * page 不能只夹下限：只夹下限时 (page-1)*size 无保护，
+     * 手工构造 page=1e15 / Infinity / 1e400 会让 offset 超出 PG bigint 或变成
+     * Infinity → SQL 报错 → 被下方 fail-soft 接住后用同一个坏 offset 再查一次 →
+     * 500，并打出一条「使用日期查询失败」的假 DB 告警（把参数非法伪装成数据库故障，
+     * 以后真故障时排障会被这层噪音误导）。
+     * 上限夹到 1e6 页（≈2 亿 offset，远在 bigint 内，且必然落到空页），
+     * 非有限值（Infinity / NaN）回落第 1 页；正常分页行为逐位一致。
+     */
+    const rawPage = Math.floor(Number(q?.page));
+    const page =
+      Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 1_000_000) : 1;
     const size = Math.min(200, Math.max(1, Math.floor(Number(q?.size) || 50)));
     const search = String(q?.search ?? '').trim();
     const { sortCol, sortDir } = this.parseUsersSort(q);
@@ -459,7 +470,9 @@ export class PluginsService {
        * 运营仍能打开名单（排序退回默认：最近到期倒序）。只留日志，不抛 500。
        */
       this.logger.warn(
-        `订阅用户「使用日期」查询失败，已回退为不含该列的查询：${e?.message ?? e}`,
+        // 带上生效参数：page 已在上方夹取，此处报错只可能是「使用日期」子查询本身
+        // 异常（迁移未跑 / 索引缺失 / 超时），日志里带 page/size/sort 便于直接复现定位。
+        `订阅用户「使用日期」查询失败，已回退为不含该列的查询（page=${page}, size=${size}, sort=${sortCol} ${sortDir}）：${e?.message ?? e}`,
       );
       items = await this.usersAggQuery(plugin, search, false)
         .orderBy('expire_date', 'DESC', 'NULLS LAST')
@@ -950,7 +963,12 @@ export class PluginsService {
     //    想看全量用主插件的「全部状态」+ 搜索，不要靠 root 汇总。
     const wherePluginId = pluginId;
 
-    const page = Math.max(1, Math.floor(Number(q?.page) || 1));
+    // 与 adminListUsers 同一处理：只夹下限时 (page-1)*size 会溢出成 Infinity /
+    // 超出 PG bigint，手工构造 page=1e15 即可打出 500。上限夹到 1e6 页（必然空页），
+    // 非有限值回落第 1 页；合法分页结果逐位不变。
+    const rawPage = Math.floor(Number(q?.page));
+    const page =
+      Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 1_000_000) : 1;
     const size = Math.min(100, Math.max(1, Math.floor(Number(q?.size) || 20)));
     const search = String(q?.search ?? '').trim();
     const status = String(q?.status ?? '').trim();
