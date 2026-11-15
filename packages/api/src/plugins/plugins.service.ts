@@ -604,7 +604,12 @@ export class PluginsService {
       month: '2-digit',
       day: '2-digit',
       ...(dateOnly ? {} : { hour: '2-digit', minute: '2-digit' }),
-      hour12: false,
+      /**
+       * 必须用 hourCycle:'h23'，不能写 hour12:false —— 后者在部分 ICU 版本会把
+       * 00:05 输出成 24:05（h24 语义），CSV 里出现「24:30」这种不存在的时刻。
+       * h23 明确固定 0-23（2026-11-15 复核）。
+       */
+      hourCycle: 'h23',
     }).formatToParts(d);
     const m: Record<string, string> = {};
     for (const p of parts) m[p.type] = p.value;

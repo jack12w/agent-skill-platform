@@ -303,7 +303,12 @@ export default function HubPluginsPage() {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      /**
+       * 延迟释放：`a.click()` 之后同步 revoke 会让 Firefox / Safari 拿到已失效的
+       * blob URL，下载直接失败（Chrome 能过，所以在 Chrome 上测不出来）。
+       * 1s 足够浏览器接管下载，又不会长期占内存（2026-11-15 复核）。
+       */
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       if (seenMissing) setExportWarn(t('admin.usersExportSeenMissing'));
     } catch {
       // 失败时清掉降级提示，避免与错误信息同时出现
