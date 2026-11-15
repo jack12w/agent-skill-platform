@@ -1219,10 +1219,11 @@ export default function HubPluginsPage() {
                           <td className="px-3 py-2 text-neutral-800">{u.user_name || '—'}</td>
                           <td className="px-3 py-2 text-neutral-600">{u.user_email || '—'}</td>
                           <td className="px-3 py-2 text-neutral-500 tabular-nums whitespace-nowrap">
-                            {u.start_date ? new Date(u.start_date).toLocaleString('zh-CN') : '—'}
+                            {/* 只到日期：与「使用日期」列口径统一，避免同一弹窗里一行带时分秒一行不带 */}
+                            {u.start_date ? new Date(u.start_date).toLocaleDateString('zh-CN') : '—'}
                           </td>
                           <td className="px-3 py-2 text-neutral-500 tabular-nums whitespace-nowrap">
-                            {u.expire_date ? new Date(u.expire_date).toLocaleString('zh-CN') : '—'}
+                            {u.expire_date ? new Date(u.expire_date).toLocaleDateString('zh-CN') : '—'}
                           </td>
                           <td className="px-3 py-2 text-neutral-500 tabular-nums whitespace-nowrap">
                             {u.last_plugin_at ? (
