@@ -1368,8 +1368,8 @@ const en = {
       /* 11.11 promo skin + WeChat tutorial series (2026-11-10).
          Display copy only: no discount numbers (prices come from /api/plugins)
          and no countdown timer (that would add time-based logic). Keep keys in sync with zh.ts. */
-      promoRibbon: '11.11 special · limited-time pricing',
-      promoBadge11: '11.11 SPECIAL',
+      promoRibbon: 'Limited-time offer · subscription pricing',
+      promoBadge11: 'LIMITED OFFER',
       tutorialEyebrow: 'Tutorial series · updated regularly',
       tutorialTitle: 'Scan to follow the step-by-step tutorial series',
       tutorialDesc: 'Scan with WeChat to follow our Official Account and read the full illustrated guides on installation, collection, export and real-world workflows.',
